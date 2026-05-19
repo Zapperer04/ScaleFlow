@@ -154,8 +154,6 @@ def worker_loop():
     try:
         redis_client.ping()
         print(f"[{WORKER_ID}] Connected to Redis successfully!", flush=True)
-        # Diagnostic print to check actual visible keys in database
-        print(f"[{WORKER_ID}] DIAGNOSTIC - All keys visible in Redis: {redis_client.keys('*')}", flush=True)
     except Exception as e:
         print(f"[{WORKER_ID}] CRITICAL: Failed to connect to Redis: {e}", flush=True)
     

@@ -62,6 +62,12 @@ const TaskLog = ({ tasks, workers, onTaskClick }) => {
                   
                   {task.status === 'pending' && (
                     <div className="pending-details">
+                      {!task.queued_in_redis && (
+                        <div className="stale-warning-text">
+                          <AlertTriangle size={14} />
+                          <span>Pending in database but not found in Redis queue. Cancel or requeue this task.</span>
+                        </div>
+                      )}
                       <div className="pending-detail-row">
                         <span className="detail-label">Queued in Redis:</span>
                         <span className={`detail-val ${task.queued_in_redis ? 'yes' : 'no'}`}>

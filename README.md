@@ -139,6 +139,10 @@ If you are presenting this project, here is how you can explain it:
 ---
 
 ## 🛠️ Troubleshooting
-- **Redis Connection Errors:** Ensure Docker Desktop is running and the `scaleflow-redis` container is up.
+
+- **Docker Engine Not Running:** Ensure Docker Desktop is open and active. Run `docker ps` to verify that the Redis broker and worker cluster containers (`task-schedular-worker1-1`, etc.) are up and running.
+- **Worker Logs Empty:** If `docker logs` returns blank output, check that `PYTHONUNBUFFERED: "1"` is specified under the worker environment parameters in `docker-compose.yml` and that the container runs the script with python's `-u` flag (`python -u worker.py`).
+- **Redis Network Routing Mismatch:** The backend runs on the host network and resolves Redis at `localhost:6379`, whereas the containerized workers communicate over the internal Docker network and must resolve the broker at `redis:6379`. Verify these match in your configurations.
+- **Stale Pending Tasks Not In Redis:** If tasks show status `pending` in the UI but `Queued in Redis` is `No`, the tasks were saved to Postgres in a previous execution cycle but are missing from the current Redis broker memory. Open the Task Details Modal for the stale task and click **"Requeue Task"** to re-inject it into the broker, or **"Cancel Task"** to safely update its DB status.
 - **PostgreSQL Connection Errors:** Verify your local username and password match the `DATABASE_URL` in `backend/.env`.
 - **CORS Errors:** Ensure your frontend URL (e.g., `http://localhost:3000`) is listed in the `ALLOWED_ORIGINS` of the `backend/.env` file.

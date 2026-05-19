@@ -49,6 +49,7 @@ const TaskModal = ({ taskId, onClose, onActionComplete }) => {
     }
   };
 
+  const isStalePending = details && details.status === 'pending' && !details.queued_in_redis;
   const canRetry = details && ['failed', 'timed_out', 'cancelled'].includes(details.status);
   const canCancel = details && ['pending', 'queued', 'running'].includes(details.status);
 
@@ -67,6 +68,13 @@ const TaskModal = ({ taskId, onClose, onActionComplete }) => {
         ) : (
           <div className="modal-body">
             {error && <div className="error-banner">{error}</div>}
+            
+            {isStalePending && (
+              <div className="stale-warning-notice">
+                <AlertCircle size={18} />
+                <span>Pending in database but not found in Redis queue. Cancel or requeue this task.</span>
+              </div>
+            )}
             
             <div className="detail-grid">
               <div className="detail-item">
@@ -128,6 +136,11 @@ const TaskModal = ({ taskId, onClose, onActionComplete }) => {
             </div>
             
             <div className="modal-actions">
+              {isStalePending && (
+                <button className="action-btn retry-btn" onClick={handleRetry}>
+                  <RefreshCw size={18} /> Requeue Task
+                </button>
+              )}
               {canRetry && (
                 <button className="action-btn retry-btn" onClick={handleRetry}>
                   <RefreshCw size={18} /> Retry Task

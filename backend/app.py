@@ -279,6 +279,39 @@ def get_task_details(task_id):
                 last_worker_id = log.worker_id
                 break
         task_dict['worker_id'] = last_worker_id
+
+        # Attach Redis queue parameters
+        in_redis = False
+        q_name = None
+        q_pos = None
+        if task.status == 'pending':
+            p_queue_name = PRIORITY_QUEUES.get(task.priority, 'task_queue_medium')
+            p_list = redis_client.lrange(p_queue_name, 0, -1) or []
+            task_id_str = str(task.id)
+            if task_id_str in p_list:
+                in_redis = True
+                q_name = p_queue_name
+                try:
+                    idx = p_list.index(task_id_str)
+                    q_pos = len(p_list) - idx
+                except ValueError:
+                    pass
+            else:
+                for q_key, queue_val in PRIORITY_QUEUES.items():
+                    lst = redis_client.lrange(queue_val, 0, -1) or []
+                    if task_id_str in lst:
+                        in_redis = True
+                        q_name = queue_val
+                        try:
+                            idx = lst.index(task_id_str)
+                            q_pos = len(lst) - idx
+                        except ValueError:
+                            pass
+                        break
+                        
+        task_dict['queued_in_redis'] = in_redis
+        task_dict['queue_name'] = q_name
+        task_dict['queue_position'] = q_pos
         
         return jsonify(task_dict)
     finally:
@@ -293,19 +326,23 @@ def retry_task(task_id):
         if not task:
             return jsonify({'error': 'Task not found'}), 404
             
-        if task.status not in ['failed', 'timed_out', 'cancelled']:
+        if task.status not in ['failed', 'timed_out', 'cancelled', 'pending']:
             return jsonify({'error': f'Cannot retry task with status {task.status}'}), 400
             
         data = request.json or {}
         force = data.get('force', False)
         
-        if task.retry_count >= task.max_retries and not force:
+        if task.status != 'pending' and task.retry_count >= task.max_retries and not force:
             return jsonify({'error': 'Max retries reached. Use force=true to override.'}), 400
             
-        task.status = 'pending'
-        task.error_message = None
-        
-        create_task_log(db, task.id, "task_retried", "Task manually retried by user")
+        if task.status == 'pending':
+            task.error_message = None
+            create_task_log(db, task.id, "task_requeued", "Task manually requeued by user")
+        else:
+            task.status = 'pending'
+            task.error_message = None
+            create_task_log(db, task.id, "task_retried", "Task manually retried by user")
+            
         add_task_to_queue(task.id, task.priority, db=db)
         
         db.commit()
