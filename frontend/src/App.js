@@ -20,6 +20,8 @@ function App() {
   const [throughput, setThroughput] = useState([]);
   const [workerDistribution, setWorkerDistribution] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [queueStuckSince, setQueueStuckSince] = useState(null);
+  const [showStuckWarning, setShowStuckWarning] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -36,10 +38,53 @@ function App() {
       setTasks(taskList);
 
       const workersData = await fetchWorkers();
-      setWorkers(workersData);
+      const defaultWorkerIds = ['worker-1', 'worker-2', 'worker-3'];
+      const mergedWorkers = defaultWorkerIds.map(id => {
+        const active = workersData.find(w => w.worker_id === id);
+        if (active) {
+          const secondsSinceLastSeen = (Date.now() - new Date(active.last_seen)) / 1000;
+          const computedStatus = secondsSinceLastSeen > 15 ? 'offline' : active.status;
+          return { ...active, status: computedStatus };
+        }
+        return {
+          worker_id: id,
+          status: 'offline',
+          last_seen: null,
+          tasks_completed: 0,
+          tasks_failed: 0,
+          last_action: 'Offline'
+        };
+      });
+      
+      workersData.forEach(w => {
+        if (!defaultWorkerIds.includes(w.worker_id)) {
+          const secondsSinceLastSeen = (Date.now() - new Date(w.last_seen)) / 1000;
+          const computedStatus = secondsSinceLastSeen > 15 ? 'offline' : w.status;
+          mergedWorkers.push({ ...w, status: computedStatus });
+        }
+      });
+      setWorkers(mergedWorkers);
 
       const qs = await getQueueStats();
       setQueueStats(qs);
+
+      // Check if queue is stuck
+      const totalQueued = qs.total || 0;
+      const allWorkersIdle = mergedWorkers.length > 0 && mergedWorkers.every(w => w.status === 'idle' || w.status === 'offline');
+      
+      if (totalQueued > 0 && allWorkersIdle) {
+        setQueueStuckSince(prev => {
+          const now = Date.now();
+          const start = prev || now;
+          if (now - start > 10000) {
+            setShowStuckWarning(true);
+          }
+          return start;
+        });
+      } else {
+        setQueueStuckSince(null);
+        setShowStuckWarning(false);
+      }
 
       setStats({
         total: metadata.total_tasks,
@@ -66,6 +111,20 @@ function App() {
     }
   };
 
+  const getActivityText = () => {
+    if (showStuckWarning) {
+      return "Queue has tasks but no worker has picked them";
+    }
+    const busyWorker = workers.find(w => w.status === 'busy');
+    if (busyWorker) {
+      return `${busyWorker.worker_id} processing task #${busyWorker.current_task_id}`;
+    }
+    if (workers.some(w => w.status === 'idle')) {
+      return "Workers are waiting for tasks";
+    }
+    return "All workers are offline";
+  };
+
   return (
     <div className="app">
       <nav className="navbar">
@@ -82,7 +141,7 @@ function App() {
           <div className="nav-stats">
             <div className="nav-stat">
               <Server size={16} />
-              <span>{workers.length} Workers Active</span>
+              <span>{workers.filter(w => w.status !== 'offline').length} Workers Active</span>
             </div>
             <div className="nav-stat">
               <Database size={16} />
@@ -97,6 +156,18 @@ function App() {
       </nav>
 
       <div className="container">
+        {showStuckWarning && (
+          <div className="alert-banner warning">
+            <span className="alert-icon">⚠</span>
+            <span className="alert-message">Tasks are queued but no worker is processing them. Check worker logs or Redis consumer loop.</span>
+          </div>
+        )}
+
+        <div className="activity-banner">
+          <div className={`activity-pulse ${workers.some(w => w.status === 'busy') ? 'busy' : showStuckWarning ? 'stuck' : workers.some(w => w.status === 'idle') ? 'idle' : 'offline'}`} />
+          <span className="activity-text">{getActivityText()}</span>
+        </div>
+
         <div className="metrics-grid">
           <MetricCard icon={Activity} label="Total Tasks Processed" value={stats.total} trend={stats.total > 0 ? 12 : 0} color="rgba(139, 92, 246, 0.2)" gradient="linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%)" />
           <MetricCard icon={Clock} label="Recent Pending" value={stats.pending} color="rgba(251, 191, 36, 0.2)" gradient="linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(251, 191, 36, 0.05) 100%)" />
@@ -110,7 +181,7 @@ function App() {
           <ThroughputChart throughput={throughput} />
           <WorkerLoadChart workerDistribution={workerDistribution} />
           <TaskForm onTaskCreated={loadData} />
-          <TaskLog tasks={tasks} onTaskClick={setSelectedTaskId} />
+          <TaskLog tasks={tasks} workers={workers} onTaskClick={setSelectedTaskId} />
         </div>
       </div>
       

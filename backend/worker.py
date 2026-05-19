@@ -1,6 +1,6 @@
 import sys
-print("worker.py loaded", flush=True)
-sys.stdout.write("worker.py loaded via stdout write\n")
+print("WORKER FILE LOADED", flush=True)
+sys.stdout.write("WORKER FILE LOADED via stdout write\n")
 sys.stdout.flush()
 
 import time
@@ -34,15 +34,23 @@ API_KEY = os.getenv("API_KEY", "dev_secret_api_key")
 HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
 print(f"[{WORKER_ID}] Initializing Redis client: host={REDIS_HOST}, port={REDIS_PORT}", flush=True)
-redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+redis_client = redis.Redis(
+    host=REDIS_HOST, 
+    port=REDIS_PORT, 
+    decode_responses=True,
+    socket_timeout=5,
+    socket_connect_timeout=5
+)
 
+# Standard list of queue names
 PRIORITY_QUEUES = ['task_queue_high', 'task_queue_medium', 'task_queue_low']
 
 worker_state = {
     'status': 'idle',
     'current_task_id': None,
     'tasks_completed': 0,
-    'tasks_failed': 0
+    'tasks_failed': 0,
+    'last_action': 'Initializing worker'
 }
 
 def send_heartbeat():
@@ -54,7 +62,8 @@ def send_heartbeat():
                 'status': worker_state['status'],
                 'current_task_id': worker_state['current_task_id'],
                 'tasks_completed': worker_state['tasks_completed'],
-                'tasks_failed': worker_state['tasks_failed']
+                'tasks_failed': worker_state['tasks_failed'],
+                'last_action': worker_state['last_action']
             }
             res = requests.post(f"{API_URL}/workers/heartbeat", 
                         json=payload, headers=HEADERS, timeout=5)
@@ -123,24 +132,34 @@ def execute_task(task):
 
 def get_next_task():
     """Get next task from highest priority queue that has tasks"""
-    for queue in PRIORITY_QUEUES:
-        try:
-            result = redis_client.brpop(queue, timeout=1)
-            if result:
-                return result
-        except redis.exceptions.ConnectionError as ce:
-            print(f"[{WORKER_ID}] Redis connection error during brpop: {ce}", flush=True)
-            raise ce
+    try:
+        # Atomic priority-based blocking pop using BRPOP
+        result = redis_client.brpop(PRIORITY_QUEUES, timeout=5)
+        if result:
+            return result
+    except redis.exceptions.ConnectionError as ce:
+        print(f"[{WORKER_ID}] Redis connection error during brpop: {ce}", flush=True)
+        raise ce
+    except redis.exceptions.TimeoutError:
+        # Socket timeout during blocking pop, safe to loop
+        pass
+    except Exception as e:
+        print(f"[{WORKER_ID}] Error in get_next_task: {e}", flush=True)
+        traceback.print_exc()
     return None
 
 def worker_loop():
+    worker_state['last_action'] = 'Verifying Redis'
     print(f"[{WORKER_ID}] Worker started! Verifying Redis connection...", flush=True)
     try:
         redis_client.ping()
         print(f"[{WORKER_ID}] Connected to Redis successfully!", flush=True)
+        # Diagnostic print to check actual visible keys in database
+        print(f"[{WORKER_ID}] DIAGNOSTIC - All keys visible in Redis: {redis_client.keys('*')}", flush=True)
     except Exception as e:
         print(f"[{WORKER_ID}] CRITICAL: Failed to connect to Redis: {e}", flush=True)
     
+    print(f"[{WORKER_ID}] PRIORITY_QUEUES type: {type(PRIORITY_QUEUES)}, value: {PRIORITY_QUEUES}", flush=True)
     print(f"[{WORKER_ID}] Listening on queue names: {PRIORITY_QUEUES}", flush=True)
     print(f"[{WORKER_ID}] Heartbeat enabled - sending to {API_URL}/workers/heartbeat every 10s", flush=True)
     
@@ -149,26 +168,34 @@ def worker_loop():
     
     while True:
         try:
+            worker_state['last_action'] = 'Waiting for task'
+            print(f"[{WORKER_ID}] Waiting for task...", flush=True)
             result = get_next_task()
             
             if result:
                 queue_name, task_id = result
-                task_id = int(task_id)
+                # Decode bytes to string if needed
+                task_id = task_id.decode() if isinstance(task_id, bytes) else str(task_id)
+                worker_state['last_action'] = f"Received task #{task_id}"
                 print(f"[{WORKER_ID}] Received task_id {task_id} from queue {queue_name}", flush=True)
                 
+                worker_state['last_action'] = f"Fetching task #{task_id} details"
                 print(f"[{WORKER_ID}] Fetching task details for task #{task_id} from {API_URL}", flush=True)
                 response = requests.get(f"{API_URL}/tasks/{task_id}", timeout=5)
                 if response.status_code != 200:
+                    worker_state['last_action'] = f"Error fetching task #{task_id}"
                     print(f"[{WORKER_ID}] Error fetching task details: {response.status_code} - {response.text}", flush=True)
                     continue
                     
                 task = response.json()
                 
                 if task.get('status') == 'cancelled':
+                    worker_state['last_action'] = f"Skipped cancelled task #{task_id}"
                     print(f"[{WORKER_ID}] Skipped task {task_id}: Task status is cancelled in DB", flush=True)
                     continue
                 
                 if task.get('status') == 'pending':
+                    worker_state['last_action'] = f"Executing task #{task_id}"
                     print(f"[{WORKER_ID}] Starting task {task_id} ({task.get('type')})...", flush=True)
                     worker_state['status'] = 'busy'
                     worker_state['current_task_id'] = task_id
@@ -182,8 +209,10 @@ def worker_loop():
                         retry_count = task.get('retry_count', 0)
                         if retry_count > 0:
                             delay = min(2 ** retry_count, 30)
+                            worker_state['last_action'] = f"Backing off task #{task_id} for {delay}s"
                             print(f"[{WORKER_ID}] Waiting {delay}s backoff before retry...", flush=True)
                             time.sleep(delay)
+                            worker_state['last_action'] = f"Executing task #{task_id}"
                         
                         execute_task(task)
                         
@@ -191,10 +220,12 @@ def worker_loop():
                                      json={'status': 'completed', 'worker_id': WORKER_ID}, headers=HEADERS, timeout=5)
                         if res_complete.status_code != 200:
                             print(f"[{WORKER_ID}] Warning: failed to patch status to completed: {res_complete.status_code} - {res_complete.text}", flush=True)
+                        worker_state['last_action'] = f"Completed task #{task_id}"
                         print(f"[{WORKER_ID}] Completed task {task_id} successfully!", flush=True)
                         worker_state['tasks_completed'] += 1
                         
                     except Exception as e:
+                        worker_state['last_action'] = f"Failed task #{task_id}"
                         print(f"[{WORKER_ID}] Failed task {task_id}: {str(e)}", flush=True)
                         res_fail = requests.patch(f"{API_URL}/tasks/{task_id}", 
                                      json={
@@ -210,15 +241,18 @@ def worker_loop():
                         worker_state['status'] = 'idle'
                         worker_state['current_task_id'] = None
                 else:
+                    worker_state['last_action'] = f"Skipped task #{task_id}"
                     print(f"[{WORKER_ID}] Skipped task {task_id}: status is {task.get('status')}, not pending", flush=True)
             else:
-                # Idle poll sleep
-                time.sleep(0.5)
+                # No task found
+                pass
                 
         except Exception as e:
+            worker_state['last_action'] = f"Loop Exception: {str(e)[:20]}"
             print(f"[{WORKER_ID}] Loop Exception: {e}", flush=True)
             traceback.print_exc()
             time.sleep(2)
 
 if __name__ == "__main__":
+    print("WORKER MAIN STARTED", flush=True)
     worker_loop()

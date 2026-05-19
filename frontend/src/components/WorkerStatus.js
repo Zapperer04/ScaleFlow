@@ -1,35 +1,65 @@
 import React from 'react';
-import { Server } from 'lucide-react';
+import { Server, CheckCircle, XCircle, Play, Eye } from 'lucide-react';
 
 const WorkerStatus = ({ workers }) => {
+  const getRelativeTime = (isoString) => {
+    if (!isoString) return 'Never';
+    const diffMs = Date.now() - new Date(isoString);
+    const diffSec = Math.max(0, Math.floor(diffMs / 1000));
+    if (diffSec < 5) return 'just now';
+    if (diffSec < 60) return `${diffSec}s ago`;
+    const diffMin = Math.floor(diffSec / 60);
+    return `${diffMin}m ago`;
+  };
+
   return (
-    <div className="panel">
+    <div className="panel worker-status-panel">
       <div className="panel-header">
         <h2>Active Workers</h2>
-        <span className="panel-subtitle">Live worker health status</span>
+        <span className="panel-subtitle">Live health and telemetry</span>
       </div>
       <div className="workers-list">
         {workers.length === 0 ? (
           <div className="empty-log">
             <Server size={32} opacity={0.3} />
-            <p>No workers connected</p>
+            <p>No workers configured</p>
           </div>
         ) : (
           workers.map((worker, idx) => (
-            <div key={idx} className="worker-item">
-              <div className="worker-indicator active" />
-              <div className="worker-info">
-                <div className="worker-name">{worker.worker_id}</div>
-                <div className="worker-status">
-                  Last seen: {new Date(worker.last_seen).toLocaleTimeString()}
+            <div key={idx} className={`worker-item status-${worker.status}`}>
+              <div className="worker-header">
+                <div className="worker-title">
+                  <div className={`worker-indicator ${worker.status}`} />
+                  <span className="worker-name">{worker.worker_id}</span>
                 </div>
-                <div className="worker-stats" style={{marginTop: '4px', fontSize: '0.8rem', display: 'flex', gap: '8px', color: '#9ca3af'}}>
-                  <span className={`worker-badge ${worker.status}`} style={{
-                    padding: '2px 6px', borderRadius: '4px', background: worker.status === 'busy' ? 'rgba(59,130,246,0.2)' : 'rgba(156,163,175,0.2)'
-                  }}>{worker.status}</span>
-                  <span>✓ {worker.tasks_completed || 0}</span>
-                  <span>✗ {worker.tasks_failed || 0}</span>
-                  {worker.current_task_id && <span>Task #{worker.current_task_id}</span>}
+                <span className={`status-badge ${worker.status}`}>{worker.status}</span>
+              </div>
+              
+              <div className="worker-body">
+                <div className="worker-meta">
+                  <span className="meta-label">Last seen:</span>
+                  <span className="meta-val">{getRelativeTime(worker.last_seen)}</span>
+                </div>
+                <div className="worker-meta">
+                  <span className="meta-label">Last Action:</span>
+                  <span className="meta-val action-text">{worker.last_action || 'None'}</span>
+                </div>
+                {worker.current_task_id && (
+                  <div className="worker-meta current-task">
+                    <span className="meta-label">Current Task:</span>
+                    <span className="meta-val highlight">#{worker.current_task_id}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="worker-counters">
+                <div className="counter-item success">
+                  <CheckCircle size={14} />
+                  <span>{worker.tasks_completed || 0} completed</span>
+                </div>
+                <div className="counter-item danger">
+                  <XCircle size={14} />
+                  <span>{worker.tasks_failed || 0} failed</span>
                 </div>
               </div>
             </div>

@@ -349,48 +349,126 @@ body {
 
 .worker-item {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 12px;
   padding: 16px;
   background: rgba(15, 23, 42, 0.4);
   border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 10px;
-  transition: all 0.2s;
+  border-radius: 12px;
+  transition: all 0.25s ease;
 }
 
 .worker-item:hover {
   background: rgba(15, 23, 42, 0.6);
-  transform: translateX(4px);
+  transform: translateY(-2px);
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+.worker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.worker-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .worker-indicator {
-  width: 12px;
-  height: 12px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  flex-shrink: 0;
 }
 
-.worker-indicator.active {
+.worker-indicator.busy {
+  background: #3b82f6;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+}
+
+.worker-indicator.idle {
   background: #10b981;
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
 }
 
-.worker-info {
-  flex: 1;
+.worker-indicator.offline {
+  background: #64748b;
 }
 
-.worker-name {
+.status-badge {
+  font-size: 0.7rem;
   font-weight: 700;
-  color: #fff;
-  font-size: 1rem;
-  margin-bottom: 4px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
-.worker-status {
-  font-size: 0.75rem;
-  color: #64748b;
+.status-badge.busy { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+.status-badge.idle { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+.status-badge.offline { background: rgba(100, 116, 139, 0.15); color: #94a3b8; }
+
+.worker-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: rgba(30, 41, 59, 0.3);
+  border-radius: 8px;
 }
+
+.worker-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+}
+
+.meta-label {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.meta-val {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.meta-val.action-text {
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  color: #a78bfa;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.worker-meta.current-task {
+  border-top: 1px dashed rgba(148, 163, 184, 0.1);
+  padding-top: 6px;
+  margin-top: 4px;
+}
+
+.meta-val.highlight {
+  color: #3b82f6;
+  font-weight: 700;
+}
+
+.worker-counters {
+  display: flex;
+  gap: 12px;
+}
+
+.counter-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.counter-item.success { color: #34d399; }
+.counter-item.danger { color: #f87171; }
 
 .log-container {
   max-height: 500px;
@@ -622,3 +700,147 @@ body {
 .cancel-btn:hover { background: rgba(239, 68, 68, 0.3); }
 .clickable { cursor: pointer; }
 .clickable:hover { border-color: rgba(139, 92, 246, 0.5); }
+
+/* Stuck Queue and General Warning Alert Banner */
+.alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  animation: slideDown 0.3s ease-out;
+}
+
+.alert-banner.warning {
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  color: #fcd34d;
+}
+
+.alert-icon {
+  font-size: 1.2rem;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Activity Bar / Pulse Indicators */
+.activity-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  padding: 10px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  width: max-content;
+}
+
+.activity-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.activity-pulse.busy {
+  background: #3b82f6;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.6);
+  animation: pulse 1.5s infinite;
+}
+
+.activity-pulse.idle {
+  background: #10b981;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.6);
+  animation: pulse 2s infinite;
+}
+
+.activity-pulse.stuck {
+  background: #fbbf24;
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.6);
+  animation: pulse 1s infinite;
+}
+
+.activity-pulse.offline {
+  background: #64748b;
+}
+
+.activity-text {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+/* Pending Task Specific Details */
+.pending-details {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(251, 191, 36, 0.05);
+  border: 1px dashed rgba(251, 191, 36, 0.2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-top: 8px;
+}
+
+.pending-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.775rem;
+}
+
+.pending-detail-row .detail-label {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.pending-detail-row .detail-val {
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+.pending-detail-row .detail-val.yes { color: #34d399; }
+.pending-detail-row .detail-val.no { color: #f87171; }
+.pending-detail-row .detail-val.code { font-family: monospace; color: #a78bfa; }
+.pending-detail-row .detail-val.highlight { color: #fbbf24; font-size: 0.85rem; }
+.pending-detail-row .detail-val.duration { color: #fb7185; }
+
+/* Stuck Task Warning Styles */
+.log-entry.stuck-warning {
+  border-left-width: 5px;
+  background: rgba(239, 68, 68, 0.03);
+  border-color: #ef4444;
+}
+
+.log-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stuck-badge {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  animation: pulse 1.5s infinite;
+}

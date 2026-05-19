@@ -181,8 +181,61 @@ def get_tasks():
         
         total_pages = (total_tasks + limit - 1) // limit if limit > 0 else 0
         
+        # Fetch Redis queues
+        high_queue = redis_client.lrange('task_queue_high', 0, -1) or []
+        medium_queue = redis_client.lrange('task_queue_medium', 0, -1) or []
+        low_queue = redis_client.lrange('task_queue_low', 0, -1) or []
+        
+        queues_map = {
+            'high': high_queue,
+            'medium': medium_queue,
+            'low': low_queue
+        }
+        
+        tasks_dicts = []
+        for task in tasks:
+            td = task.to_dict()
+            if task.status == 'pending':
+                in_redis = False
+                q_name = None
+                q_pos = None
+                
+                p_queue_name = PRIORITY_QUEUES.get(task.priority, 'task_queue_medium')
+                p_list = redis_client.lrange(p_queue_name, 0, -1) or []
+                
+                task_id_str = str(task.id)
+                if task_id_str in p_list:
+                    in_redis = True
+                    q_name = p_queue_name
+                    try:
+                        idx = p_list.index(task_id_str)
+                        q_pos = len(p_list) - idx
+                    except ValueError:
+                        pass
+                else:
+                    for q_key, lst in queues_map.items():
+                        if task_id_str in lst:
+                            in_redis = True
+                            q_name = PRIORITY_QUEUES.get(q_key)
+                            try:
+                                idx = lst.index(task_id_str)
+                                q_pos = len(lst) - idx
+                            except ValueError:
+                                pass
+                            break
+                
+                td['queued_in_redis'] = in_redis
+                td['queue_name'] = q_name
+                td['queue_position'] = q_pos
+            else:
+                td['queued_in_redis'] = False
+                td['queue_name'] = None
+                td['queue_position'] = None
+            
+            tasks_dicts.append(td)
+
         return jsonify({
-            "tasks": [task.to_dict() for task in tasks],
+            "tasks": tasks_dicts,
             "metadata": {
                 "current_page": page,
                 "limit": limit,
@@ -379,7 +432,8 @@ def worker_heartbeat():
         'status': data.get('status', 'idle'),
         'current_task_id': data.get('current_task_id', None),
         'tasks_completed': data.get('tasks_completed', 0),
-        'tasks_failed': data.get('tasks_failed', 0)
+        'tasks_failed': data.get('tasks_failed', 0),
+        'last_action': data.get('last_action', 'None')
     }
     redis_client.setex(worker_key, WORKER_HEARTBEAT_EXPIRY, json.dumps(worker_data))
     return jsonify({'status': 'ok'}), 200
