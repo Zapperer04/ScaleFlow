@@ -4,34 +4,43 @@ services:
   worker1:
     build: ./backend
     environment:
-      - API_URL=http://host.docker.internal:5000
-      - REDIS_HOST=host.docker.internal
-      - WORKER_ID=worker-1
-      - API_KEY=${API_KEY:-dev_secret_api_key}
+      API_URL: "http://host.docker.internal:5000"
+      REDIS_HOST: "redis"
+      WORKER_ID: "worker-1"
+      API_KEY: "${API_KEY:-dev_secret_api_key}"
+      PYTHONUNBUFFERED: "1"
     depends_on:
       - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   worker2:
     build: ./backend
     environment:
-      - API_URL=http://host.docker.internal:5000
-      - REDIS_HOST=host.docker.internal
-      - WORKER_ID=worker-2
-      - API_KEY=${API_KEY:-dev_secret_api_key}
+      API_URL: "http://host.docker.internal:5000"
+      REDIS_HOST: "redis"
+      WORKER_ID: "worker-2"
+      API_KEY: "${API_KEY:-dev_secret_api_key}"
+      PYTHONUNBUFFERED: "1"
     depends_on:
       - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   worker3:
     build: ./backend
     environment:
-      - API_URL=http://host.docker.internal:5000
-      - REDIS_HOST=host.docker.internal
-      - WORKER_ID=worker-3
-      - API_KEY=${API_KEY:-dev_secret_api_key}
+      API_URL: "http://host.docker.internal:5000"
+      REDIS_HOST: "redis"
+      WORKER_ID: "worker-3"
+      API_KEY: "${API_KEY:-dev_secret_api_key}"
+      PYTHONUNBUFFERED: "1"
     depends_on:
       - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   redis:

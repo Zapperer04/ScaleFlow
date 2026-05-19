@@ -6,6 +6,8 @@ ENV/
 
 # Helper scripts
 push-to-github.bat
+rebuild-docker.bat
+check-logs.bat
 STARTUP_GUIDE.md
 
 # Python Cache
