@@ -6,21 +6,42 @@ import os
 import random
 import threading
 from datetime import datetime
+from models import load_env
+
+load_env()
 
 API_URL = os.getenv("API_URL", "http://localhost:5000")
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 WORKER_ID = os.getenv("WORKER_ID", "worker-1")
+API_KEY = os.getenv("API_KEY", "dev_secret_api_key")
 
-redis_client = redis.Redis(host=REDIS_HOST, port=6379, decode_responses=True)
+HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
+
+redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
 PRIORITY_QUEUES = ['task_queue_high', 'task_queue_medium', 'task_queue_low']
+
+worker_state = {
+    'status': 'idle',
+    'current_task_id': None,
+    'tasks_completed': 0,
+    'tasks_failed': 0
+}
 
 def send_heartbeat():
     """Send heartbeat to API every 10 seconds"""
     while True:
         try:
+            payload = {
+                'worker_id': WORKER_ID,
+                'status': worker_state['status'],
+                'current_task_id': worker_state['current_task_id'],
+                'tasks_completed': worker_state['tasks_completed'],
+                'tasks_failed': worker_state['tasks_failed']
+            }
             requests.post(f"{API_URL}/workers/heartbeat", 
-                        json={'worker_id': WORKER_ID})
+                        json=payload, headers=HEADERS)
         except Exception as e:
             print(f"[{WORKER_ID}] Heartbeat failed: {e}")
         time.sleep(10)
@@ -95,7 +116,6 @@ def worker_loop():
     print(f"[{WORKER_ID}] Queue priority: HIGH > MEDIUM > LOW")
     print(f"[{WORKER_ID}] Heartbeat enabled - sending every 10s")
     
-    
     heartbeat_thread = threading.Thread(target=send_heartbeat, daemon=True)
     heartbeat_thread.start()
     
@@ -110,9 +130,16 @@ def worker_loop():
                 response = requests.get(f"{API_URL}/tasks/{task_id}")
                 task = response.json()
                 
-                if task['status'] == 'pending':
+                if task.get('status') == 'cancelled':
+                    print(f"[{WORKER_ID}]   ⚠ Skipping cancelled task {task_id}")
+                    continue
+                
+                if task.get('status') == 'pending':
+                    worker_state['status'] = 'busy'
+                    worker_state['current_task_id'] = task_id
+                    
                     requests.patch(f"{API_URL}/tasks/{task_id}", 
-                                 json={'status': 'running'})
+                                 json={'status': 'running', 'worker_id': WORKER_ID}, headers=HEADERS)
                     
                     try:
                         retry_count = task.get('retry_count', 0)
@@ -124,17 +151,24 @@ def worker_loop():
                         execute_task(task)
                         
                         requests.patch(f"{API_URL}/tasks/{task_id}", 
-                                     json={'status': 'completed'})
+                                     json={'status': 'completed', 'worker_id': WORKER_ID}, headers=HEADERS)
                         print(f"[{WORKER_ID}]   ✓ Task {task_id} completed!\n")
+                        worker_state['tasks_completed'] += 1
                         
                     except Exception as e:
                         print(f"[{WORKER_ID}]   ✗ Task {task_id} failed: {str(e)}")
                         requests.patch(f"{API_URL}/tasks/{task_id}", 
                                      json={
                                          'status': 'failed',
-                                         'error_message': str(e)
-                                     })
+                                         'error_message': str(e),
+                                         'worker_id': WORKER_ID
+                                     }, headers=HEADERS)
                         print()
+                        worker_state['tasks_failed'] += 1
+                        
+                    finally:
+                        worker_state['status'] = 'idle'
+                        worker_state['current_task_id'] = None
             else:
                 time.sleep(1)
                 

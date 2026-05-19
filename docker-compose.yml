@@ -7,6 +7,7 @@ services:
       - API_URL=http://host.docker.internal:5000
       - REDIS_HOST=host.docker.internal
       - WORKER_ID=worker-1
+      - API_KEY=${API_KEY:-dev_secret_api_key}
     depends_on:
       - redis
     restart: unless-stopped
@@ -17,6 +18,7 @@ services:
       - API_URL=http://host.docker.internal:5000
       - REDIS_HOST=host.docker.internal
       - WORKER_ID=worker-2
+      - API_KEY=${API_KEY:-dev_secret_api_key}
     depends_on:
       - redis
     restart: unless-stopped
@@ -27,6 +29,7 @@ services:
       - API_URL=http://host.docker.internal:5000
       - REDIS_HOST=host.docker.internal
       - WORKER_ID=worker-3
+      - API_KEY=${API_KEY:-dev_secret_api_key}
     depends_on:
       - redis
     restart: unless-stopped
