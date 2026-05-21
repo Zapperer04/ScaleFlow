@@ -27,11 +27,11 @@ TEMPLATES = {
             {
                 "id": "generate_embeddings",
                 "task_type": "generate_embeddings",
-                "display_name": "Generate Embeddings (Mock)",
+                "display_name": "Generate Embeddings",
                 "depends_on": ["chunk_text"],
                 "priority": "medium",
                 "expected_input_artifacts": ["text_chunks"],
-                "output_artifact_type": "embeddings_mock",
+                "output_artifact_type": "vector_index",
                 "payload": {}
             },
             {
@@ -40,7 +40,7 @@ TEMPLATES = {
                 "display_name": "Summarize Document",
                 "depends_on": ["generate_embeddings"],
                 "priority": "medium",
-                "expected_input_artifacts": ["embeddings_mock"],
+                "expected_input_artifacts": ["vector_index"],
                 "output_artifact_type": "summary",
                 "payload": {}
             }
@@ -76,7 +76,7 @@ TEMPLATES = {
                 "depends_on": ["detect_error_patterns"],
                 "priority": "medium",
                 "expected_input_artifacts": ["error_patterns"],
-                "output_artifact_type": "embeddings_mock",
+                "output_artifact_type": "vector_index",
                 "payload": {}
             },
             {
@@ -95,7 +95,7 @@ TEMPLATES = {
                 "display_name": "Final Report Generation",
                 "depends_on": ["generate_embeddings", "summarize_logs"],
                 "priority": "medium",
-                "expected_input_artifacts": ["embeddings_mock", "log_summary"],
+                "expected_input_artifacts": ["vector_index", "log_summary"],
                 "output_artifact_type": "final_report",
                 "payload": {}
             }

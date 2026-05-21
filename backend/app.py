@@ -1310,12 +1310,12 @@ def test_ingestion_flow():
         redis_client.lrem('task_queue_test_medium', 0, str(embed_task_id))
         
         from worker import handle_generate_embeddings
-        embed_output = handle_generate_embeddings({}, {"text_chunks": chunk_output})
-        e_storage_uri, e_checksum = save_artifact_to_disk(pipeline_id, embed_task_id, "embeddings_mock", embed_output)
+        embed_output = handle_generate_embeddings({"_pipeline_id": pipeline_id, "_task_id": embed_task_id}, {"text_chunks": chunk_output})
+        e_storage_uri, e_checksum = save_artifact_to_disk(pipeline_id, embed_task_id, "vector_index", embed_output)
         res_art = client.post('/artifacts', json={
             "pipeline_id": pipeline_id,
             "task_id": embed_task_id,
-            "artifact_type": "embeddings_mock",
+            "artifact_type": "vector_index",
             "storage_uri": e_storage_uri,
             "checksum": e_checksum
         }, headers=headers)
@@ -1338,7 +1338,7 @@ def test_ingestion_flow():
         redis_client.lrem('task_queue_test_medium', 0, str(sum_task_id))
         
         from worker import handle_summarize_document
-        sum_output = handle_summarize_document({}, {"embeddings_mock": embed_output})
+        sum_output = handle_summarize_document({"_pipeline_id": pipeline_id}, {"vector_index": embed_output})
         s_storage_uri, s_checksum = save_artifact_to_disk(pipeline_id, sum_task_id, "summary", sum_output)
         res_art = client.post('/artifacts', json={
             "pipeline_id": pipeline_id,
@@ -1357,14 +1357,14 @@ def test_ingestion_flow():
         }, headers=headers)
         log_test("Completed summarize_document task.")
         
-        # G. Confirm parsed_text, text_chunks, embeddings_mock, and summary artifacts are created, and FileRecord is 'processed'
+        # G. Confirm parsed_text, text_chunks, vector_index, and summary artifacts are created, and FileRecord is 'processed'
         db = SessionLocal()
         try:
             file_rec = db.query(FileRecord).filter(FileRecord.id == file_id).first()
             if file_rec.status != 'processed':
                 return jsonify({"status": "failed", "step": "verify_final_file_status", "error": f"Expected processed, got {file_rec.status}"}), 400
                 
-            for art_type in ["parsed_text", "text_chunks", "embeddings_mock", "summary"]:
+            for art_type in ["parsed_text", "text_chunks", "vector_index", "summary"]:
                 art = db.query(Artifact).filter(Artifact.pipeline_id == pipeline_id, Artifact.artifact_type == art_type).first()
                 if not art:
                     return jsonify({"status": "failed", "step": f"verify_{art_type}_artifact", "error": f"Artifact {art_type} not found in DB"}), 400
@@ -1424,6 +1424,349 @@ def test_ingestion_flow():
             "status": "passed",
             "file_id": file_id,
             "pipeline_id": pipeline_id,
+            "logs": test_logs
+        }), 200
+
+@app.route('/search', methods=['POST'])
+@require_api_key
+def search_chunks():
+    data = request.json or {}
+    query = data.get("query")
+    if not query:
+        return jsonify({"error": "Missing 'query' field"}), 400
+        
+    top_k = data.get("top_k", 5)
+    pipeline_id = data.get("pipeline_id")
+    file_id = data.get("file_id")
+    
+    try:
+        from services.embedding_service import embed_text
+        query_vector = embed_text(query)
+    except Exception as e:
+        return jsonify({"error": f"Failed to generate query embedding: {str(e)}"}), 500
+        
+    filters = {}
+    if pipeline_id is not None:
+        filters["pipeline_id"] = int(pipeline_id)
+    if file_id is not None:
+        filters["file_id"] = int(file_id)
+        
+    try:
+        from services.vector_store import search_similar
+        results = search_similar("scaleflow_chunks", query_vector, top_k=top_k, filters=filters)
+        return jsonify(results), 200
+    except Exception as e:
+        return jsonify({"error": f"Search failed: {str(e)}"}), 500
+
+@app.route('/vectors/stats', methods=['GET'])
+def vector_stats():
+    try:
+        from services.vector_store import get_collection_stats
+        stats = get_collection_stats("scaleflow_chunks")
+        return jsonify(stats), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/vectors/test-search', methods=['POST', 'GET'])
+def test_vectors_search():
+    test_logs = []
+    def log_test(msg):
+        test_logs.append(msg)
+        print(f"[Test Vectors Search] {msg}", flush=True)
+
+    log_test("Starting Real Embeddings + Vector Database Indexing integration test suite...")
+    
+    with app.test_client() as client:
+        headers = {"X-API-Key": API_KEY}
+        
+        # A. Create a temporary text file upload with known content
+        import io
+        known_content = "ScaleFlow is a distributed orchestration engine designed by Advanced Agentic Coding. It handles task leasing, worker heartbeats, and reliable task recovery. It uses Qdrant for semantic vector search."
+        data = {
+            'file': (io.BytesIO(known_content.encode('utf-8')), 'test_vectors_search.txt'),
+            'pipeline_type': 'document_processing_demo'
+        }
+        
+        res = client.post('/files/upload', data=data, content_type='multipart/form-data', headers=headers)
+        if res.status_code != 201:
+            return jsonify({"status": "failed", "step": "upload_file", "error": res.json}), 400
+            
+        res_json = res.json
+        file_id = res_json['file_id']
+        pipeline_id = res_json['pipeline_id']
+        tasks_created = res_json['tasks']
+        
+        log_test(f"File uploaded. file_id={file_id}, pipeline_id={pipeline_id}")
+        
+        # B. Run document_processing_demo step-by-step
+        # 1. Claim and execute parse_document
+        parse_task = next(t for t in tasks_created if t['type'] == 'parse_document')
+        parse_task_id = parse_task['id']
+        
+        res_claim = client.post(f'/tasks/{parse_task_id}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_parse", "error": res_claim.json}), 400
+        lease_token = res_claim.json['lease_token']
+        redis_client.lrem('task_queue_test_high', 0, str(parse_task_id))
+        
+        from context.artifact_store import load_artifact_from_disk, save_artifact_to_disk
+        
+        # Get uploaded file artifact details
+        db = SessionLocal()
+        try:
+            uploaded_art = db.query(Artifact).filter(Artifact.pipeline_id == pipeline_id, Artifact.artifact_type == 'uploaded_file').first()
+            uploaded_art_uri = uploaded_art.storage_uri
+        finally:
+            db.close()
+            
+        raw_file_content = load_artifact_from_disk(uploaded_art_uri)
+        
+        from worker import handle_parse_document
+        parsed_output = handle_parse_document({}, {"uploaded_file": raw_file_content})
+        p_storage_uri, p_checksum = save_artifact_to_disk(pipeline_id, parse_task_id, "parsed_text", parsed_output)
+        
+        res_art = client.post('/artifacts', json={
+            "pipeline_id": pipeline_id,
+            "task_id": parse_task_id,
+            "artifact_type": "parsed_text",
+            "storage_uri": p_storage_uri,
+            "checksum": p_checksum
+        }, headers=headers)
+        if res_art.status_code != 201:
+            return jsonify({"status": "failed", "step": "register_parsed_art", "error": res_art.json}), 400
+        parsed_text_art_id = res_art.json['id']
+        
+        res_patch = client.patch(f'/tasks/{parse_task_id}', json={
+            "status": "completed",
+            "worker_id": "test-worker",
+            "lease_token": lease_token,
+            "output_artifact_ids": [parsed_text_art_id]
+        }, headers=headers)
+        if res_patch.status_code != 200:
+            return jsonify({"status": "failed", "step": "complete_parse", "error": res_patch.json}), 400
+        log_test("Completed parse_document task.")
+        
+        # 2. Claim and execute chunk_text
+        chunk_task = next(t for t in tasks_created if t['type'] == 'chunk_text')
+        chunk_task_id = chunk_task['id']
+        
+        res_claim = client.post(f'/tasks/{chunk_task_id}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_chunk", "error": res_claim.json}), 400
+        lease_token = res_claim.json['lease_token']
+        redis_client.lrem('task_queue_test_medium', 0, str(chunk_task_id))
+        
+        from worker import handle_chunk_text
+        chunk_output = handle_chunk_text({}, {"parsed_text": parsed_output})
+        c_storage_uri, c_checksum = save_artifact_to_disk(pipeline_id, chunk_task_id, "text_chunks", chunk_output)
+        res_art = client.post('/artifacts', json={
+            "pipeline_id": pipeline_id,
+            "task_id": chunk_task_id,
+            "artifact_type": "text_chunks",
+            "storage_uri": c_storage_uri,
+            "checksum": c_checksum
+        }, headers=headers)
+        if res_art.status_code != 201:
+            return jsonify({"status": "failed", "step": "register_chunk_art", "error": res_art.json}), 400
+        chunk_art_id = res_art.json['id']
+        
+        res_patch = client.patch(f'/tasks/{chunk_task_id}', json={
+            "status": "completed",
+            "worker_id": "test-worker",
+            "lease_token": lease_token,
+            "output_artifact_ids": [chunk_art_id]
+        }, headers=headers)
+        if res_patch.status_code != 200:
+            return jsonify({"status": "failed", "step": "complete_chunk", "error": res_patch.json}), 400
+        log_test("Completed chunk_text task.")
+        
+        # 3. Execute generate_embeddings (pre-compute BEFORE claiming so model
+        #    loading time does not consume the 30-second lease window)
+        embed_task = next(t for t in tasks_created if t['type'] == 'generate_embeddings')
+        embed_task_id = embed_task['id']
+        redis_client.lrem('task_queue_test_medium', 0, str(embed_task_id))
+        
+        # Heavy work done first (model load + Qdrant upsert can take >30s)
+        from worker import handle_generate_embeddings
+        embed_output = handle_generate_embeddings({"_pipeline_id": pipeline_id, "_task_id": embed_task_id}, {"text_chunks": chunk_output})
+        e_storage_uri, e_checksum = save_artifact_to_disk(pipeline_id, embed_task_id, "vector_index", embed_output)
+        
+        # NOW claim (lease starts here, so completion is always within window)
+        res_claim = client.post(f'/tasks/{embed_task_id}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_embed", "error": res_claim.json}), 400
+        lease_token = res_claim.json['lease_token']
+        
+        res_art = client.post('/artifacts', json={
+            "pipeline_id": pipeline_id,
+            "task_id": embed_task_id,
+            "artifact_type": "vector_index",
+            "storage_uri": e_storage_uri,
+            "checksum": e_checksum
+        }, headers=headers)
+        if res_art.status_code != 201:
+            return jsonify({"status": "failed", "step": "register_embed_art", "error": res_art.json}), 400
+        embed_art_id = res_art.json['id']
+        
+        res_patch = client.patch(f'/tasks/{embed_task_id}', json={
+            "status": "completed",
+            "worker_id": "test-worker",
+            "lease_token": lease_token,
+            "output_artifact_ids": [embed_art_id]
+        }, headers=headers)
+        if res_patch.status_code != 200:
+            return jsonify({"status": "failed", "step": "complete_embed", "error": res_patch.json}), 400
+        log_test("Completed generate_embeddings task.")
+        
+        # 4. Claim and execute summarize_document
+        sum_task = next(t for t in tasks_created if t['type'] == 'summarize_document')
+        sum_task_id = sum_task['id']
+        
+        res_claim = client.post(f'/tasks/{sum_task_id}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_summarize", "error": res_claim.json}), 400
+        lease_token = res_claim.json['lease_token']
+        redis_client.lrem('task_queue_test_medium', 0, str(sum_task_id))
+        
+        from worker import handle_summarize_document
+        sum_output = handle_summarize_document({"_pipeline_id": pipeline_id}, {"vector_index": embed_output})
+        s_storage_uri, s_checksum = save_artifact_to_disk(pipeline_id, sum_task_id, "summary", sum_output)
+        res_art = client.post('/artifacts', json={
+            "pipeline_id": pipeline_id,
+            "task_id": sum_task_id,
+            "artifact_type": "summary",
+            "storage_uri": s_storage_uri,
+            "checksum": s_checksum
+        }, headers=headers)
+        if res_art.status_code != 201:
+            return jsonify({"status": "failed", "step": "register_summary_art", "error": res_art.json}), 400
+        sum_art_id = res_art.json['id']
+        
+        res_patch = client.patch(f'/tasks/{sum_task_id}', json={
+            "status": "completed",
+            "worker_id": "test-worker",
+            "lease_token": lease_token,
+            "output_artifact_ids": [sum_art_id]
+        }, headers=headers)
+        if res_patch.status_code != 200:
+            return jsonify({"status": "failed", "step": "complete_summarize", "error": res_patch.json}), 400
+        log_test("Completed summarize_document task.")
+        
+        # C. Confirm vector_index artifact is created.
+        db = SessionLocal()
+        try:
+            vector_art = db.query(Artifact).filter(Artifact.pipeline_id == pipeline_id, Artifact.artifact_type == 'vector_index').first()
+            if not vector_art:
+                return jsonify({"status": "failed", "step": "verify_vector_artifact", "error": "vector_index artifact not found"}), 400
+            log_test(f"Confirmed vector_index artifact is created with ID #{vector_art.id}")
+        finally:
+            db.close()
+            
+        # D. Confirm Qdrant collection exists.
+        from services.vector_store import client as qdrant_client_obj
+        try:
+            collections = qdrant_client_obj.get_collections().collections
+            exists = any(c.name == "scaleflow_chunks" for c in collections)
+            if not exists:
+                return jsonify({"status": "failed", "step": "verify_qdrant_collection", "error": "scaleflow_chunks collection not found in Qdrant"}), 400
+            log_test("Confirmed Qdrant collection 'scaleflow_chunks' exists.")
+        except Exception as qe:
+            return jsonify({"status": "failed", "step": "verify_qdrant_collection_exception", "error": str(qe)}), 400
+            
+        # E. Confirm vector count increased.
+        from services.vector_store import get_collection_stats
+        stats = get_collection_stats("scaleflow_chunks")
+        pts_count = stats.get("points_count", 0)
+        if pts_count <= 0:
+            return jsonify({"status": "failed", "step": "verify_vector_count", "error": f"Vector count is {pts_count}, expected > 0"}), 400
+        log_test(f"Confirmed Qdrant vector count increased to {pts_count} points.")
+        
+        # F & G. Search for a known phrase and confirm at least one relevant chunk is returned
+        search_res = client.post('/search', json={
+            "query": "reliable task recovery",
+            "top_k": 3,
+            "pipeline_id": pipeline_id
+        }, headers=headers)
+        if search_res.status_code != 200:
+            return jsonify({"status": "failed", "step": "search_known_phrase", "error": search_res.json}), 400
+        
+        search_data = search_res.json
+        if not search_data:
+            return jsonify({"status": "failed", "step": "verify_search_results", "error": "Search returned empty results"}), 400
+            
+        found_match = any("recovery" in item["chunk_text"].lower() or "task" in item["chunk_text"].lower() for item in search_data)
+        if not found_match:
+            return jsonify({"status": "failed", "step": "verify_search_match", "error": f"None of the search results contained relevant keywords. Results: {search_data}"}), 400
+        log_test(f"Confirmed relevant chunk returned: '{search_data[0]['chunk_text']}' with score {search_data[0]['score']}")
+        
+        # H. Confirm /files/test-ingestion still passes
+        log_test("Verifying backward compatibility: running /files/test-ingestion...")
+        res_ing = client.post('/files/test-ingestion', headers=headers)
+        if res_ing.status_code != 200:
+            return jsonify({"status": "failed", "step": "verify_files_test_ingestion", "error": res_ing.json}), 400
+        log_test("Confirmed /files/test-ingestion passes successfully.")
+        
+        # I. Confirm /pipelines/test-dag still passes
+        log_test("Verifying backward compatibility: running /pipelines/test-dag...")
+        res_dag = client.post('/pipelines/test-dag', headers=headers)
+        if res_dag.status_code != 200:
+            return jsonify({"status": "failed", "step": "verify_pipelines_test_dag", "error": res_dag.json}), 400
+        log_test("Confirmed /pipelines/test-dag passes successfully.")
+        
+        # J. Confirm /tasks/test-recovery still passes
+        log_test("Verifying backward compatibility: running /tasks/test-recovery...")
+        res_rec = client.post('/tasks/test-recovery', headers=headers)
+        if res_rec.status_code != 200:
+            return jsonify({"status": "failed", "step": "verify_tasks_test_recovery", "error": res_rec.json}), 400
+        log_test("Confirmed /tasks/test-recovery passes successfully.")
+        
+        # K. Confirm standalone send_email still works
+        log_test("Verifying backward compatibility: executing standalone send_email task...")
+        res_email = client.post('/tasks', json={
+            "type": "send_email",
+            "data": {
+                "to": "test@example.com",
+                "subject": "Compatibility test",
+                "body": "Ingestion test run",
+                "test_normal": True
+            }
+        }, headers=headers)
+        if res_email.status_code != 201:
+            return jsonify({"status": "failed", "step": "create_standalone_task", "error": res_email.json}), 400
+            
+        standalone_task_id = res_email.json['id']
+        res_claim_email = client.post(f'/tasks/{standalone_task_id}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim_email.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_standalone_task", "error": res_claim_email.json}), 400
+        email_lease_token = res_claim_email.json['lease_token']
+        
+        res_patch_email = client.patch(f'/tasks/{standalone_task_id}', json={
+            "status": "completed",
+            "worker_id": "test-worker",
+            "lease_token": email_lease_token
+        }, headers=headers)
+        if res_patch_email.status_code != 200:
+            return jsonify({"status": "failed", "step": "complete_standalone_task", "error": res_patch_email.json}), 400
+        log_test("Confirmed standalone send_email task completed successfully.")
+        
+        # L. Confirm Redis production queues return to 0
+        for q in ['task_queue_high', 'task_queue_medium', 'task_queue_low']:
+            len_q = redis_client.llen(q)
+            if len_q != 0:
+                return jsonify({"status": "failed", "step": "verify_production_queues_empty", "error": f"Production queue {q} has size {len_q}, expected 0"}), 400
+        log_test("Confirmed production Redis queues return to 0.")
+        
+        # Clean up Redis test queues
+        for q in ['task_queue_test_high', 'task_queue_test_medium', 'task_queue_test_low']:
+            redis_client.delete(q)
+            
+        return jsonify({
+            "status": "passed",
+            "file_id": file_id,
+            "pipeline_id": pipeline_id,
+            "qdrant_status": stats.get("status"),
+            "vector_count": pts_count,
+            "search_results": search_data,
             "logs": test_logs
         }), 200
 
@@ -1550,11 +1893,11 @@ def test_dag_flow():
         res_claim = client.post(f'/tasks/{embed_task["id"]}/claim', json={"worker_id": "test-worker"}, headers=headers)
         lease_token = res_claim.json['lease_token']
         
-        storage_uri, checksum = save_artifact_to_disk(pipeline_id, embed_task["id"], "embeddings_mock", [[0.1, 0.2]])
+        storage_uri, checksum = save_artifact_to_disk(pipeline_id, embed_task["id"], "vector_index", {"collection": "scaleflow_chunks", "vector_count": 1, "embedding_model": "all-MiniLM-L6-v2", "dimension": 384, "qdrant_upserted": True, "chunk_refs": []})
         res_art = client.post('/artifacts', json={
             "pipeline_id": pipeline_id,
             "task_id": embed_task["id"],
-            "artifact_type": "embeddings_mock",
+            "artifact_type": "vector_index",
             "storage_uri": storage_uri,
             "checksum": checksum
         }, headers=headers)

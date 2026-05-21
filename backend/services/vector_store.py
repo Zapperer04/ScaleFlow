@@ -1,0 +1,134 @@
+import os
+import uuid
+import logging
+from datetime import datetime
+from qdrant_client import QdrantClient
+from qdrant_client.http import models as qmodels
+
+logger = logging.getLogger(__name__)
+
+QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
+QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
+
+# Initialize client
+client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+
+def ensure_collection(collection_name="scaleflow_chunks", vector_size=384):
+    try:
+        collections = client.get_collections().collections
+        exists = any(c.name == collection_name for c in collections)
+        if not exists:
+            logger.info(f"Creating Qdrant collection: {collection_name} (size: {vector_size})")
+            client.create_collection(
+                collection_name=collection_name,
+                vectors_config=qmodels.VectorParams(
+                    size=vector_size,
+                    distance=qmodels.Distance.COSINE
+                )
+            )
+        return True
+    except Exception as e:
+        logger.error(f"Failed to ensure Qdrant collection {collection_name}: {e}")
+        return False
+
+def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metadata=None):
+    collection_name = "scaleflow_chunks"
+    if not ensure_collection(collection_name, 384):
+        logger.error("Could not ensure collection exists in Qdrant. Aborting upsert.")
+        return False
+        
+    points = []
+    for i, (chunk_text, vector) in enumerate(zip(chunks, vectors)):
+        point_id = str(uuid.uuid4())
+        
+        # Build payload
+        payload = {
+            "pipeline_id": pipeline_id,
+            "file_id": file_id,
+            "task_id": task_id,
+            "chunk_index": i,
+            "chunk_text": chunk_text,
+            "source_artifact_id": metadata.get("source_artifact_id") if metadata else None,
+            "original_filename": metadata.get("original_filename") if metadata else None,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        points.append(
+            qmodels.PointStruct(
+                id=point_id,
+                vector=vector,
+                payload=payload
+            )
+        )
+        
+    try:
+        client.upsert(
+            collection_name=collection_name,
+            points=points
+        )
+        logger.info(f"Successfully upserted {len(points)} chunks to collection {collection_name}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to upsert chunks to Qdrant: {e}")
+        return False
+
+def search_similar(collection_name, query_vector, top_k=5, filters=None):
+    try:
+        # Build filter if present
+        q_filter = None
+        if filters:
+            conditions = []
+            for key, val in filters.items():
+                if val is not None:
+                    conditions.append(
+                        qmodels.FieldCondition(
+                            key=key,
+                            match=qmodels.MatchValue(value=val)
+                        )
+                    )
+            if conditions:
+                q_filter = qmodels.Filter(must=conditions)
+                
+        search_result = client.search(
+            collection_name=collection_name,
+            query_vector=query_vector,
+            limit=top_k,
+            query_filter=q_filter
+        )
+        
+        results = []
+        for hit in search_result:
+            results.append({
+                "score": round(hit.score, 4),
+                "chunk_text": hit.payload.get("chunk_text"),
+                "pipeline_id": hit.payload.get("pipeline_id"),
+                "file_id": hit.payload.get("file_id"),
+                "task_id": hit.payload.get("task_id"),
+                "chunk_index": hit.payload.get("chunk_index"),
+                "original_filename": hit.payload.get("original_filename")
+            })
+        return results
+    except Exception as e:
+        logger.error(f"Failed to search similar in Qdrant: {e}")
+        return []
+
+def get_collection_stats(collection_name="scaleflow_chunks"):
+    try:
+        # Ensure collection configured
+        ensure_collection(collection_name, 384)
+        info = client.get_collection(collection_name=collection_name)
+        return {
+            "collection": collection_name,
+            "points_count": info.points_count,
+            "vector_size": 384,
+            "status": "ok"
+        }
+    except Exception as e:
+        logger.error(f"Failed to get collection stats: {e}")
+        return {
+            "collection": collection_name,
+            "points_count": 0,
+            "vector_size": 384,
+            "status": "error",
+            "error": str(e)
+        }

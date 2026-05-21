@@ -179,41 +179,161 @@ def handle_chunk_text(payload, input_artifacts):
     print(f"[{WORKER_ID}]   [OK] Chunked text into {len(chunks)} chunks", flush=True)
     return chunks
 
+def get_pipeline_file_info(pipeline_id):
+    file_id = None
+    original_filename = None
+    uploaded_art_id = None
+    
+    # 1. Fetch pipeline details (which has artifacts)
+    try:
+        res = requests.get(f"{API_URL}/pipelines/{pipeline_id}", headers=HEADERS, timeout=5)
+        if res.status_code == 200:
+            p_data = res.json()
+            artifacts = p_data.get("artifacts", [])
+            for art in artifacts:
+                if art.get("artifact_type") == "uploaded_file":
+                    uploaded_art_id = art.get("id")
+                    meta = art.get("metadata_json") or art.get("metadata") or {}
+                    if isinstance(meta, str):
+                        try:
+                            meta = json.loads(meta)
+                        except:
+                            meta = {}
+                    original_filename = meta.get("original_filename")
+    except Exception as e:
+        print(f"[{WORKER_ID}] Error fetching pipeline detail: {e}", flush=True)
+
+    # 2. Fetch files list to find the matching file_id
+    try:
+        res_files = requests.get(f"{API_URL}/files", headers=HEADERS, timeout=5)
+        if res_files.status_code == 200:
+            files_list = res_files.json()
+            for f in files_list:
+                if f.get("pipeline_id") == pipeline_id:
+                    file_id = f.get("id")
+                    if not original_filename:
+                        original_filename = f.get("original_filename")
+                    break
+    except Exception as e:
+        print(f"[{WORKER_ID}] Error fetching files list: {e}", flush=True)
+        
+    return file_id, original_filename, uploaded_art_id
+
+def get_artifact_content_by_type(pipeline_id, artifact_type):
+    from context.artifact_store import load_artifact_from_disk
+    try:
+        res = requests.get(f"{API_URL}/pipelines/{pipeline_id}", headers=HEADERS, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            for art in data.get("artifacts", []):
+                if art.get("artifact_type") == artifact_type:
+                    storage_uri = art.get("storage_uri")
+                    return load_artifact_from_disk(storage_uri)
+    except Exception as e:
+        print(f"[{WORKER_ID}] Error fetching artifact {artifact_type} for pipeline {pipeline_id}: {e}", flush=True)
+    return None
+
 def handle_generate_embeddings(payload, input_artifacts):
+    from services.embedding_service import embed_chunks
+    from services.vector_store import upsert_document_chunks
+    
+    # Read text_chunks or error_patterns
     chunks = input_artifacts.get("text_chunks") or input_artifacts.get("error_patterns") or []
     if isinstance(chunks, str):
         chunks = [chunks]
     elif isinstance(chunks, dict):
         chunks = [json.dumps(chunks)]
         
-    embeddings = []
-    for chunk in chunks:
-        length = len(chunk)
-        h = hash(chunk) % 1000
-        vector = [
-            round(float(length) / 100.0, 4),
-            round(float(h) / 1000.0, 4),
-            round(float(length * h) / 100000.0, 4),
-            0.1234,
-            0.5678
-        ]
-        embeddings.append({
-            "chunk_preview": chunk[:30] + "..." if len(chunk) > 30 else chunk,
-            "vector": vector
+    pipeline_id = payload.get('_pipeline_id')
+    task_id = payload.get('_task_id')
+    
+    print(f"[{WORKER_ID}]   -> Generating real embeddings for {len(chunks)} chunks in pipeline {pipeline_id}...", flush=True)
+    
+    # Generate real embeddings (384-dimensional)
+    vectors = []
+    if chunks:
+        try:
+            vectors = embed_chunks(chunks)
+        except Exception as e:
+            print(f"[{WORKER_ID}] Embedding failed: {e}. Using deterministic fallback.", flush=True)
+            from services.embedding_service import deterministic_fallback_embed
+            vectors = [deterministic_fallback_embed(chunk) for chunk in chunks]
+        
+    # Get context details via helper
+    file_id = None
+    original_filename = None
+    source_artifact_id = None
+    if pipeline_id:
+        file_id, original_filename, source_artifact_id = get_pipeline_file_info(pipeline_id)
+        
+    # Upsert to Qdrant
+    qdrant_upserted = False
+    if chunks and vectors:
+        meta_dict = {
+            "source_artifact_id": source_artifact_id,
+            "original_filename": original_filename
+        }
+        qdrant_upserted = upsert_document_chunks(
+            pipeline_id=pipeline_id,
+            file_id=file_id,
+            task_id=task_id,
+            chunks=chunks,
+            vectors=vectors,
+            metadata=meta_dict
+        )
+        
+    # Build the chunk refs for the artifact
+    chunk_refs = []
+    for idx, chunk in enumerate(chunks):
+        chunk_refs.append({
+            "chunk_index": idx,
+            "chunk_text": chunk[:100] + "..." if len(chunk) > 100 else chunk
         })
         
-    print(f"[{WORKER_ID}]   [OK] Generated {len(embeddings)} mock embedding vectors", flush=True)
-    return embeddings
+    # Create vector_index artifact data
+    artifact_data = {
+        "collection": "scaleflow_chunks",
+        "vector_count": len(chunks),
+        "embedding_model": "all-MiniLM-L6-v2",
+        "dimension": 384,
+        "qdrant_upserted": qdrant_upserted,
+        "chunk_refs": chunk_refs
+    }
+    
+    print(f"[{WORKER_ID}]   [OK] Generated vector index with {len(chunks)} points (upserted to Qdrant: {qdrant_upserted})", flush=True)
+    return artifact_data
 
 def handle_summarize_document(payload, input_artifacts):
+    pipeline_id = payload.get('_pipeline_id')
+    # 1. First, check if text_chunks is directly in input_artifacts
     chunks = input_artifacts.get("text_chunks")
     if not chunks:
-        embeddings = input_artifacts.get("embeddings_mock")
+        # 2. Check if we have vector_index or embeddings_mock in input_artifacts
+        # If we have vector_index, we can fetch text_chunks from pipeline artifacts
+        if pipeline_id:
+            chunks = get_artifact_content_by_type(pipeline_id, "text_chunks")
+            
+    if not chunks:
+        # 3. Fallback to embeddings_mock or vector_index (for backward compatibility / tests)
+        embeddings = input_artifacts.get("embeddings_mock") or input_artifacts.get("vector_index")
         if embeddings and isinstance(embeddings, list):
             chunks = [item.get("chunk_preview", "") for item in embeddings if isinstance(item, dict)]
+        elif embeddings and isinstance(embeddings, dict) and "chunk_refs" in embeddings:
+            # Maybe the vector_index stored chunk_refs
+            chunks = [ref.get("chunk_text", "") for ref in embeddings.get("chunk_refs", []) if isinstance(ref, dict)]
+            if not any(chunks) and pipeline_id:
+                chunks = get_artifact_content_by_type(pipeline_id, "text_chunks")
         else:
             text = input_artifacts.get("parsed_text", "")
-            chunks = [text]
+            if not text and pipeline_id:
+                text = get_artifact_content_by_type(pipeline_id, "parsed_text")
+            if text:
+                chunks = [text]
+            else:
+                chunks = []
+                
+    if not chunks:
+        chunks = ["No content to summarize."]
         
     summary_chunks = chunks[:2]
     summary = "SUMMARY:\n" + "\n".join(summary_chunks)
@@ -294,7 +414,7 @@ HANDLER_MAP = {
 OUTPUT_ARTIFACT_TYPES = {
     "parse_document": "parsed_text",
     "chunk_text": "text_chunks",
-    "generate_embeddings": "embeddings_mock",
+    "generate_embeddings": "vector_index",
     "summarize_document": "summary",
     "parse_logs": "parsed_logs",
     "detect_error_patterns": "error_patterns",
@@ -353,6 +473,9 @@ def execute_task(task):
                     print(f"[{WORKER_ID}] Error loading input artifact {art_id}: {ex}", flush=True)
             
             # Execute handler
+            if isinstance(task_data, dict):
+                task_data['_task_id'] = task_id
+                task_data['_pipeline_id'] = task.get('pipeline_id')
             output_data = handler(task_data, input_artifacts)
             
             # Save artifact to disk

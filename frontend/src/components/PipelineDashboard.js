@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { 
   GitBranch, Play, X, RefreshCw, FileText, CheckCircle2, 
-  XCircle, AlertTriangle, Clock, ChevronRight, Activity, Trash2, Upload
+  XCircle, AlertTriangle, Clock, ChevronRight, Activity, Trash2, Upload,
+  Search, Database
 } from 'lucide-react';
 import { 
   fetchPipelines, fetchPipelineDetails, createPipeline, 
   cancelPipeline, runPipelineTests, fetchArtifactContent,
-  uploadFile, fetchUploadedFiles, fetchUploadedFileDetail
+  uploadFile, fetchUploadedFiles, fetchUploadedFileDetail,
+  searchVectors, fetchVectorStats
 } from '../services/api';
 
 const DEFAULT_PAYLOADS = {
@@ -42,6 +44,14 @@ const PipelineDashboard = () => {
   const [uploadMessage, setUploadMessage] = useState(null);
   const [uploadedFiles, setUploadedFiles] = useState([]);
 
+  // Semantic Search & Vector Stats State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [topK, setTopK] = useState(5);
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [searchFilterPipeline, setSearchFilterPipeline] = useState('');
+  const [vectorStats, setVectorStats] = useState(null);
+
   // Sync pipelines list
   const loadPipelinesList = async () => {
     try {
@@ -72,18 +82,46 @@ const PipelineDashboard = () => {
     }
   };
 
+  // Sync vector stats
+  const loadVectorStatsData = async () => {
+    try {
+      const stats = await fetchVectorStats();
+      setVectorStats(stats);
+    } catch (err) {
+      console.error('Failed to load vector stats:', err);
+    }
+  };
+
   useEffect(() => {
     loadPipelinesList();
     loadUploadedFilesList();
+    loadVectorStatsData();
     const interval = setInterval(() => {
       loadPipelinesList();
       loadUploadedFilesList();
+      loadVectorStatsData();
       if (selectedPipelineId) {
         loadPipelineDetails(selectedPipelineId);
       }
     }, 3000);
     return () => clearInterval(interval);
   }, [selectedPipelineId]);
+
+  const handleSearch = async (e) => {
+    if (e) e.preventDefault();
+    if (!searchQuery) return;
+    setSearching(true);
+    try {
+      const pId = (searchFilterPipeline && searchFilterPipeline !== 'all') ? parseInt(searchFilterPipeline) : null;
+      const res = await searchVectors(searchQuery, topK, pId, null);
+      setSearchResults(res);
+    } catch (err) {
+      console.error('Vector search failed:', err);
+      alert('Search failed: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setSearching(false);
+    }
+  };
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -873,6 +911,146 @@ const PipelineDashboard = () => {
               </p>
             </div>
           )}
+
+          {/* Semantic Search Panel (Phase 4) */}
+          <div style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '16px', padding: '24px' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+              <Database size={20} className="text-purple" style={{ color: '#8b5cf6' }} />
+              Semantic Search (Phase 4)
+            </h3>
+
+            {/* Qdrant Status Banner */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', background: 'rgba(15, 23, 42, 0.3)', padding: '12px', borderRadius: '8px', marginBottom: '20px', fontSize: '0.8rem', border: '1px solid rgba(148, 163, 184, 0.05)' }}>
+              <div>
+                <span style={{ color: '#64748b', display: 'block' }}>Qdrant Collection</span>
+                <span style={{ fontWeight: '600', color: '#e2e8f0' }}>{vectorStats?.collection || 'scaleflow_chunks'}</span>
+              </div>
+              <div>
+                <span style={{ color: '#64748b', display: 'block' }}>Total Vectors</span>
+                <span style={{ fontWeight: '600', color: '#10b981', fontSize: '1rem' }}>{vectorStats?.points_count !== undefined ? vectorStats.points_count : '...'}</span>
+              </div>
+              <div>
+                <span style={{ color: '#64748b', display: 'block' }}>Qdrant Status</span>
+                <span style={{ 
+                  fontWeight: 'bold', 
+                  color: vectorStats?.status === 'ok' ? '#10b981' : '#ef4444',
+                  textTransform: 'uppercase'
+                }}>
+                  {vectorStats?.status || 'OFFLINE'}
+                </span>
+              </div>
+            </div>
+
+            {/* Search Form */}
+            <form onSubmit={handleSearch}>
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                <div style={{ flex: 1, minWidth: '200px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Search Query</label>
+                  <input 
+                    type="text" 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Enter search phrase (e.g. task recovery)..."
+                    style={{
+                      padding: '10px',
+                      fontSize: '0.85rem',
+                      background: 'rgba(15, 23, 42, 0.5)',
+                      border: '1px solid rgba(148, 163, 184, 0.2)',
+                      borderRadius: '8px',
+                      color: '#f1f5f9'
+                    }}
+                  />
+                </div>
+
+                <div style={{ width: '80px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Top K</label>
+                  <select 
+                    value={topK}
+                    onChange={(e) => setTopK(parseInt(e.target.value))}
+                    style={{
+                      padding: '10px',
+                      fontSize: '0.85rem',
+                      background: 'rgba(15, 23, 42, 0.5)',
+                      border: '1px solid rgba(148, 163, 184, 0.2)',
+                      borderRadius: '8px',
+                      color: '#f1f5f9'
+                    }}
+                  >
+                    <option value="3">3</option>
+                    <option value="5">5</option>
+                    <option value="10">10</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                  <button 
+                    type="submit"
+                    disabled={searching || !searchQuery}
+                    style={{
+                      background: 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%)',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '10px 20px',
+                      fontSize: '0.85rem',
+                      fontWeight: '600',
+                      cursor: searching || !searchQuery ? 'not-allowed' : 'pointer',
+                      opacity: searching || !searchQuery ? 0.6 : 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      height: '38px'
+                    }}
+                  >
+                    {searching ? <RefreshCw className="animate-spin" size={14} /> : <Search size={14} />}
+                    Search
+                  </button>
+                </div>
+              </div>
+
+              {/* Filter */}
+              <div style={{ display: 'flex', gap: '16px', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '16px', borderTop: '1px dashed rgba(148, 163, 184, 0.1)', paddingTop: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input 
+                    type="checkbox" 
+                    id="filter-pipeline-chk"
+                    checked={!!searchFilterPipeline} 
+                    onChange={(e) => setSearchFilterPipeline(e.target.checked ? (selectedPipelineId || 'all') : '')} 
+                  />
+                  <label htmlFor="filter-pipeline-chk" style={{ cursor: 'pointer' }}>Filter to current pipeline {selectedPipelineId ? `(#${selectedPipelineId})` : ''}</label>
+                </div>
+              </div>
+            </form>
+
+            {/* Search Results list */}
+            <div style={{ borderTop: '1px solid rgba(148, 163, 184, 0.1)', paddingTop: '16px' }}>
+              <h4 style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '12px', fontWeight: '600' }}>Results:</h4>
+              
+              {searchResults.length === 0 ? (
+                <div style={{ padding: '20px 0', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
+                  No search results. Enter a query to find matching document chunks.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '300px', overflowY: 'auto' }}>
+                  {searchResults.map((r, idx) => (
+                    <div key={idx} style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '8px', padding: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '0.75rem' }}>
+                        <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
+                          Score: {r.score}
+                        </span>
+                        <span style={{ color: '#94a3b8' }}>
+                          Chunk {r.chunk_index} | File: <span style={{ color: '#cbd5e1' }}>{r.original_filename || `ID ${r.file_id}`}</span> | Pipeline: <span style={{ color: '#a78bfa', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setSelectedPipelineId(r.pipeline_id)}>#{r.pipeline_id}</span>
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: '1.4', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+                        {r.chunk_text}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
         </div>
       </div>
