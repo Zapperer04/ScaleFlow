@@ -155,3 +155,20 @@ def update_pipeline_status(db, pipeline_id):
         elif cancelled_count > 0:
             pipeline.status = 'cancelled'
             pipeline.completed_at = datetime.now()
+
+    # Sync FileRecord status
+    from models import FileRecord
+    file_record = db.query(FileRecord).filter(FileRecord.pipeline_id == pipeline_id).first()
+    if file_record:
+        if pipeline.status == 'created':
+            file_record.status = 'uploaded'
+        elif pipeline.status == 'running':
+            file_record.status = 'processing'
+        elif pipeline.status == 'completed':
+            file_record.status = 'processed'
+        elif pipeline.status in ['failed', 'cancelled', 'blocked']:
+            file_record.status = 'failed'
+            if pipeline.error_message:
+                file_record.error_message = pipeline.error_message
+            else:
+                file_record.error_message = f"Pipeline status became {pipeline.status}"

@@ -6,6 +6,7 @@ import os
 import random
 import threading
 import traceback
+import re
 from datetime import datetime
 
 def load_env():
@@ -74,62 +75,83 @@ except ImportError:
     TASK_REGISTRY = {}
 
 def handle_send_email(payload):
-    print(f"[{WORKER_ID}]   → Sending email to {payload.get('to')}", flush=True)
+    print(f"[{WORKER_ID}]   -> Sending email to {payload.get('to')}", flush=True)
     if payload.get('cc'):
-        print(f"[{WORKER_ID}]   → CC: {payload.get('cc')}", flush=True)
+        print(f"[{WORKER_ID}]   -> CC: {payload.get('cc')}", flush=True)
     time.sleep(2)
-    print(f"[{WORKER_ID}]   ✓ Email sent!", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Email sent!", flush=True)
 
 def handle_process_video(payload):
-    print(f"[{WORKER_ID}]   → Processing video {payload.get('file')}", flush=True)
+    print(f"[{WORKER_ID}]   -> Processing video {payload.get('file')}", flush=True)
     if payload.get('format'):
-        print(f"[{WORKER_ID}]   → Format: {payload.get('format')}", flush=True)
+        print(f"[{WORKER_ID}]   -> Format: {payload.get('format')}", flush=True)
     if payload.get('resolution'):
-        print(f"[{WORKER_ID}]   → Resolution: {payload.get('resolution')}", flush=True)
+        print(f"[{WORKER_ID}]   -> Resolution: {payload.get('resolution')}", flush=True)
     time.sleep(3)
-    print(f"[{WORKER_ID}]   ✓ Video processed!", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Video processed!", flush=True)
 
 def handle_generate_report(payload):
-    print(f"[{WORKER_ID}]   → Generating report: {payload.get('report_type')}", flush=True)
+    print(f"[{WORKER_ID}]   -> Generating report: {payload.get('report_type')}", flush=True)
     if payload.get('format'):
-        print(f"[{WORKER_ID}]   → Format: {payload.get('format')}", flush=True)
+        print(f"[{WORKER_ID}]   -> Format: {payload.get('format')}", flush=True)
     time.sleep(4)
-    print(f"[{WORKER_ID}]   ✓ Report generated!", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Report generated!", flush=True)
 
 def handle_data_backup(payload):
-    print(f"[{WORKER_ID}]   → Backing up {payload.get('database')}", flush=True)
+    print(f"[{WORKER_ID}]   -> Backing up {payload.get('database')}", flush=True)
     time.sleep(5)
-    print(f"[{WORKER_ID}]   ✓ Backup completed!", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Backup completed!", flush=True)
 
 def handle_image_processing(payload):
-    print(f"[{WORKER_ID}]   → Processing image: {payload.get('image_path')}", flush=True)
+    print(f"[{WORKER_ID}]   -> Processing image: {payload.get('image_path')}", flush=True)
     time.sleep(3)
-    print(f"[{WORKER_ID}]   ✓ Image processed!", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Image processed!", flush=True)
 
 def handle_send_notification(payload):
-    print(f"[{WORKER_ID}]   → Sending notification to {payload.get('user_id')}", flush=True)
+    print(f"[{WORKER_ID}]   -> Sending notification to {payload.get('user_id')}", flush=True)
     time.sleep(1)
-    print(f"[{WORKER_ID}]   ✓ Notification sent!", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Notification sent!", flush=True)
 
 def handle_run_ml_model(payload):
-    print(f"[{WORKER_ID}]   → Running ML model: {payload.get('model_name')}", flush=True)
+    print(f"[{WORKER_ID}]   -> Running ML model: {payload.get('model_name')}", flush=True)
     time.sleep(6)
-    print(f"[{WORKER_ID}]   ✓ Model executed!", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Model executed!", flush=True)
 
 def handle_webhook_trigger(payload):
-    print(f"[{WORKER_ID}]   → Triggering webhook: {payload.get('url')}", flush=True)
+    print(f"[{WORKER_ID}]   -> Triggering webhook: {payload.get('url')}", flush=True)
     time.sleep(2)
-    print(f"[{WORKER_ID}]   ✓ Webhook triggered!", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Webhook triggered!", flush=True)
 
 # Phase 2 Demo Handlers
+def parse_pdf_text(content):
+    matches = re.findall(r'\(([^)]*)\)', content)
+    if matches:
+        cleaned = []
+        for m in matches:
+            m = m.replace(r'\(', '(').replace(r'\)', ')')
+            if m.strip():
+                cleaned.append(m)
+        return " ".join(cleaned)
+    clean_text = "".join(c for c in content if c.isprintable() or c in "\r\n\t")
+    return clean_text
+
 def handle_parse_document(payload, input_artifacts):
     text = payload.get('source_text')
     if not text and input_artifacts:
-        text = list(input_artifacts.values())[0]
+        uploaded_file_data = input_artifacts.get("uploaded_file")
+        if uploaded_file_data is not None:
+            if isinstance(uploaded_file_data, str) and (uploaded_file_data.startswith("%PDF") or "%PDF" in uploaded_file_data[:1024]):
+                text = parse_pdf_text(uploaded_file_data)
+            else:
+                text = str(uploaded_file_data)
+        else:
+            text = list(input_artifacts.values())[0]
+            if isinstance(text, dict) and "content" in text:
+                text = text["content"]
     if not text:
         text = ""
     normalized = text.strip()
-    print(f"[{WORKER_ID}]   ✓ Parsed document of length {len(normalized)}", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Parsed document of length {len(normalized)}", flush=True)
     return normalized
 
 def handle_chunk_text(payload, input_artifacts):
@@ -154,7 +176,7 @@ def handle_chunk_text(payload, input_artifacts):
     if not chunks:
         chunks = [text]
         
-    print(f"[{WORKER_ID}]   ✓ Chunked text into {len(chunks)} chunks", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Chunked text into {len(chunks)} chunks", flush=True)
     return chunks
 
 def handle_generate_embeddings(payload, input_artifacts):
@@ -180,7 +202,7 @@ def handle_generate_embeddings(payload, input_artifacts):
             "vector": vector
         })
         
-    print(f"[{WORKER_ID}]   ✓ Generated {len(embeddings)} mock embedding vectors", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Generated {len(embeddings)} mock embedding vectors", flush=True)
     return embeddings
 
 def handle_summarize_document(payload, input_artifacts):
@@ -195,17 +217,23 @@ def handle_summarize_document(payload, input_artifacts):
         
     summary_chunks = chunks[:2]
     summary = "SUMMARY:\n" + "\n".join(summary_chunks)
-    print(f"[{WORKER_ID}]   ✓ Generated extractive summary", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Generated extractive summary", flush=True)
     return summary
 
 def handle_parse_logs(payload, input_artifacts):
     text = payload.get("source_text", "")
     if not text and input_artifacts:
-        text = list(input_artifacts.values())[0]
+        uploaded_file_data = input_artifacts.get("uploaded_file")
+        if uploaded_file_data is not None:
+            text = str(uploaded_file_data)
+        else:
+            text = list(input_artifacts.values())[0]
+            if isinstance(text, dict) and "content" in text:
+                text = text["content"]
         
     lines = text.splitlines()
     parsed = [line.strip() for line in lines if line.strip()]
-    print(f"[{WORKER_ID}]   ✓ Parsed {len(parsed)} log lines", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Parsed {len(parsed)} log lines", flush=True)
     return parsed
 
 def handle_detect_error_patterns(payload, input_artifacts):
@@ -216,7 +244,7 @@ def handle_detect_error_patterns(payload, input_artifacts):
         if "ERROR" in log_upper or "WARN" in log_upper or "FAIL" in log_upper or "CRITICAL" in log_upper:
             errors.append(log)
             
-    print(f"[{WORKER_ID}]   ✓ Detected {len(errors)} error patterns in logs", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Detected {len(errors)} error patterns in logs", flush=True)
     return errors
 
 def handle_summarize_logs(payload, input_artifacts):
@@ -227,7 +255,7 @@ def handle_summarize_logs(payload, input_artifacts):
         for err in errors[:5]:
             summary += f"- {err}\n"
             
-    print(f"[{WORKER_ID}]   ✓ Summarized logs with {len(errors)} anomalies", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Summarized logs with {len(errors)} anomalies", flush=True)
     return summary
 
 def handle_final_report(payload, input_artifacts):
@@ -241,7 +269,7 @@ def handle_final_report(payload, input_artifacts):
     report += f"Anomalies Count: {len(errors)}\n\n"
     report += summary
     
-    print(f"[{WORKER_ID}]   ✓ Generated final report", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Generated final report", flush=True)
     return report
 
 HANDLER_MAP = {
@@ -290,14 +318,14 @@ def execute_task(task):
     if simulate_hang_seconds is not None:
         try:
             hang_time = float(simulate_hang_seconds)
-            print(f"[{WORKER_ID}]   ⏳ [Simulation] Hanging task for {hang_time} seconds...", flush=True)
+            print(f"[{WORKER_ID}]   [HANG] [Simulation] Hanging task for {hang_time} seconds...", flush=True)
             time.sleep(hang_time)
-            print(f"[{WORKER_ID}]   ⏳ [Simulation] Wake up after hang!", flush=True)
+            print(f"[{WORKER_ID}]   [HANG] [Simulation] Wake up after hang!", flush=True)
         except (ValueError, TypeError):
-            print(f"[{WORKER_ID}]   ⚠ Invalid simulate_hang_seconds value: {simulate_hang_seconds}", flush=True)
+            print(f"[{WORKER_ID}]   [WARN] Invalid simulate_hang_seconds value: {simulate_hang_seconds}", flush=True)
 
     if random.random() < 0.1 and retry_count < 2:
-        print(f"[{WORKER_ID}]   ✗ Task failed! Will retry...", flush=True)
+        print(f"[{WORKER_ID}]   [FAIL] Task failed! Will retry...", flush=True)
         raise Exception(f"Simulated failure for task {task_id}")
     
     # Check in handler map
@@ -354,7 +382,7 @@ def execute_task(task):
         else:
             handler(task_data)
     else:
-        print(f"[{WORKER_ID}]   ⚠ Unknown task type / handler: {task_type}", flush=True)
+        print(f"[{WORKER_ID}]   [WARN] Unknown task type / handler: {task_type}", flush=True)
 
 def get_next_task():
     """Get next task from highest priority queue that has tasks"""
@@ -439,7 +467,7 @@ def worker_loop():
                     if res_complete.status_code != 200:
                         print(f"[{WORKER_ID}] Warning: failed to patch status to completed: {res_complete.status_code} - {res_complete.text}", flush=True)
                         if res_complete.status_code == 409:
-                            print(f"[{WORKER_ID}] ⚠️ Task completion rejected: lease expired or owned by another worker.", flush=True)
+                            print(f"[{WORKER_ID}] [WARN] Task completion rejected: lease expired or owned by another worker.", flush=True)
                     else:
                         worker_state['tasks_completed'] += 1
                         
@@ -459,7 +487,7 @@ def worker_loop():
                     if res_fail.status_code != 200:
                         print(f"[{WORKER_ID}] Warning: failed to patch status to failed: {res_fail.status_code} - {res_fail.text}", flush=True)
                         if res_fail.status_code == 409:
-                            print(f"[{WORKER_ID}] ⚠️ Task failure report rejected: lease expired or owned by another worker.", flush=True)
+                            print(f"[{WORKER_ID}] [WARN] Task failure report rejected: lease expired or owned by another worker.", flush=True)
                     else:
                         worker_state['tasks_failed'] += 1
                     

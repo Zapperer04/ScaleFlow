@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
   GitBranch, Play, X, RefreshCw, FileText, CheckCircle2, 
-  XCircle, AlertTriangle, Clock, ChevronRight, Activity, Trash2 
+  XCircle, AlertTriangle, Clock, ChevronRight, Activity, Trash2, Upload
 } from 'lucide-react';
 import { 
   fetchPipelines, fetchPipelineDetails, createPipeline, 
-  cancelPipeline, runPipelineTests, fetchArtifactContent 
+  cancelPipeline, runPipelineTests, fetchArtifactContent,
+  uploadFile, fetchUploadedFiles, fetchUploadedFileDetail
 } from '../services/api';
 
 const DEFAULT_PAYLOADS = {
@@ -34,6 +35,13 @@ const PipelineDashboard = () => {
   const [activeArtifact, setActiveArtifact] = useState(null);
   const [artifactLoading, setArtifactLoading] = useState(false);
 
+  // File Ingestion State
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [ingestPipelineType, setIngestPipelineType] = useState('auto');
+  const [uploading, setUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState(null);
+  const [uploadedFiles, setUploadedFiles] = useState([]);
+
   // Sync pipelines list
   const loadPipelinesList = async () => {
     try {
@@ -41,6 +49,16 @@ const PipelineDashboard = () => {
       setPipelines(data);
     } catch (err) {
       console.error('Failed to load pipelines:', err);
+    }
+  };
+
+  // Sync uploaded files list
+  const loadUploadedFilesList = async () => {
+    try {
+      const data = await fetchUploadedFiles();
+      setUploadedFiles(data);
+    } catch (err) {
+      console.error('Failed to load uploaded files:', err);
     }
   };
 
@@ -56,14 +74,54 @@ const PipelineDashboard = () => {
 
   useEffect(() => {
     loadPipelinesList();
+    loadUploadedFilesList();
     const interval = setInterval(() => {
       loadPipelinesList();
+      loadUploadedFilesList();
       if (selectedPipelineId) {
         loadPipelineDetails(selectedPipelineId);
       }
     }, 3000);
     return () => clearInterval(interval);
   }, [selectedPipelineId]);
+
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setSelectedFile(e.target.files[0]);
+      setUploadMessage(null);
+    }
+  };
+
+  const handleFileUpload = async (e) => {
+    e.preventDefault();
+    if (!selectedFile) {
+      alert('Please select a file first.');
+      return;
+    }
+    setUploading(true);
+    setUploadMessage('Uploading...');
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('pipeline_type', ingestPipelineType);
+
+      const res = await uploadFile(formData);
+      setUploadMessage('File uploaded successfully! Starting ingestion...');
+      setSelectedFile(null);
+      
+      const fileInput = document.getElementById('ingest-file-picker');
+      if (fileInput) fileInput.value = '';
+      
+      setSelectedPipelineId(res.pipeline_id);
+      loadUploadedFilesList();
+      loadPipelinesList();
+    } catch (err) {
+      console.error('Upload failed:', err);
+      setUploadMessage('Upload failed: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   // Update default payload & name when template type changes
   const handleTypeChange = (type) => {
@@ -280,6 +338,129 @@ const PipelineDashboard = () => {
         {/* Left Side: Create Form + Active Pipelines List */}
         <div style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
+          {/* File Ingestion Card */}
+          <div style={{ background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '16px', color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Upload size={18} className="text-pink" style={{ color: '#ec4899' }} />
+              File Ingestion (Phase 3)
+            </h3>
+            <form onSubmit={handleFileUpload} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="form-field" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Select Unstructured File</label>
+                <input 
+                  id="ingest-file-picker"
+                  type="file" 
+                  onChange={handleFileChange} 
+                  required 
+                  style={{ 
+                    fontSize: '0.85rem', 
+                    padding: '8px', 
+                    background: 'rgba(15, 23, 42, 0.5)', 
+                    border: '1px dashed rgba(148, 163, 184, 0.2)',
+                    borderRadius: '6px',
+                    color: '#e2e8f0',
+                    cursor: 'pointer'
+                  }}
+                />
+              </div>
+
+              <div className="form-field" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Pipeline Template</label>
+                <select 
+                  value={ingestPipelineType} 
+                  onChange={(e) => setIngestPipelineType(e.target.value)}
+                  style={{ fontSize: '0.9rem', padding: '10px' }}
+                >
+                  <option value="auto">Auto-Detect from Extension</option>
+                  <option value="document_processing_demo">Document Processing Demo (.txt, .pdf)</option>
+                  <option value="log_analysis_demo">Log Analysis Demo (.log)</option>
+                </select>
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={uploading || !selectedFile}
+                className="submit-btn" 
+                style={{ 
+                  padding: '10px 16px', 
+                  fontSize: '0.9rem', 
+                  background: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
+                  cursor: uploading || !selectedFile ? 'not-allowed' : 'pointer',
+                  opacity: uploading || !selectedFile ? 0.6 : 1,
+                  fontWeight: '600',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
+              >
+                {uploading ? <RefreshCw className="animate-spin" size={14} /> : <Upload size={14} />}
+                {uploading ? 'Uploading...' : 'Ingest & Process File'}
+              </button>
+
+              {uploadMessage && (
+                <div style={{ 
+                  fontSize: '0.8rem', 
+                  color: uploadMessage.includes('failed') ? '#ef4444' : '#10b981', 
+                  marginTop: '4px',
+                  background: uploadMessage.includes('failed') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                  padding: '8px',
+                  borderRadius: '6px',
+                  border: '1px solid ' + (uploadMessage.includes('failed') ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)')
+                }}>
+                  {uploadMessage}
+                </div>
+              )}
+            </form>
+
+            {/* List of uploaded files status */}
+            {uploadedFiles.length > 0 && (
+              <div style={{ marginTop: '16px', borderTop: '1px solid rgba(148, 163, 184, 0.1)', paddingTop: '12px' }}>
+                <h4 style={{ fontSize: '0.8rem', fontWeight: '600', color: '#94a3b8', marginBottom: '8px' }}>Recent Ingested Files:</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '160px', overflowY: 'auto' }}>
+                  {uploadedFiles.map((f) => (
+                    <div 
+                      key={f.id} 
+                      style={{ 
+                        fontSize: '0.75rem', 
+                        background: 'rgba(15, 23, 42, 0.4)', 
+                        border: '1px solid rgba(148, 163, 184, 0.05)',
+                        borderRadius: '6px',
+                        padding: '8px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '600', color: '#f1f5f9' }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }}>{f.original_filename}</span>
+                        <span style={{ 
+                          color: f.status === 'processed' ? '#10b981' : f.status === 'failed' ? '#ef4444' : f.status === 'processing' ? '#3b82f6' : '#94a3b8' 
+                        }}>{f.status}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', fontSize: '0.7rem' }}>
+                        <span>Size: {(f.size_bytes / 1024).toFixed(1)} KB</span>
+                        {f.pipeline_id ? (
+                          <span 
+                            onClick={() => setSelectedPipelineId(f.pipeline_id)}
+                            style={{ color: '#a78bfa', cursor: 'pointer', textDecoration: 'underline' }}
+                          >
+                            Pipeline #{f.pipeline_id}
+                          </span>
+                        ) : (
+                          <span>No pipeline</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Create Pipeline Card */}
           <div style={{ background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px' }}>
             <h3 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '16px', color: '#f1f5f9' }}>Launch New Pipeline</h3>

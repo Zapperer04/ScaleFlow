@@ -170,6 +170,32 @@ class Task(Base):
             'blocked_reason': self.blocked_reason
         }
 
+class FileRecord(Base):
+    __tablename__ = 'file_records'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    original_filename = Column(String(255), nullable=False)
+    file_type = Column(String(50), nullable=False)
+    storage_uri = Column(Text, nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    status = Column(String(20), default='uploaded') # uploaded, processing, processed, failed
+    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    error_message = Column(Text, nullable=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'original_filename': self.original_filename,
+            'file_type': self.file_type,
+            'storage_uri': self.storage_uri,
+            'size_bytes': self.size_bytes,
+            'status': self.status,
+            'pipeline_id': self.pipeline_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'error_message': self.error_message
+        }
+
 Base.metadata.create_all(engine)
 
 # Auto-migration for existing tables

@@ -6,8 +6,9 @@ import redis
 import os
 import uuid
 import time
+import hashlib
 from functools import wraps
-from models import SessionLocal, Task, TaskDependency, TaskLog, Pipeline, Artifact, load_env
+from models import SessionLocal, Task, TaskDependency, TaskLog, Pipeline, Artifact, FileRecord, load_env
 from task_registry import TASK_REGISTRY, validate_task_payload
 from orchestrator.dag_builder import get_dag_template
 
@@ -940,6 +941,491 @@ def get_artifact_content(artifact_id):
             return jsonify({"error": f"Failed to load file content: {str(e)}"}), 500
     finally:
         db.close()
+
+UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "storage", "uploads"))
+
+@app.route('/files/upload', methods=['POST'])
+@require_api_key
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part in the request"}), 400
+        
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No file selected for uploading"}), 400
+        
+    pipeline_type_req = request.form.get('pipeline_type')
+    
+    db = SessionLocal()
+    try:
+        original_filename = file.filename
+        _, ext = os.path.splitext(original_filename)
+        file_type = ext.lower().replace('.', '')
+        if not file_type:
+            file_type = 'txt'
+            
+        # Determine pipeline type
+        pipeline_type = None
+        if pipeline_type_req and pipeline_type_req != 'auto':
+            pipeline_type = pipeline_type_req
+        else:
+            if ext.lower() == '.txt':
+                pipeline_type = 'document_processing_demo'
+            elif ext.lower() == '.log':
+                pipeline_type = 'log_analysis_demo'
+            elif ext.lower() == '.pdf':
+                pipeline_type = 'document_processing_demo'
+            else:
+                pipeline_type = 'document_processing_demo'
+                
+        # 1. Save file to temporary path
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        temp_filename = f"tmp_{uuid.uuid4()}_{original_filename}"
+        temp_path = os.path.join(UPLOAD_DIR, temp_filename)
+        
+        sha256 = hashlib.sha256()
+        size_bytes = 0
+        with open(temp_path, "wb") as f:
+            while True:
+                chunk = file.read(8192)
+                if not chunk:
+                    break
+                f.write(chunk)
+                sha256.update(chunk)
+                size_bytes += len(chunk)
+        checksum = sha256.hexdigest()
+        
+        # 2. Create database FileRecord row
+        file_record = FileRecord(
+            original_filename=original_filename,
+            file_type=file_type,
+            storage_uri="",
+            size_bytes=size_bytes,
+            status='uploaded'
+        )
+        db.add(file_record)
+        db.flush()
+        
+        # 3. Rename file to final path
+        final_filename = f"{file_record.id}_{original_filename}"
+        final_path = os.path.join(UPLOAD_DIR, final_filename)
+        os.rename(temp_path, final_path)
+        
+        storage_uri = f"storage/uploads/{final_filename}"
+        file_record.storage_uri = storage_uri
+        db.flush()
+        
+        # 4. Create Pipeline automatically
+        pipeline = Pipeline(
+            name=f"Ingestion Pipeline - {original_filename}",
+            pipeline_type=pipeline_type,
+            status='created'
+        )
+        db.add(pipeline)
+        db.flush()
+        
+        file_record.pipeline_id = pipeline.id
+        file_record.status = 'processing'
+        db.flush()
+        
+        # 5. Create uploaded_file artifact
+        metadata_json = {
+            "original_filename": original_filename,
+            "mime_type": file.mimetype or "application/octet-stream",
+            "size_bytes": size_bytes
+        }
+        artifact = Artifact(
+            pipeline_id=pipeline.id,
+            task_id=None,
+            artifact_type='uploaded_file',
+            storage_uri=storage_uri,
+            metadata_json=json.dumps(metadata_json),
+            checksum=checksum
+        )
+        db.add(artifact)
+        db.flush()
+        
+        # 6. Create DAG tasks
+        try:
+            dag_definition = get_dag_template(pipeline_type, {})
+        except ValueError as ve:
+            db.rollback()
+            return jsonify({"error": str(ve)}), 400
+            
+        node_to_task_map = {}
+        for node in dag_definition["nodes"]:
+            registry_info = TASK_REGISTRY.get(node["task_type"], {})
+            default_max_retries = registry_info.get("retry_policy", {}).get("max_retries", 3)
+            
+            initial_status = "blocked" if node.get("depends_on") else "pending"
+            
+            input_ids_str = None
+            if not node.get("depends_on"):
+                input_ids_str = json.dumps([artifact.id])
+                
+            task = Task(
+                type=node["task_type"],
+                data=json.dumps(node["payload"]),
+                priority=node.get("priority", "medium"),
+                max_retries=default_max_retries,
+                status=initial_status,
+                pipeline_id=pipeline.id,
+                input_artifact_ids=input_ids_str
+            )
+            db.add(task)
+            db.flush()
+            node_to_task_map[node["id"]] = task
+            
+        # Wire up dependencies
+        for node in dag_definition["nodes"]:
+            task = node_to_task_map[node["id"]]
+            legacy_deps = []
+            for parent_node_id in node.get("depends_on", []):
+                parent_task = node_to_task_map[parent_node_id]
+                db.add(TaskDependency(task_id=task.id, depends_on_id=parent_task.id))
+                legacy_deps.append(parent_task.id)
+            task.dependencies = json.dumps(legacy_deps)
+            
+        db.commit()
+        
+        # 7. Create logs and queue root tasks
+        for node_id, task in node_to_task_map.items():
+            create_task_log(db, task.id, "task_created", f"Task created as part of pipeline {pipeline.name}")
+            if json.loads(task.dependencies) if task.dependencies else []:
+                create_task_log(db, task.id, "dependency_waiting", f"Waiting on dependencies")
+            elif not task.dependencies or task.dependencies == "[]":
+                create_task_log(db, task.id, "input_artifact_received", f"Root task received input artifact #{artifact.id}")
+                
+        for node in dag_definition["nodes"]:
+            if not node.get("depends_on"):
+                task = node_to_task_map[node["id"]]
+                add_task_to_queue(task.id, task.priority, db=db)
+                
+        from orchestrator.dependency_resolver import update_pipeline_status
+        update_pipeline_status(db, pipeline.id)
+        db.commit()
+        
+        return jsonify({
+            "file_id": file_record.id,
+            "pipeline_id": pipeline.id,
+            "file_type": file_record.file_type,
+            "pipeline_type": pipeline.pipeline_type,
+            "tasks": [t.to_dict() for t in node_to_task_map.values()]
+        }), 201
+        
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/files', methods=['GET'])
+def get_files():
+    db = SessionLocal()
+    try:
+        files = db.query(FileRecord).order_by(FileRecord.id.desc()).limit(50).all()
+        return jsonify([f.to_dict() for f in files]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/files/<int:file_id>', methods=['GET'])
+def get_file_detail(file_id):
+    db = SessionLocal()
+    try:
+        file_record = db.query(FileRecord).filter(FileRecord.id == file_id).first()
+        if not file_record:
+            return jsonify({"error": "File not found"}), 404
+            
+        pipeline = None
+        artifacts = []
+        if file_record.pipeline_id:
+            pipeline_obj = db.query(Pipeline).filter(Pipeline.id == file_record.pipeline_id).first()
+            if pipeline_obj:
+                pipeline = pipeline_obj.to_dict()
+            artifacts_objs = db.query(Artifact).filter(Artifact.pipeline_id == file_record.pipeline_id).all()
+            artifacts = [a.to_dict() for a in artifacts_objs]
+            
+        return jsonify({
+            "file": file_record.to_dict(),
+            "pipeline": pipeline,
+            "artifacts": artifacts
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/files/test-ingestion', methods=['POST', 'GET'])
+def test_ingestion_flow():
+    test_logs = []
+    def log_test(msg):
+        test_logs.append(msg)
+        print(f"[Test Ingestion Flow] {msg}", flush=True)
+
+    log_test("Starting Ingestion & Parsing Layer integration test suite...")
+    
+    # Clear test queues at start to ensure clean isolation
+    for q in ['task_queue_test_high', 'task_queue_test_medium', 'task_queue_test_low']:
+        redis_client.delete(q)
+        
+    with app.test_client() as client:
+        headers = {"X-API-Key": API_KEY}
+        
+        # A. Create a temporary text file upload or simulate upload internally
+        import io
+        test_content = "This is a test document to verify the Phase 3 parsing and ingestion flow. It should process text correctly."
+        data = {
+            'file': (io.BytesIO(test_content.encode('utf-8')), 'test_ingestion_file.txt'),
+            'pipeline_type': 'document_processing_demo'
+        }
+        
+        res = client.post('/files/upload', data=data, content_type='multipart/form-data', headers=headers)
+        if res.status_code != 201:
+            return jsonify({"status": "failed", "step": "upload_file", "error": res.json}), 400
+            
+        res_json = res.json
+        file_id = res_json['file_id']
+        pipeline_id = res_json['pipeline_id']
+        file_type = res_json['file_type']
+        pipeline_type = res_json['pipeline_type']
+        tasks_created = res_json['tasks']
+        
+        log_test(f"File uploaded. file_id={file_id}, pipeline_id={pipeline_id}, file_type={file_type}")
+        
+        # B. Confirm FileRecord is created and status is 'processing'
+        db = SessionLocal()
+        try:
+            file_rec = db.query(FileRecord).filter(FileRecord.id == file_id).first()
+            if not file_rec:
+                return jsonify({"status": "failed", "step": "verify_file_record", "error": "FileRecord not found"}), 400
+            if file_rec.status != 'processing':
+                return jsonify({"status": "failed", "step": "verify_file_status", "error": f"Expected status 'processing', got '{file_rec.status}'"}), 400
+            log_test("Verified FileRecord exists in database with status 'processing'.")
+        finally:
+            db.close()
+            
+        # C. Confirm uploaded_file artifact is created.
+        db = SessionLocal()
+        try:
+            uploaded_art = db.query(Artifact).filter(Artifact.pipeline_id == pipeline_id, Artifact.artifact_type == 'uploaded_file').first()
+            if not uploaded_art:
+                return jsonify({"status": "failed", "step": "verify_uploaded_artifact", "error": "uploaded_file artifact not found"}), 400
+            uploaded_art_id = uploaded_art.id
+            log_test(f"Verified uploaded_file artifact created with ID #{uploaded_art_id}.")
+        finally:
+            db.close()
+            
+        # D. Confirm document_processing_demo pipeline is created.
+        if pipeline_type != 'document_processing_demo':
+            return jsonify({"status": "failed", "step": "verify_pipeline_type", "error": f"Expected document_processing_demo, got {pipeline_type}"}), 400
+            
+        # E. Confirm parse_document root task receives uploaded_file artifact.
+        parse_task = next((t for t in tasks_created if t['type'] == 'parse_document'), None)
+        if not parse_task:
+            return jsonify({"status": "failed", "step": "find_parse_task", "error": "parse_document task not found"}), 400
+            
+        parse_task_id = parse_task['id']
+        if uploaded_art_id not in parse_task['input_artifact_ids']:
+            return jsonify({"status": "failed", "step": "verify_parse_inputs", "error": f"Expected parse_document input artifacts to contain {uploaded_art_id}, got {parse_task['input_artifact_ids']}"}), 400
+        log_test("Verified parse_document receives the uploaded file artifact.")
+        
+        # Verify parse_document is in the test queue
+        test_high_queue = redis_client.lrange('task_queue_test_high', 0, -1)
+        if str(parse_task_id) not in test_high_queue:
+            return jsonify({"status": "failed", "step": "verify_parse_queued", "error": f"parse_document task #{parse_task_id} not in test high queue. Queue: {test_high_queue}"}), 400
+        log_test("Verified parse_document is queued in test queue.")
+        
+        # F. Complete the pipeline step-by-step
+        # 1. Claim and execute parse_document
+        res_claim = client.post(f'/tasks/{parse_task_id}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_parse", "error": res_claim.json}), 400
+        lease_token = res_claim.json['lease_token']
+        redis_client.lrem('task_queue_test_high', 0, str(parse_task_id))
+        
+        from context.artifact_store import load_artifact_from_disk, save_artifact_to_disk
+        raw_file_content = load_artifact_from_disk(uploaded_art.storage_uri)
+        
+        from worker import handle_parse_document
+        parsed_output = handle_parse_document({}, {"uploaded_file": raw_file_content})
+        
+        p_storage_uri, p_checksum = save_artifact_to_disk(pipeline_id, parse_task_id, "parsed_text", parsed_output)
+        res_art = client.post('/artifacts', json={
+            "pipeline_id": pipeline_id,
+            "task_id": parse_task_id,
+            "artifact_type": "parsed_text",
+            "storage_uri": p_storage_uri,
+            "checksum": p_checksum
+        }, headers=headers)
+        if res_art.status_code != 201:
+            return jsonify({"status": "failed", "step": "register_parsed_art", "error": res_art.json}), 400
+        parsed_text_art_id = res_art.json['id']
+        
+        res_patch = client.patch(f'/tasks/{parse_task_id}', json={
+            "status": "completed",
+            "worker_id": "test-worker",
+            "lease_token": lease_token,
+            "output_artifact_ids": [parsed_text_art_id]
+        }, headers=headers)
+        if res_patch.status_code != 200:
+            return jsonify({"status": "failed", "step": "complete_parse", "error": res_patch.json}), 400
+        log_test("Completed parse_document task.")
+        
+        # 2. Claim and execute chunk_text
+        chunk_task = next(t for t in tasks_created if t['type'] == 'chunk_text')
+        chunk_task_id = chunk_task['id']
+        
+        res_claim = client.post(f'/tasks/{chunk_task_id}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        lease_token = res_claim.json['lease_token']
+        redis_client.lrem('task_queue_test_medium', 0, str(chunk_task_id))
+        
+        from worker import handle_chunk_text
+        chunk_output = handle_chunk_text({}, {"parsed_text": parsed_output})
+        c_storage_uri, c_checksum = save_artifact_to_disk(pipeline_id, chunk_task_id, "text_chunks", chunk_output)
+        res_art = client.post('/artifacts', json={
+            "pipeline_id": pipeline_id,
+            "task_id": chunk_task_id,
+            "artifact_type": "text_chunks",
+            "storage_uri": c_storage_uri,
+            "checksum": c_checksum
+        }, headers=headers)
+        chunk_art_id = res_art.json['id']
+        
+        res_patch = client.patch(f'/tasks/{chunk_task_id}', json={
+            "status": "completed",
+            "worker_id": "test-worker",
+            "lease_token": lease_token,
+            "output_artifact_ids": [chunk_art_id]
+        }, headers=headers)
+        log_test("Completed chunk_text task.")
+        
+        # 3. Claim and execute generate_embeddings
+        embed_task = next(t for t in tasks_created if t['type'] == 'generate_embeddings')
+        embed_task_id = embed_task['id']
+        
+        res_claim = client.post(f'/tasks/{embed_task_id}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        lease_token = res_claim.json['lease_token']
+        redis_client.lrem('task_queue_test_medium', 0, str(embed_task_id))
+        
+        from worker import handle_generate_embeddings
+        embed_output = handle_generate_embeddings({}, {"text_chunks": chunk_output})
+        e_storage_uri, e_checksum = save_artifact_to_disk(pipeline_id, embed_task_id, "embeddings_mock", embed_output)
+        res_art = client.post('/artifacts', json={
+            "pipeline_id": pipeline_id,
+            "task_id": embed_task_id,
+            "artifact_type": "embeddings_mock",
+            "storage_uri": e_storage_uri,
+            "checksum": e_checksum
+        }, headers=headers)
+        embed_art_id = res_art.json['id']
+        
+        res_patch = client.patch(f'/tasks/{embed_task_id}', json={
+            "status": "completed",
+            "worker_id": "test-worker",
+            "lease_token": lease_token,
+            "output_artifact_ids": [embed_art_id]
+        }, headers=headers)
+        log_test("Completed generate_embeddings task.")
+        
+        # 4. Claim and execute summarize_document
+        sum_task = next(t for t in tasks_created if t['type'] == 'summarize_document')
+        sum_task_id = sum_task['id']
+        
+        res_claim = client.post(f'/tasks/{sum_task_id}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        lease_token = res_claim.json['lease_token']
+        redis_client.lrem('task_queue_test_medium', 0, str(sum_task_id))
+        
+        from worker import handle_summarize_document
+        sum_output = handle_summarize_document({}, {"embeddings_mock": embed_output})
+        s_storage_uri, s_checksum = save_artifact_to_disk(pipeline_id, sum_task_id, "summary", sum_output)
+        res_art = client.post('/artifacts', json={
+            "pipeline_id": pipeline_id,
+            "task_id": sum_task_id,
+            "artifact_type": "summary",
+            "storage_uri": s_storage_uri,
+            "checksum": s_checksum
+        }, headers=headers)
+        sum_art_id = res_art.json['id']
+        
+        res_patch = client.patch(f'/tasks/{sum_task_id}', json={
+            "status": "completed",
+            "worker_id": "test-worker",
+            "lease_token": lease_token,
+            "output_artifact_ids": [sum_art_id]
+        }, headers=headers)
+        log_test("Completed summarize_document task.")
+        
+        # G. Confirm parsed_text, text_chunks, embeddings_mock, and summary artifacts are created, and FileRecord is 'processed'
+        db = SessionLocal()
+        try:
+            file_rec = db.query(FileRecord).filter(FileRecord.id == file_id).first()
+            if file_rec.status != 'processed':
+                return jsonify({"status": "failed", "step": "verify_final_file_status", "error": f"Expected processed, got {file_rec.status}"}), 400
+                
+            for art_type in ["parsed_text", "text_chunks", "embeddings_mock", "summary"]:
+                art = db.query(Artifact).filter(Artifact.pipeline_id == pipeline_id, Artifact.artifact_type == art_type).first()
+                if not art:
+                    return jsonify({"status": "failed", "step": f"verify_{art_type}_artifact", "error": f"Artifact {art_type} not found in DB"}), 400
+            log_test("Verified all pipeline artifacts are successfully registered in database and FileRecord status is 'processed'.")
+        finally:
+            db.close()
+            
+        # H. Confirm Redis queues return to 0
+        for q in ['task_queue_test_high', 'task_queue_test_medium', 'task_queue_test_low']:
+            len_q = redis_client.llen(q)
+            if len_q != 0:
+                return jsonify({"status": "failed", "step": "verify_test_queues_empty", "error": f"Redis queue {q} has size {len_q}, expected 0"}), 400
+        log_test("Verified all Redis test queues returned to 0.")
+        
+        # I. Confirm existing /pipelines/test-dag still passes
+        log_test("Running existing /pipelines/test-dag to verify backward compatibility...")
+        res_dag = client.post('/pipelines/test-dag', headers=headers)
+        if res_dag.status_code != 200:
+            return jsonify({"status": "failed", "step": "run_test_dag", "error": res_dag.json}), 400
+        log_test("Verified `/pipelines/test-dag` passes successfully.")
+        
+        # J. Confirm standalone send_email still works
+        log_test("Testing standalone send_email task compatibility...")
+        res_email = client.post('/tasks', json={
+            "type": "send_email",
+            "data": {
+                "to": "test@example.com",
+                "subject": "Compatibility test",
+                "body": "Ingestion test run",
+                "test_normal": True
+            }
+        }, headers=headers)
+        if res_email.status_code != 201:
+            return jsonify({"status": "failed", "step": "create_standalone_task", "error": res_email.json}), 400
+            
+        standalone_task_id = res_email.json['id']
+        res_claim_email = client.post(f'/tasks/{standalone_task_id}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim_email.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_standalone_task", "error": res_claim_email.json}), 400
+        email_lease_token = res_claim_email.json['lease_token']
+        
+        res_patch_email = client.patch(f'/tasks/{standalone_task_id}', json={
+            "status": "completed",
+            "worker_id": "test-worker",
+            "lease_token": email_lease_token
+        }, headers=headers)
+        if res_patch_email.status_code != 200:
+            return jsonify({"status": "failed", "step": "complete_standalone_task", "error": res_patch_email.json}), 400
+            
+        log_test("Verified standalone `send_email` works perfectly.")
+        
+        # Clean up Redis test queues (just in case)
+        for q in ['task_queue_test_high', 'task_queue_test_medium', 'task_queue_test_low']:
+            redis_client.delete(q)
+            
+        return jsonify({
+            "status": "passed",
+            "file_id": file_id,
+            "pipeline_id": pipeline_id,
+            "logs": test_logs
+        }), 200
 
 @app.route('/pipelines/test-dag', methods=['POST', 'GET'])
 def test_dag_flow():

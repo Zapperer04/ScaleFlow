@@ -48,7 +48,7 @@ def load_artifact_from_disk(storage_uri):
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Artifact file not found at {file_path}")
         
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         data_str = f.read()
         
     try:
