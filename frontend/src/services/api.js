@@ -55,3 +55,39 @@ export const runIntegrationTests = async () => {
   const response = await apiClient.get('/tasks/test-recovery');
   return response.data;
 };
+
+export const fetchPipelines = async () => {
+  const response = await apiClient.get('/pipelines');
+  return response.data;
+};
+
+export const fetchPipelineDetails = async (pipelineId) => {
+  const response = await apiClient.get(`/pipelines/${pipelineId}`);
+  return response.data;
+};
+
+export const fetchPipelineDag = async (pipelineId) => {
+  const response = await apiClient.get(`/pipelines/${pipelineId}/dag`);
+  return response.data;
+};
+
+export const createPipeline = async (pipelineData) => {
+  const response = await apiClient.post('/pipelines', pipelineData);
+  return response.data;
+};
+
+export const cancelPipeline = async (pipelineId) => {
+  const response = await apiClient.post(`/pipelines/${pipelineId}/cancel`);
+  return response.data;
+};
+
+export const runPipelineTests = async () => {
+  const response = await apiClient.post('/pipelines/test-dag');
+  return response.data;
+};
+
+export const fetchArtifactContent = async (artifactId) => {
+  const response = await apiClient.get(`/artifacts/${artifactId}/content`);
+  return response.data;
+};
+

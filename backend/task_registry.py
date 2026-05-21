@@ -45,6 +45,90 @@ TASK_REGISTRY = {
         "retry_policy": {"max_retries": 4, "retry_delay_seconds": 8},
         "estimated_runtime_seconds": 4,
         "handler_name": "handle_generate_report"
+    },
+    "parse_document": {
+        "label": "Parse Document",
+        "description": "Normalizes document text.",
+        "required_fields": [],
+        "optional_fields": ["source_text", "simulate_hang_seconds"],
+        "frontend_fields": [
+            {"name": "source_text", "label": "Source Text", "type": "textarea", "placeholder": "Input document content..."}
+        ],
+        "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 2,
+        "handler_name": "handle_parse_document"
+    },
+    "chunk_text": {
+        "label": "Chunk Text",
+        "description": "Splits text into chunks.",
+        "required_fields": [],
+        "optional_fields": ["simulate_hang_seconds"],
+        "frontend_fields": [],
+        "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 2,
+        "handler_name": "handle_chunk_text"
+    },
+    "generate_embeddings": {
+        "label": "Generate Embeddings",
+        "description": "Generates mock embedding vectors.",
+        "required_fields": [],
+        "optional_fields": ["simulate_hang_seconds"],
+        "frontend_fields": [],
+        "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 3,
+        "handler_name": "handle_generate_embeddings"
+    },
+    "summarize_document": {
+        "label": "Summarize Document",
+        "description": "Summarizes processed document chunks.",
+        "required_fields": [],
+        "optional_fields": ["simulate_hang_seconds"],
+        "frontend_fields": [],
+        "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 2,
+        "handler_name": "handle_summarize_document"
+    },
+    "parse_logs": {
+        "label": "Parse Logs",
+        "description": "Parses input logs for errors.",
+        "required_fields": [],
+        "optional_fields": ["source_text", "simulate_hang_seconds"],
+        "frontend_fields": [
+            {"name": "source_text", "label": "Logs Text", "type": "textarea", "placeholder": "Input logs content..."}
+        ],
+        "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 2,
+        "handler_name": "handle_parse_logs"
+    },
+    "detect_error_patterns": {
+        "label": "Detect Error Patterns",
+        "description": "Detects specific patterns or keywords in logs.",
+        "required_fields": [],
+        "optional_fields": ["simulate_hang_seconds"],
+        "frontend_fields": [],
+        "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 2,
+        "handler_name": "handle_detect_error_patterns"
+    },
+    "summarize_logs": {
+        "label": "Summarize Logs",
+        "description": "Summarizes the error patterns.",
+        "required_fields": [],
+        "optional_fields": ["simulate_hang_seconds"],
+        "frontend_fields": [],
+        "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 2,
+        "handler_name": "handle_summarize_logs"
+    },
+    "final_report": {
+        "label": "Final Report",
+        "description": "Generates a final log analysis report.",
+        "required_fields": [],
+        "optional_fields": ["simulate_hang_seconds"],
+        "frontend_fields": [],
+        "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 3,
+        "handler_name": "handle_final_report"
     }
 }
 

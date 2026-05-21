@@ -121,6 +121,129 @@ def handle_webhook_trigger(payload):
     time.sleep(2)
     print(f"[{WORKER_ID}]   ✓ Webhook triggered!", flush=True)
 
+# Phase 2 Demo Handlers
+def handle_parse_document(payload, input_artifacts):
+    text = payload.get('source_text')
+    if not text and input_artifacts:
+        text = list(input_artifacts.values())[0]
+    if not text:
+        text = ""
+    normalized = text.strip()
+    print(f"[{WORKER_ID}]   ✓ Parsed document of length {len(normalized)}", flush=True)
+    return normalized
+
+def handle_chunk_text(payload, input_artifacts):
+    text = input_artifacts.get("parsed_text", "")
+    if not text:
+        text = payload.get("source_text", "")
+        
+    chunks = []
+    words = text.split()
+    current_chunk = []
+    current_len = 0
+    for word in words:
+        current_chunk.append(word)
+        current_len += len(word) + 1
+        if current_len >= 300:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = []
+            current_len = 0
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+        
+    if not chunks:
+        chunks = [text]
+        
+    print(f"[{WORKER_ID}]   ✓ Chunked text into {len(chunks)} chunks", flush=True)
+    return chunks
+
+def handle_generate_embeddings(payload, input_artifacts):
+    chunks = input_artifacts.get("text_chunks") or input_artifacts.get("error_patterns") or []
+    if isinstance(chunks, str):
+        chunks = [chunks]
+    elif isinstance(chunks, dict):
+        chunks = [json.dumps(chunks)]
+        
+    embeddings = []
+    for chunk in chunks:
+        length = len(chunk)
+        h = hash(chunk) % 1000
+        vector = [
+            round(float(length) / 100.0, 4),
+            round(float(h) / 1000.0, 4),
+            round(float(length * h) / 100000.0, 4),
+            0.1234,
+            0.5678
+        ]
+        embeddings.append({
+            "chunk_preview": chunk[:30] + "..." if len(chunk) > 30 else chunk,
+            "vector": vector
+        })
+        
+    print(f"[{WORKER_ID}]   ✓ Generated {len(embeddings)} mock embedding vectors", flush=True)
+    return embeddings
+
+def handle_summarize_document(payload, input_artifacts):
+    chunks = input_artifacts.get("text_chunks")
+    if not chunks:
+        embeddings = input_artifacts.get("embeddings_mock")
+        if embeddings and isinstance(embeddings, list):
+            chunks = [item.get("chunk_preview", "") for item in embeddings if isinstance(item, dict)]
+        else:
+            text = input_artifacts.get("parsed_text", "")
+            chunks = [text]
+        
+    summary_chunks = chunks[:2]
+    summary = "SUMMARY:\n" + "\n".join(summary_chunks)
+    print(f"[{WORKER_ID}]   ✓ Generated extractive summary", flush=True)
+    return summary
+
+def handle_parse_logs(payload, input_artifacts):
+    text = payload.get("source_text", "")
+    if not text and input_artifacts:
+        text = list(input_artifacts.values())[0]
+        
+    lines = text.splitlines()
+    parsed = [line.strip() for line in lines if line.strip()]
+    print(f"[{WORKER_ID}]   ✓ Parsed {len(parsed)} log lines", flush=True)
+    return parsed
+
+def handle_detect_error_patterns(payload, input_artifacts):
+    logs = input_artifacts.get("parsed_logs", [])
+    errors = []
+    for log in logs:
+        log_upper = log.upper()
+        if "ERROR" in log_upper or "WARN" in log_upper or "FAIL" in log_upper or "CRITICAL" in log_upper:
+            errors.append(log)
+            
+    print(f"[{WORKER_ID}]   ✓ Detected {len(errors)} error patterns in logs", flush=True)
+    return errors
+
+def handle_summarize_logs(payload, input_artifacts):
+    errors = input_artifacts.get("error_patterns") or input_artifacts.get("parsed_logs") or []
+    summary = f"LOG ANALYSIS SUMMARY:\nTotal anomalous entries detected: {len(errors)}\n"
+    if errors:
+        summary += "Sample errors:\n"
+        for err in errors[:5]:
+            summary += f"- {err}\n"
+            
+    print(f"[{WORKER_ID}]   ✓ Summarized logs with {len(errors)} anomalies", flush=True)
+    return summary
+
+def handle_final_report(payload, input_artifacts):
+    errors = input_artifacts.get("error_patterns", [])
+    summary = input_artifacts.get("log_summary", "")
+    
+    report = "========================================\n"
+    report += "FINAL LOG ANALYSIS PIPELINE REPORT\n"
+    report += "========================================\n\n"
+    report += f"Status: COMPLETED\n"
+    report += f"Anomalies Count: {len(errors)}\n\n"
+    report += summary
+    
+    print(f"[{WORKER_ID}]   ✓ Generated final report", flush=True)
+    return report
+
 HANDLER_MAP = {
     "send_email": handle_send_email,
     "process_video": handle_process_video,
@@ -129,11 +252,31 @@ HANDLER_MAP = {
     "image_processing": handle_image_processing,
     "send_notification": handle_send_notification,
     "run_ml_model": handle_run_ml_model,
-    "webhook_trigger": handle_webhook_trigger
+    "webhook_trigger": handle_webhook_trigger,
+    "parse_document": handle_parse_document,
+    "chunk_text": handle_chunk_text,
+    "generate_embeddings": handle_generate_embeddings,
+    "summarize_document": handle_summarize_document,
+    "parse_logs": handle_parse_logs,
+    "detect_error_patterns": handle_detect_error_patterns,
+    "summarize_logs": handle_summarize_logs,
+    "final_report": handle_final_report
+}
+
+OUTPUT_ARTIFACT_TYPES = {
+    "parse_document": "parsed_text",
+    "chunk_text": "text_chunks",
+    "generate_embeddings": "embeddings_mock",
+    "summarize_document": "summary",
+    "parse_logs": "parsed_logs",
+    "detect_error_patterns": "error_patterns",
+    "summarize_logs": "log_summary",
+    "final_report": "final_report"
 }
 
 def execute_task(task):
     """Simulate doing the actual work - with random failures for testing retry"""
+    from context.artifact_store import load_artifact_from_disk, save_artifact_to_disk
     task_type = task['type']
     task_data = task['data']
     task_id = task['id']
@@ -160,21 +303,62 @@ def execute_task(task):
     # Check in handler map
     handler = HANDLER_MAP.get(task_type)
     if not handler:
-        # Check task registry for handler name mapping fallback
         registry_info = TASK_REGISTRY.get(task_type, {})
         handler_name = registry_info.get("handler_name")
         if handler_name:
             handler = globals().get(handler_name)
             
     if handler:
-        handler(task_data)
+        if task_type in OUTPUT_ARTIFACT_TYPES:
+            # Load input artifacts
+            input_artifacts = {}
+            for art_id in task.get('input_artifact_ids', []):
+                try:
+                    res_art = requests.get(f"{API_URL}/artifacts/{art_id}", headers=HEADERS, timeout=5)
+                    if res_art.status_code == 200:
+                        meta = res_art.json()
+                        art_type = meta.get('artifact_type')
+                        storage_uri = meta.get('storage_uri')
+                        data = load_artifact_from_disk(storage_uri)
+                        input_artifacts[art_type] = data
+                except Exception as ex:
+                    print(f"[{WORKER_ID}] Error loading input artifact {art_id}: {ex}", flush=True)
+            
+            # Execute handler
+            output_data = handler(task_data, input_artifacts)
+            
+            # Save artifact to disk
+            pipeline_id = task.get('pipeline_id')
+            artifact_type = OUTPUT_ARTIFACT_TYPES[task_type]
+            storage_uri, checksum = save_artifact_to_disk(pipeline_id, task_id, artifact_type, output_data)
+            
+            # Register artifact with API
+            res_reg = requests.post(
+                f"{API_URL}/artifacts",
+                json={
+                    "pipeline_id": pipeline_id,
+                    "task_id": task_id,
+                    "artifact_type": artifact_type,
+                    "storage_uri": storage_uri,
+                    "checksum": checksum,
+                    "metadata": {"worker_id": WORKER_ID}
+                },
+                headers=HEADERS,
+                timeout=5
+            )
+            if res_reg.status_code != 201:
+                raise Exception(f"Failed to register output artifact: {res_reg.status_code} - {res_reg.text}")
+                
+            created_artifact = res_reg.json()
+            task['output_artifact_ids'] = [created_artifact['id']]
+        else:
+            handler(task_data)
     else:
         print(f"[{WORKER_ID}]   ⚠ Unknown task type / handler: {task_type}", flush=True)
 
 def get_next_task():
     """Get next task from highest priority queue that has tasks"""
     try:
-        # Atomic priority-based blocking pop using BRPOP
         result = redis_client.brpop(PRIORITY_QUEUES, timeout=5)
         if result:
             return result
@@ -182,7 +366,6 @@ def get_next_task():
         print(f"[{WORKER_ID}] Redis connection error during brpop: {ce}", flush=True)
         raise ce
     except redis.exceptions.TimeoutError:
-        # Socket timeout during blocking pop, safe to loop
         pass
     except Exception as e:
         print(f"[{WORKER_ID}] Error in get_next_task: {e}", flush=True)
@@ -213,7 +396,6 @@ def worker_loop():
             
             if result:
                 queue_name, task_id = result
-                # Decode bytes to string if needed
                 task_id = task_id.decode() if isinstance(task_id, bytes) else str(task_id)
                 worker_state['last_action'] = f"Received task #{task_id}"
                 print(f"[{WORKER_ID}] Received task_id {task_id} from queue {queue_name}", flush=True)
@@ -246,8 +428,14 @@ def worker_loop():
                     
                     execute_task(task)
                     
+                    output_artifact_ids = task.get('output_artifact_ids', [])
                     res_complete = requests.patch(f"{API_URL}/tasks/{task_id}", 
-                                 json={'status': 'completed', 'worker_id': WORKER_ID, 'lease_token': lease_token}, headers=HEADERS, timeout=5)
+                                 json={
+                                     'status': 'completed', 
+                                     'worker_id': WORKER_ID, 
+                                     'lease_token': lease_token,
+                                     'output_artifact_ids': output_artifact_ids
+                                 }, headers=HEADERS, timeout=5)
                     if res_complete.status_code != 200:
                         print(f"[{WORKER_ID}] Warning: failed to patch status to completed: {res_complete.status_code} - {res_complete.text}", flush=True)
                         if res_complete.status_code == 409:
@@ -279,7 +467,6 @@ def worker_loop():
                     worker_state['status'] = 'idle'
                     worker_state['current_task_id'] = None
             else:
-                # No task found
                 pass
                 
         except Exception as e:

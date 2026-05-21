@@ -49,3 +49,10 @@ out/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local pipeline storage
+backend/storage/
+
+# Temporary files
+backend/powershell.cmd
+powershell.cmd

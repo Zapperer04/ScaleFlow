@@ -8,6 +8,7 @@ import WorkerStatus from './components/WorkerStatus';
 import QueueStats from './components/QueueStats';
 import TaskModal from './components/TaskModal';
 import { ThroughputChart, WorkerLoadChart } from './components/Charts';
+import PipelineDashboard from './components/PipelineDashboard';
 import './App.css';
 
 const POLL_INTERVAL = parseInt(process.env.REACT_APP_POLL_INTERVAL_MS || "3000");
@@ -249,6 +250,7 @@ function App() {
             onPageChange={setPage}
           />
         </div>
+        <PipelineDashboard />
       </div>
       
       <TaskModal 
