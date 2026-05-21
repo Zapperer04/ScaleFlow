@@ -1,8 +1,3 @@
-import sys
-print("WORKER FILE LOADED", flush=True)
-sys.stdout.write("WORKER FILE LOADED via stdout write\n")
-sys.stdout.flush()
-
 import time
 import requests
 import redis
@@ -179,7 +174,7 @@ def worker_loop():
                 
                 worker_state['last_action'] = f"Fetching task #{task_id} details"
                 print(f"[{WORKER_ID}] Fetching task details for task #{task_id} from {API_URL}", flush=True)
-                response = requests.get(f"{API_URL}/tasks/{task_id}", timeout=5)
+                response = requests.get(f"{API_URL}/tasks/{task_id}", headers=HEADERS, timeout=5)
                 if response.status_code != 200:
                     worker_state['last_action'] = f"Error fetching task #{task_id}"
                     print(f"[{WORKER_ID}] Error fetching task details: {response.status_code} - {response.text}", flush=True)

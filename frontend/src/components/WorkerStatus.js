@@ -1,5 +1,5 @@
 import React from 'react';
-import { Server, CheckCircle, XCircle, Play, Eye } from 'lucide-react';
+import { Server, CheckCircle, XCircle } from 'lucide-react';
 
 const WorkerStatus = ({ workers }) => {
   const getRelativeTime = (isoString) => {

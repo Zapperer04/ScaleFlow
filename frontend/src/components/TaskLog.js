@@ -1,7 +1,7 @@
 import React from 'react';
 import { Server, Clock, Cpu, TrendingUp, AlertTriangle } from 'lucide-react';
 
-const TaskLog = ({ tasks, workers, onTaskClick }) => {
+const TaskLog = ({ tasks, workers, onTaskClick, page, totalPages, onPageChange }) => {
   const activeWorkersExist = workers && workers.some(w => w.status !== 'offline');
 
   const getPendingDuration = (createdAtStr) => {
@@ -129,6 +129,28 @@ const TaskLog = ({ tasks, workers, onTaskClick }) => {
           })
         )}
       </div>
+
+      {totalPages > 1 && (
+        <div className="pagination-controls">
+          <button 
+            className="pagination-btn"
+            disabled={page === 1} 
+            onClick={() => onPageChange(page - 1)}
+          >
+            &larr; Previous
+          </button>
+          <span className="pagination-info">
+            Page {page} of {totalPages}
+          </span>
+          <button 
+            className="pagination-btn"
+            disabled={page === totalPages} 
+            onClick={() => onPageChange(page + 1)}
+          >
+            Next &rarr;
+          </button>
+        </div>
+      )}
     </div>
   );
 };

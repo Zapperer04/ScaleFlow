@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Clock, RefreshCw, XCircle, AlertCircle, Cpu, TrendingUp } from 'lucide-react';
+import { X, RefreshCw, XCircle, AlertCircle } from 'lucide-react';
 import { getTaskDetails, retryTask, cancelTask } from '../services/api';
 
 const TaskModal = ({ taskId, onClose, onActionComplete }) => {

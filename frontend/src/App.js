@@ -22,20 +22,36 @@ function App() {
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [queueStuckSince, setQueueStuckSince] = useState(null);
   const [showStuckWarning, setShowStuckWarning] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
     loadData();
     const interval = setInterval(loadData, POLL_INTERVAL);
     return () => clearInterval(interval);
-  }, []);
+  }, [page]);
 
   const loadData = async () => {
     try {
-      const tasksData = await fetchTasks(1, 50);
-      const taskList = tasksData.tasks || [];
-      const metadata = tasksData.metadata || { total_tasks: 0 };
+      const page1Data = await fetchTasks(1, 50);
+      const page1Tasks = page1Data.tasks || [];
+      const metadata = page1Data.metadata || { total_tasks: 0, total_pages: 1 };
       
-      setTasks(taskList);
+      let logTasks = page1Tasks;
+      let logTotalPages = metadata.total_pages || 1;
+      
+      if (page > 1) {
+        const currentPageData = await fetchTasks(page, 50);
+        logTasks = currentPageData.tasks || [];
+        logTotalPages = currentPageData.metadata?.total_pages || 1;
+      }
+      
+      setTasks(logTasks);
+      setTotalPages(logTotalPages);
+
+      if (page > logTotalPages && logTotalPages > 0) {
+        setPage(logTotalPages);
+      }
 
       const workersData = await fetchWorkers();
       const defaultWorkerIds = ['worker-1', 'worker-2', 'worker-3'];
@@ -88,12 +104,12 @@ function App() {
 
       setStats({
         total: metadata.total_tasks,
-        pending: taskList.filter(t => t.status === 'pending').length,
-        running: taskList.filter(t => t.status === 'running').length,
-        completed: taskList.filter(t => t.status === 'completed').length
+        pending: page1Tasks.filter(t => t.status === 'pending').length,
+        running: page1Tasks.filter(t => t.status === 'running').length,
+        completed: page1Tasks.filter(t => t.status === 'completed').length
       });
 
-      const throughputData = taskList.slice(0, 20).reverse().reduce((acc, task, idx) => {
+      const throughputData = page1Tasks.slice(0, 20).reverse().reduce((acc, task, idx) => {
         const bucket = Math.floor(idx / 4);
         if (!acc[bucket]) acc[bucket] = { name: `T${bucket}`, count: 0 };
         if (task.status === 'completed') acc[bucket].count++;
@@ -102,9 +118,9 @@ function App() {
       setThroughput(throughputData);
 
       setWorkerDistribution([
-        { name: 'Worker 1', value: taskList.filter((t, i) => i % 3 === 0 && t.status === 'completed').length },
-        { name: 'Worker 2', value: taskList.filter((t, i) => i % 3 === 1 && t.status === 'completed').length },
-        { name: 'Worker 3', value: taskList.filter((t, i) => i % 3 === 2 && t.status === 'completed').length },
+        { name: 'Worker 1', value: page1Tasks.filter((t, i) => i % 3 === 0 && t.status === 'completed').length },
+        { name: 'Worker 2', value: page1Tasks.filter((t, i) => i % 3 === 1 && t.status === 'completed').length },
+        { name: 'Worker 3', value: page1Tasks.filter((t, i) => i % 3 === 2 && t.status === 'completed').length },
       ]);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -169,7 +185,7 @@ function App() {
         </div>
 
         <div className="metrics-grid">
-          <MetricCard icon={Activity} label="Total Tasks Processed" value={stats.total} trend={stats.total > 0 ? 12 : 0} color="rgba(139, 92, 246, 0.2)" gradient="linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%)" />
+          <MetricCard icon={Activity} label="Total Tasks" value={stats.total} trend={stats.total > 0 ? 12 : 0} color="rgba(139, 92, 246, 0.2)" gradient="linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%)" />
           <MetricCard icon={Clock} label="Recent Pending" value={stats.pending} color="rgba(251, 191, 36, 0.2)" gradient="linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(251, 191, 36, 0.05) 100%)" />
           <MetricCard icon={Cpu} label="Recent Executing" value={stats.running} color="rgba(59, 130, 246, 0.2)" gradient="linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)" />
           <MetricCard icon={TrendingUp} label="Recent Completed" value={stats.completed} trend={stats.completed > 0 ? 8 : 0} color="rgba(16, 185, 129, 0.2)" gradient="linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%)" />
@@ -181,7 +197,14 @@ function App() {
           <ThroughputChart throughput={throughput} />
           <WorkerLoadChart workerDistribution={workerDistribution} />
           <TaskForm onTaskCreated={loadData} />
-          <TaskLog tasks={tasks} workers={workers} onTaskClick={setSelectedTaskId} />
+          <TaskLog 
+            tasks={tasks} 
+            workers={workers} 
+            onTaskClick={setSelectedTaskId} 
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
         </div>
       </div>
       
