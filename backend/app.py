@@ -6,6 +6,7 @@ import redis
 import os
 from functools import wraps
 from models import SessionLocal, Task, TaskDependency, TaskLog, load_env
+from task_registry import TASK_REGISTRY, validate_task_payload
 
 load_env()
 
@@ -104,6 +105,15 @@ def add_task_to_queue(task_id, priority='medium', db=None):
     if db:
         create_task_log(db, task_id, "task_queued", f"Pushed to {priority} priority queue")
 
+@app.route('/task-types', methods=['GET'])
+def get_task_types():
+    task_types_list = []
+    for type_key, details in TASK_REGISTRY.items():
+        type_data = details.copy()
+        type_data['type'] = type_key
+        task_types_list.append(type_data)
+    return jsonify(task_types_list), 200
+
 @app.route('/tasks', methods=['POST'])
 @require_api_key
 def create_task():
@@ -112,6 +122,14 @@ def create_task():
         data = request.json
         if not data or 'type' not in data:
             return jsonify({"error": "Missing 'type' field"}), 400
+            
+        task_type = data.get('type')
+        task_data = data.get('data', {})
+        
+        # Validate task payload against the registry schema
+        is_valid, err_msg = validate_task_payload(task_type, task_data)
+        if not is_valid:
+            return jsonify({"error": err_msg}), 400
             
         priority = data.get('priority', 'medium')
         if priority not in ['high', 'medium', 'low']:
@@ -125,11 +143,16 @@ def create_task():
             if not dep_task:
                 return jsonify({'error': f'Dependency task {dep_id} not found'}), 400
 
+        # Retrieve retry policy default
+        registry_info = TASK_REGISTRY.get(task_type, {})
+        default_max_retries = registry_info.get("retry_policy", {}).get("max_retries", 3)
+        max_retries = data.get('max_retries', default_max_retries)
+
         task = Task(
-            type=data.get('type'),
-            data=json.dumps(data.get('data', {})),
+            type=task_type,
+            data=json.dumps(task_data),
             priority=priority,
-            max_retries=data.get('max_retries', 3),
+            max_retries=max_retries,
             status='pending',
             dependencies="[]" 
         )

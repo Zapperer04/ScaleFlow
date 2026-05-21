@@ -135,6 +135,78 @@ If you are presenting this project, here is how you can explain it:
 * `POST /tasks/<id>/retry` - Requires API key. Resets a failed task and requeues it. Accepts `{"force": true}`.
 * `POST /tasks/<id>/cancel` - Requires API key. Cancels a pending/running task.
 * `GET /queues/stats` - Returns atomic LLEN counts of all Redis queues.
+* `GET /task-types` - Returns a JSON list of supported task types and their respective field schemas.
+
+---
+
+## 📋 Task Type Registry & Validation
+
+ScaleFlow implements a schema-driven **Task Type Registry** that centralizes metadata, frontend forms representation, retry policies, and backend handler mapping.
+
+### 1. Supported Task Types
+The following task types are registered out of the box in [task_registry.py](file:///d:/Projects/task-schedular/backend/task_registry.py):
+- **Email Delivery (`send_email`)**: Simulates sending an email notification.
+  - *Required*: `to` (email), `subject` (text), `body` (textarea)
+  - *Optional*: `cc` (email)
+- **Video Processing (`process_video`)**: Transcodes video to requested format/resolution.
+  - *Required*: `file` (text/file path)
+  - *Optional*: `format` (text), `resolution` (text)
+- **Generate Report (`generate_report`)**: Compiles statistical report data.
+  - *Required*: `report_type` (text)
+  - *Optional*: `format` (text)
+
+### 2. Payload Validation Rules
+Before a task is persisted in the database or enqueued in Redis:
+- The backend validates that the requested `type` exists in the registry.
+- Checks that all `required_fields` are provided in the payload.
+- Validates field contents:
+  - **Email fields** must contain the `@` character.
+  - **Text, textarea, and file fields** must be non-empty and contain non-whitespace text.
+- If validation fails, the API returns an `HTTP 400 Bad Request` containing a JSON error response:
+  ```json
+  {
+    "error": "Missing required field: subject"
+  }
+  ```
+
+### 3. Dynamic Frontend Forms
+The React `TaskForm` component automatically adjusts based on the schemas fetched from `GET /task-types`:
+- Displays a dynamic dropdown of supported task types.
+- Renders input fields (`input type="text"`, `input type="email"`, `textarea`) dynamically.
+- Automatically marks required fields with a red asterisk and configures native HTML5 validation.
+- Collects inputs and constructs the JSON payload dynamically before submission to the API.
+
+### 4. How to Add a New Task Type
+To add a new background task type to the system:
+1. **Define Schema**: Add a new key-value pair to `TASK_REGISTRY` in `backend/task_registry.py`:
+   ```python
+   "my_new_task": {
+       "label": "My New Task",
+       "description": "Performs custom tasks.",
+       "required_fields": ["param_name"],
+       "optional_fields": [],
+       "frontend_fields": [
+           {"name": "param_name", "label": "Parameter Name", "type": "text", "placeholder": "Enter text"}
+       ],
+       "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
+       "estimated_runtime_seconds": 3,
+       "handler_name": "handle_my_new_task"
+   }
+   ```
+2. **Implement Worker Handler**: In `backend/worker.py`, define the handler function:
+   ```python
+   def handle_my_new_task(payload):
+       print(f"[{WORKER_ID}] Processing param: {payload.get('param_name')}", flush=True)
+       time.sleep(3)
+   ```
+3. **Register Worker Handler**: Add the mapping to `HANDLER_MAP` in `backend/worker.py`:
+   ```python
+   HANDLER_MAP = {
+       ...
+       "my_new_task": handle_my_my_task
+   }
+   ```
+4. **Restart Services**: Restart the backend server and rebuild/restart the workers (`rebuild-docker.bat`) to apply the changes.
 
 ---
 

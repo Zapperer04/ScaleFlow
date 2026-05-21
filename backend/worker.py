@@ -68,6 +68,70 @@ def send_heartbeat():
             print(f"[{WORKER_ID}] Heartbeat connection failed: {e}", flush=True)
         time.sleep(10)
 
+try:
+    from task_registry import TASK_REGISTRY
+except ImportError:
+    TASK_REGISTRY = {}
+
+def handle_send_email(payload):
+    print(f"[{WORKER_ID}]   → Sending email to {payload.get('to')}", flush=True)
+    if payload.get('cc'):
+        print(f"[{WORKER_ID}]   → CC: {payload.get('cc')}", flush=True)
+    time.sleep(2)
+    print(f"[{WORKER_ID}]   ✓ Email sent!", flush=True)
+
+def handle_process_video(payload):
+    print(f"[{WORKER_ID}]   → Processing video {payload.get('file')}", flush=True)
+    if payload.get('format'):
+        print(f"[{WORKER_ID}]   → Format: {payload.get('format')}", flush=True)
+    if payload.get('resolution'):
+        print(f"[{WORKER_ID}]   → Resolution: {payload.get('resolution')}", flush=True)
+    time.sleep(3)
+    print(f"[{WORKER_ID}]   ✓ Video processed!", flush=True)
+
+def handle_generate_report(payload):
+    print(f"[{WORKER_ID}]   → Generating report: {payload.get('report_type')}", flush=True)
+    if payload.get('format'):
+        print(f"[{WORKER_ID}]   → Format: {payload.get('format')}", flush=True)
+    time.sleep(4)
+    print(f"[{WORKER_ID}]   ✓ Report generated!", flush=True)
+
+def handle_data_backup(payload):
+    print(f"[{WORKER_ID}]   → Backing up {payload.get('database')}", flush=True)
+    time.sleep(5)
+    print(f"[{WORKER_ID}]   ✓ Backup completed!", flush=True)
+
+def handle_image_processing(payload):
+    print(f"[{WORKER_ID}]   → Processing image: {payload.get('image_path')}", flush=True)
+    time.sleep(3)
+    print(f"[{WORKER_ID}]   ✓ Image processed!", flush=True)
+
+def handle_send_notification(payload):
+    print(f"[{WORKER_ID}]   → Sending notification to {payload.get('user_id')}", flush=True)
+    time.sleep(1)
+    print(f"[{WORKER_ID}]   ✓ Notification sent!", flush=True)
+
+def handle_run_ml_model(payload):
+    print(f"[{WORKER_ID}]   → Running ML model: {payload.get('model_name')}", flush=True)
+    time.sleep(6)
+    print(f"[{WORKER_ID}]   ✓ Model executed!", flush=True)
+
+def handle_webhook_trigger(payload):
+    print(f"[{WORKER_ID}]   → Triggering webhook: {payload.get('url')}", flush=True)
+    time.sleep(2)
+    print(f"[{WORKER_ID}]   ✓ Webhook triggered!", flush=True)
+
+HANDLER_MAP = {
+    "send_email": handle_send_email,
+    "process_video": handle_process_video,
+    "generate_report": handle_generate_report,
+    "data_backup": handle_data_backup,
+    "image_processing": handle_image_processing,
+    "send_notification": handle_send_notification,
+    "run_ml_model": handle_run_ml_model,
+    "webhook_trigger": handle_webhook_trigger
+}
+
 def execute_task(task):
     """Simulate doing the actual work - with random failures for testing retry"""
     task_type = task['type']
@@ -82,48 +146,19 @@ def execute_task(task):
         print(f"[{WORKER_ID}]   ✗ Task failed! Will retry...", flush=True)
         raise Exception(f"Simulated failure for task {task_id}")
     
-    if task_type == "send_email":
-        print(f"[{WORKER_ID}]   → Sending email to {task_data.get('to')}", flush=True)
-        time.sleep(2)
-        print(f"[{WORKER_ID}]   ✓ Email sent!", flush=True)
-        
-    elif task_type == "process_video":
-        print(f"[{WORKER_ID}]   → Processing video {task_data.get('file')}", flush=True)
-        time.sleep(3)
-        print(f"[{WORKER_ID}]   ✓ Video processed!", flush=True)
-        
-    elif task_type == "generate_report":
-        print(f"[{WORKER_ID}]   → Generating report: {task_data.get('report_type')}", flush=True)
-        time.sleep(4)
-        print(f"[{WORKER_ID}]   ✓ Report generated!", flush=True)
-        
-    elif task_type == "data_backup":
-        print(f"[{WORKER_ID}]   → Backing up {task_data.get('database')}", flush=True)
-        time.sleep(5)
-        print(f"[{WORKER_ID}]   ✓ Backup completed!", flush=True)
-        
-    elif task_type == "image_processing":
-        print(f"[{WORKER_ID}]   → Processing image: {task_data.get('image_path')}", flush=True)
-        time.sleep(3)
-        print(f"[{WORKER_ID}]   ✓ Image processed!", flush=True)
-        
-    elif task_type == "send_notification":
-        print(f"[{WORKER_ID}]   → Sending notification to {task_data.get('user_id')}", flush=True)
-        time.sleep(1)
-        print(f"[{WORKER_ID}]   ✓ Notification sent!", flush=True)
-        
-    elif task_type == "run_ml_model":
-        print(f"[{WORKER_ID}]   → Running ML model: {task_data.get('model_name')}", flush=True)
-        time.sleep(6)
-        print(f"[{WORKER_ID}]   ✓ Model executed!", flush=True)
-        
-    elif task_type == "webhook_trigger":
-        print(f"[{WORKER_ID}]   → Triggering webhook: {task_data.get('url')}", flush=True)
-        time.sleep(2)
-        print(f"[{WORKER_ID}]   ✓ Webhook triggered!", flush=True)
-        
+    # Check in handler map
+    handler = HANDLER_MAP.get(task_type)
+    if not handler:
+        # Check task registry for handler name mapping fallback
+        registry_info = TASK_REGISTRY.get(task_type, {})
+        handler_name = registry_info.get("handler_name")
+        if handler_name:
+            handler = globals().get(handler_name)
+            
+    if handler:
+        handler(task_data)
     else:
-        print(f"[{WORKER_ID}]   ⚠ Unknown task type: {task_type}", flush=True)
+        print(f"[{WORKER_ID}]   ⚠ Unknown task type / handler: {task_type}", flush=True)
 
 def get_next_task():
     """Get next task from highest priority queue that has tasks"""

@@ -21,6 +21,11 @@ export const fetchWorkers = async () => {
   return response.data;
 };
 
+export const fetchTaskTypes = async () => {
+  const response = await apiClient.get('/task-types');
+  return response.data;
+};
+
 export const createTask = async (taskData) => {
   const response = await apiClient.post('/tasks', taskData);
   return response.data;

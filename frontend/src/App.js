@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Activity, Cpu, Database, Zap, TrendingUp, Layers, Server, Clock } from 'lucide-react';
 import { fetchTasks, fetchWorkers, getQueueStats } from './services/api';
 import MetricCard from './components/MetricCard';
@@ -20,18 +20,12 @@ function App() {
   const [throughput, setThroughput] = useState([]);
   const [workerDistribution, setWorkerDistribution] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
-  const [queueStuckSince, setQueueStuckSince] = useState(null);
+  const queueStuckSinceRef = useRef(null);
   const [showStuckWarning, setShowStuckWarning] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, POLL_INTERVAL);
-    return () => clearInterval(interval);
-  }, [page]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const page1Data = await fetchTasks(1, 50);
       const page1Tasks = page1Data.tasks || [];
@@ -89,16 +83,13 @@ function App() {
       const allWorkersIdle = mergedWorkers.length > 0 && mergedWorkers.every(w => w.status === 'idle' || w.status === 'offline');
       
       if (totalQueued > 0 && allWorkersIdle) {
-        setQueueStuckSince(prev => {
-          const now = Date.now();
-          const start = prev || now;
-          if (now - start > 10000) {
-            setShowStuckWarning(true);
-          }
-          return start;
-        });
+        if (queueStuckSinceRef.current === null) {
+          queueStuckSinceRef.current = Date.now();
+        } else if (Date.now() - queueStuckSinceRef.current > 10000) {
+          setShowStuckWarning(true);
+        }
       } else {
-        setQueueStuckSince(null);
+        queueStuckSinceRef.current = null;
         setShowStuckWarning(false);
       }
 
@@ -125,7 +116,13 @@ function App() {
     } catch (error) {
       console.error('Error loading data:', error);
     }
-  };
+  }, [page]);
+
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [loadData]);
 
   const getActivityText = () => {
     if (showStuckWarning) {

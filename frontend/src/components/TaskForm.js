@@ -1,35 +1,87 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Zap } from 'lucide-react';
-import { createTask } from '../services/api';
+import { createTask, fetchTaskTypes } from '../services/api';
 
 const TaskForm = ({ onTaskCreated }) => {
-  const [taskType, setTaskType] = useState('send_email');
+  const [taskTypes, setTaskTypes] = useState([]);
+  const [taskType, setTaskType] = useState('');
   const [priority, setPriority] = useState('medium');
-  const [inputValue, setInputValue] = useState('');
+  const [formValues, setFormValues] = useState({});
   const [dependencies, setDependencies] = useState('');
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const loadTaskTypes = async () => {
+      try {
+        const data = await fetchTaskTypes();
+        setTaskTypes(data);
+        if (data.length > 0) {
+          setTaskType(data[0].type);
+          const initialValues = {};
+          data[0].frontend_fields.forEach(field => {
+            initialValues[field.name] = '';
+          });
+          setFormValues(initialValues);
+        }
+      } catch (err) {
+        console.error('Failed to load task types:', err);
+      }
+    };
+    loadTaskTypes();
+  }, []);
+
+  const handleTypeChange = (selectedType) => {
+    setTaskType(selectedType);
+    const selectedSchema = taskTypes.find(t => t.type === selectedType);
+    if (selectedSchema) {
+      const initialValues = {};
+      selectedSchema.frontend_fields.forEach(field => {
+        initialValues[field.name] = '';
+      });
+      setFormValues(initialValues);
+    }
+  };
+
+  const handleFieldChange = (fieldName, value) => {
+    setFormValues(prev => ({
+      ...prev,
+      [fieldName]: value
+    }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
-    let data = {};
-    switch (taskType) {
-      case 'send_email': data = { to: inputValue }; break;
-      case 'process_video': data = { file: inputValue }; break;
-      case 'generate_report': data = { report_type: inputValue }; break;
-      case 'data_backup': data = { database: inputValue }; break;
-      case 'image_processing': data = { image_path: inputValue }; break;
-      case 'send_notification': data = { user_id: inputValue }; break;
-      case 'run_ml_model': data = { model_name: inputValue }; break;
-      case 'webhook_trigger': data = { url: inputValue }; break;
-      default: data = { input: inputValue };
+
+    const selectedSchema = taskTypes.find(t => t.type === taskType);
+    const cleanedData = {};
+    if (selectedSchema) {
+      selectedSchema.frontend_fields.forEach(field => {
+        const value = formValues[field.name];
+        const strVal = typeof value === 'string' ? value.trim() : value;
+        if (strVal !== undefined && strVal !== null && strVal !== '') {
+          cleanedData[field.name] = strVal;
+        }
+      });
     }
 
     const deps = dependencies.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
 
     try {
-      await createTask({ type: taskType, data, priority, dependencies: deps.length > 0 ? deps : undefined });
-      setInputValue('');
+      await createTask({ 
+        type: taskType, 
+        data: cleanedData, 
+        priority, 
+        dependencies: deps.length > 0 ? deps : undefined 
+      });
+      
+      const resetValues = {};
+      if (selectedSchema) {
+        selectedSchema.frontend_fields.forEach(field => {
+          resetValues[field.name] = '';
+        });
+      }
+      setFormValues(resetValues);
       setDependencies('');
       setPriority('medium');
       if (onTaskCreated) onTaskCreated();
@@ -38,33 +90,7 @@ const TaskForm = ({ onTaskCreated }) => {
     }
   };
 
-  const getInputPlaceholder = () => {
-    switch (taskType) {
-      case 'send_email': return 'user@domain.com';
-      case 'process_video': return 'media/video_1080p.mp4';
-      case 'generate_report': return 'Monthly Sales Report';
-      case 'data_backup': return 'production_db';
-      case 'image_processing': return 'uploads/photo.jpg';
-      case 'send_notification': return 'user_12345';
-      case 'run_ml_model': return 'sentiment_analysis_v2';
-      case 'webhook_trigger': return 'https://api.example.com/webhook';
-      default: return '';
-    }
-  };
-
-  const getInputLabel = () => {
-    switch (taskType) {
-      case 'send_email': return 'Recipient Address';
-      case 'process_video': return 'Video File Path';
-      case 'generate_report': return 'Report Type';
-      case 'data_backup': return 'Database Name';
-      case 'image_processing': return 'Image Path';
-      case 'send_notification': return 'User ID';
-      case 'run_ml_model': return 'Model Name';
-      case 'webhook_trigger': return 'Webhook URL';
-      default: return 'Input';
-    }
-  };
+  const selectedSchema = taskTypes.find(t => t.type === taskType);
 
   return (
     <div className="panel create-panel">
@@ -76,15 +102,12 @@ const TaskForm = ({ onTaskCreated }) => {
         <div className="form-row">
           <div className="form-field">
             <label>Task Type</label>
-            <select value={taskType} onChange={(e) => setTaskType(e.target.value)}>
-              <option value="send_email">Email Delivery</option>
-              <option value="process_video">Video Processing</option>
-              <option value="generate_report">Generate Report</option>
-              <option value="data_backup">Database Backup</option>
-              <option value="image_processing">Image Processing</option>
-              <option value="send_notification">Send Notification</option>
-              <option value="run_ml_model">Run ML Model</option>
-              <option value="webhook_trigger">Webhook Trigger</option>
+            <select value={taskType} onChange={(e) => handleTypeChange(e.target.value)}>
+              {taskTypes.map((typeObj) => (
+                <option key={typeObj.type} value={typeObj.type}>
+                  {typeObj.label}
+                </option>
+              ))}
             </select>
           </div>
           <div className="form-field">
@@ -96,10 +119,35 @@ const TaskForm = ({ onTaskCreated }) => {
             </select>
           </div>
         </div>
-        <div className="form-field">
-          <label>{getInputLabel()}</label>
-          <input type={taskType === 'webhook_trigger' ? 'url' : taskType === 'send_email' ? 'email' : 'text'} value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder={getInputPlaceholder()} required />
-        </div>
+
+        {selectedSchema && selectedSchema.frontend_fields.map((field) => {
+          const isRequired = selectedSchema.required_fields.includes(field.name);
+          return (
+            <div className="form-field" key={field.name}>
+              <label>
+                {field.label} {isRequired && <span style={{ color: '#ef4444' }}>*</span>}
+              </label>
+              {field.type === 'textarea' ? (
+                <textarea
+                  value={formValues[field.name] || ''}
+                  onChange={(e) => handleFieldChange(field.name, e.target.value)}
+                  placeholder={field.placeholder}
+                  required={isRequired}
+                  rows={3}
+                />
+              ) : (
+                <input
+                  type={field.type === 'email' ? 'email' : 'text'}
+                  value={formValues[field.name] || ''}
+                  onChange={(e) => handleFieldChange(field.name, e.target.value)}
+                  placeholder={field.placeholder}
+                  required={isRequired}
+                />
+              )}
+            </div>
+          );
+        })}
+
         <div className="form-field">
           <label>Dependencies (Optional)</label>
           <input type="text" value={dependencies} onChange={(e) => setDependencies(e.target.value)} placeholder="Task IDs (e.g., 1,2,3)" />
