@@ -53,6 +53,9 @@ Desktop.ini
 # Local pipeline storage
 backend/storage/
 
+# Qdrant persistent vector storage (runtime data)
+qdrant_storage/
+
 # Temporary files
 backend/powershell.cmd
 powershell.cmd
