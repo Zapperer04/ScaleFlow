@@ -5,12 +5,13 @@ TASK_REGISTRY = {
         "label": "Email Delivery",
         "description": "Simulates sending an email notification.",
         "required_fields": ["to", "subject", "body"],
-        "optional_fields": ["cc"],
+        "optional_fields": ["cc", "simulate_hang_seconds"],
         "frontend_fields": [
             {"name": "to", "label": "Recipient Email", "type": "email", "placeholder": "user@example.com"},
             {"name": "subject", "label": "Subject", "type": "text", "placeholder": "Welcome"},
             {"name": "body", "label": "Body", "type": "textarea", "placeholder": "Message body"},
-            {"name": "cc", "label": "CC Email", "type": "email", "placeholder": "copy@example.com"}
+            {"name": "cc", "label": "CC Email", "type": "email", "placeholder": "copy@example.com"},
+            {"name": "simulate_hang_seconds", "label": "Simulate Hang (Seconds)", "type": "number", "placeholder": "e.g. 45"}
         ],
         "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
         "estimated_runtime_seconds": 3,
@@ -20,11 +21,12 @@ TASK_REGISTRY = {
         "label": "Video Processing",
         "description": "Transcodes video to requested format and resolution.",
         "required_fields": ["file"],
-        "optional_fields": ["format", "resolution"],
+        "optional_fields": ["format", "resolution", "simulate_hang_seconds"],
         "frontend_fields": [
             {"name": "file", "label": "Video File Path", "type": "text", "placeholder": "media/video_1080p.mp4"},
             {"name": "format", "label": "Output Format", "type": "text", "placeholder": "mp4"},
-            {"name": "resolution", "label": "Resolution", "type": "text", "placeholder": "720p"}
+            {"name": "resolution", "label": "Resolution", "type": "text", "placeholder": "720p"},
+            {"name": "simulate_hang_seconds", "label": "Simulate Hang (Seconds)", "type": "number", "placeholder": "e.g. 45"}
         ],
         "retry_policy": {"max_retries": 2, "retry_delay_seconds": 10},
         "estimated_runtime_seconds": 5,
@@ -34,10 +36,11 @@ TASK_REGISTRY = {
         "label": "Generate Report",
         "description": "Compiles statistical report data.",
         "required_fields": ["report_type"],
-        "optional_fields": ["format"],
+        "optional_fields": ["format", "simulate_hang_seconds"],
         "frontend_fields": [
             {"name": "report_type", "label": "Report Type", "type": "text", "placeholder": "Monthly Sales Report"},
-            {"name": "format", "label": "Output Format", "type": "text", "placeholder": "PDF"}
+            {"name": "format", "label": "Output Format", "type": "text", "placeholder": "PDF"},
+            {"name": "simulate_hang_seconds", "label": "Simulate Hang (Seconds)", "type": "number", "placeholder": "e.g. 45"}
         ],
         "retry_policy": {"max_retries": 4, "retry_delay_seconds": 8},
         "estimated_runtime_seconds": 4,

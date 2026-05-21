@@ -142,6 +142,17 @@ def execute_task(task):
     
     print(f"[{WORKER_ID}] [{datetime.now().strftime('%H:%M:%S')}] Executing task {task_id}: {task_type} [Priority: {priority.upper()}] (Attempt {retry_count + 1})", flush=True)
     
+    # Check for simulate_hang_seconds in payload
+    simulate_hang_seconds = task_data.get('simulate_hang_seconds')
+    if simulate_hang_seconds is not None:
+        try:
+            hang_time = float(simulate_hang_seconds)
+            print(f"[{WORKER_ID}]   ⏳ [Simulation] Hanging task for {hang_time} seconds...", flush=True)
+            time.sleep(hang_time)
+            print(f"[{WORKER_ID}]   ⏳ [Simulation] Wake up after hang!", flush=True)
+        except (ValueError, TypeError):
+            print(f"[{WORKER_ID}]   ⚠ Invalid simulate_hang_seconds value: {simulate_hang_seconds}", flush=True)
+
     if random.random() < 0.1 and retry_count < 2:
         print(f"[{WORKER_ID}]   ✗ Task failed! Will retry...", flush=True)
         raise Exception(f"Simulated failure for task {task_id}")
@@ -207,70 +218,66 @@ def worker_loop():
                 worker_state['last_action'] = f"Received task #{task_id}"
                 print(f"[{WORKER_ID}] Received task_id {task_id} from queue {queue_name}", flush=True)
                 
-                worker_state['last_action'] = f"Fetching task #{task_id} details"
-                print(f"[{WORKER_ID}] Fetching task details for task #{task_id} from {API_URL}", flush=True)
-                response = requests.get(f"{API_URL}/tasks/{task_id}", headers=HEADERS, timeout=5)
+                worker_state['last_action'] = f"Claiming task #{task_id}"
+                print(f"[{WORKER_ID}] Claiming task #{task_id} from API...", flush=True)
+                response = requests.post(f"{API_URL}/tasks/{task_id}/claim", json={'worker_id': WORKER_ID}, headers=HEADERS, timeout=5)
+                
                 if response.status_code != 200:
-                    worker_state['last_action'] = f"Error fetching task #{task_id}"
-                    print(f"[{WORKER_ID}] Error fetching task details: {response.status_code} - {response.text}", flush=True)
+                    worker_state['last_action'] = f"Failed to claim task #{task_id}"
+                    print(f"[{WORKER_ID}] Claim failed: {response.status_code} - {response.text}", flush=True)
                     continue
                     
                 task = response.json()
+                lease_token = task.get('lease_token')
                 
-                if task.get('status') == 'cancelled':
-                    worker_state['last_action'] = f"Skipped cancelled task #{task_id}"
-                    print(f"[{WORKER_ID}] Skipped task {task_id}: Task status is cancelled in DB", flush=True)
-                    continue
+                worker_state['last_action'] = f"Executing task #{task_id}"
+                print(f"[{WORKER_ID}] Starting task {task_id} ({task.get('type')})...", flush=True)
+                worker_state['status'] = 'busy'
+                worker_state['current_task_id'] = task_id
                 
-                if task.get('status') == 'pending':
-                    worker_state['last_action'] = f"Executing task #{task_id}"
-                    print(f"[{WORKER_ID}] Starting task {task_id} ({task.get('type')})...", flush=True)
-                    worker_state['status'] = 'busy'
-                    worker_state['current_task_id'] = task_id
+                try:
+                    retry_count = task.get('retry_count', 0)
+                    if retry_count > 0:
+                        delay = min(2 ** retry_count, 30)
+                        worker_state['last_action'] = f"Backing off task #{task_id} for {delay}s"
+                        print(f"[{WORKER_ID}] Waiting {delay}s backoff before retry...", flush=True)
+                        time.sleep(delay)
+                        worker_state['last_action'] = f"Executing task #{task_id}"
                     
-                    res_patch = requests.patch(f"{API_URL}/tasks/{task_id}", 
-                                 json={'status': 'running', 'worker_id': WORKER_ID}, headers=HEADERS, timeout=5)
-                    if res_patch.status_code != 200:
-                        print(f"[{WORKER_ID}] Warning: failed to patch status to running: {res_patch.status_code} - {res_patch.text}", flush=True)
+                    execute_task(task)
                     
-                    try:
-                        retry_count = task.get('retry_count', 0)
-                        if retry_count > 0:
-                            delay = min(2 ** retry_count, 30)
-                            worker_state['last_action'] = f"Backing off task #{task_id} for {delay}s"
-                            print(f"[{WORKER_ID}] Waiting {delay}s backoff before retry...", flush=True)
-                            time.sleep(delay)
-                            worker_state['last_action'] = f"Executing task #{task_id}"
-                        
-                        execute_task(task)
-                        
-                        res_complete = requests.patch(f"{API_URL}/tasks/{task_id}", 
-                                     json={'status': 'completed', 'worker_id': WORKER_ID}, headers=HEADERS, timeout=5)
-                        if res_complete.status_code != 200:
-                            print(f"[{WORKER_ID}] Warning: failed to patch status to completed: {res_complete.status_code} - {res_complete.text}", flush=True)
-                        worker_state['last_action'] = f"Completed task #{task_id}"
-                        print(f"[{WORKER_ID}] Completed task {task_id} successfully!", flush=True)
+                    res_complete = requests.patch(f"{API_URL}/tasks/{task_id}", 
+                                 json={'status': 'completed', 'worker_id': WORKER_ID, 'lease_token': lease_token}, headers=HEADERS, timeout=5)
+                    if res_complete.status_code != 200:
+                        print(f"[{WORKER_ID}] Warning: failed to patch status to completed: {res_complete.status_code} - {res_complete.text}", flush=True)
+                        if res_complete.status_code == 409:
+                            print(f"[{WORKER_ID}] ⚠️ Task completion rejected: lease expired or owned by another worker.", flush=True)
+                    else:
                         worker_state['tasks_completed'] += 1
                         
-                    except Exception as e:
-                        worker_state['last_action'] = f"Failed task #{task_id}"
-                        print(f"[{WORKER_ID}] Failed task {task_id}: {str(e)}", flush=True)
-                        res_fail = requests.patch(f"{API_URL}/tasks/{task_id}", 
-                                     json={
-                                         'status': 'failed',
-                                         'error_message': str(e),
-                                         'worker_id': WORKER_ID
-                                     }, headers=HEADERS, timeout=5)
-                        if res_fail.status_code != 200:
-                            print(f"[{WORKER_ID}] Warning: failed to patch status to failed: {res_fail.status_code} - {res_fail.text}", flush=True)
+                    worker_state['last_action'] = f"Completed task #{task_id}"
+                    print(f"[{WORKER_ID}] Completed task {task_id} successfully!", flush=True)
+                    
+                except Exception as e:
+                    worker_state['last_action'] = f"Failed task #{task_id}"
+                    print(f"[{WORKER_ID}] Failed task {task_id}: {str(e)}", flush=True)
+                    res_fail = requests.patch(f"{API_URL}/tasks/{task_id}", 
+                                 json={
+                                     'status': 'failed',
+                                     'error_message': str(e),
+                                     'worker_id': WORKER_ID,
+                                     'lease_token': lease_token
+                                 }, headers=HEADERS, timeout=5)
+                    if res_fail.status_code != 200:
+                        print(f"[{WORKER_ID}] Warning: failed to patch status to failed: {res_fail.status_code} - {res_fail.text}", flush=True)
+                        if res_fail.status_code == 409:
+                            print(f"[{WORKER_ID}] ⚠️ Task failure report rejected: lease expired or owned by another worker.", flush=True)
+                    else:
                         worker_state['tasks_failed'] += 1
-                        
-                    finally:
-                        worker_state['status'] = 'idle'
-                        worker_state['current_task_id'] = None
-                else:
-                    worker_state['last_action'] = f"Skipped task #{task_id}"
-                    print(f"[{WORKER_ID}] Skipped task {task_id}: status is {task.get('status')}, not pending", flush=True)
+                    
+                finally:
+                    worker_state['status'] = 'idle'
+                    worker_state['current_task_id'] = None
             else:
                 # No task found
                 pass

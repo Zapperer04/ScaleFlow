@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Activity, Cpu, Database, Zap, TrendingUp, Layers, Server, Clock } from 'lucide-react';
-import { fetchTasks, fetchWorkers, getQueueStats } from './services/api';
+import { fetchTasks, fetchWorkers, getQueueStats, runIntegrationTests } from './services/api';
 import MetricCard from './components/MetricCard';
 import TaskForm from './components/TaskForm';
 import TaskLog from './components/TaskLog';
@@ -24,6 +24,30 @@ function App() {
   const [showStuckWarning, setShowStuckWarning] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [testing, setTesting] = useState(false);
+  const [showTestModal, setShowTestModal] = useState(false);
+  const [testResults, setTestResults] = useState(null);
+
+  const handleRunTests = async () => {
+    setTesting(true);
+    setTestResults(null);
+    setShowTestModal(false);
+    try {
+      const data = await runIntegrationTests();
+      setTestResults(data);
+      setShowTestModal(true);
+      loadData();
+    } catch (err) {
+      setTestResults({
+        status: 'failed',
+        logs: ['Integration test execution failed.'],
+        error: err.response?.data || err.message
+      });
+      setShowTestModal(true);
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -165,6 +189,28 @@ function App() {
               <span>Redis Queue</span>
             </div>
           </div>
+          <button 
+            onClick={handleRunTests}
+            disabled={testing}
+            style={{
+              background: testing ? 'rgba(59, 130, 246, 0.2)' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '8px 16px',
+              fontSize: '0.85rem',
+              fontWeight: '600',
+              cursor: testing ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)',
+              transition: 'all 0.2s ease',
+              marginLeft: '16px'
+            }}
+          >
+            {testing ? 'Running Tests...' : 'Run System Tests'}
+          </button>
         </div>
       </nav>
 
@@ -210,6 +256,125 @@ function App() {
         onClose={() => setSelectedTaskId(null)} 
         onActionComplete={loadData} 
       />
+
+      {showTestModal && testResults && (
+        <div className="modal-overlay" onClick={() => setShowTestModal(false)} style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.8)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000
+        }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{
+            background: '#1e293b',
+            border: '1px solid #334155',
+            borderRadius: '16px',
+            width: '90%',
+            maxWidth: '650px',
+            maxHeight: '80vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)',
+            color: '#f8fafc'
+          }}>
+            <div className="modal-header" style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '16px 24px',
+              borderBottom: '1px solid #334155'
+            }}>
+              <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{
+                  background: testResults.status === 'success' ? '#10b981' : '#ef4444',
+                  color: '#ffffff',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  fontSize: '0.75rem',
+                  textTransform: 'uppercase',
+                  fontWeight: 'bold'
+                }}>
+                  {testResults.status}
+                </span>
+                System Integration Test Results
+              </h2>
+              <button 
+                onClick={() => setShowTestModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  fontSize: '1.25rem',
+                  lineHeight: '1',
+                  padding: '4px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="modal-body" style={{
+              padding: '24px',
+              overflowY: 'auto',
+              flex: 1,
+              fontFamily: 'monospace',
+              fontSize: '0.875rem',
+              lineHeight: 1.6,
+              background: '#0f172a'
+            }}>
+              {testResults.logs && testResults.logs.map((log, index) => {
+                let color = '#cbd5e1';
+                if (log.includes('--- Test')) color = '#3b82f6';
+                if (log.includes('successfully') || log.includes('passed')) color = '#10b981';
+                if (log.includes('Failed') || log.includes('rejected') || log.includes('error')) color = '#fb7185';
+                
+                return (
+                  <div key={index} style={{ color, marginBottom: '6px', whiteSpace: 'pre-wrap' }}>
+                    {log}
+                  </div>
+                );
+              })}
+              {testResults.error && (
+                <div style={{ color: '#ef4444', marginTop: '12px', padding: '12px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                  <strong>Error:</strong> {JSON.stringify(testResults.error, null, 2)}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer" style={{
+              padding: '16px 24px',
+              borderTop: '1px solid #334155',
+              display: 'flex',
+              justifyContent: 'flex-end'
+            }}>
+              <button 
+                onClick={() => setShowTestModal(false)}
+                style={{
+                  background: '#334155',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px 20px',
+                  fontSize: '0.875rem',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

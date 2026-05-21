@@ -50,3 +50,8 @@ export const cancelTask = async (taskId) => {
   const response = await apiClient.post(`/tasks/${taskId}/cancel`);
   return response.data;
 };
+
+export const runIntegrationTests = async () => {
+  const response = await apiClient.get('/tasks/test-recovery');
+  return response.data;
+};

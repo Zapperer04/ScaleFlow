@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 import json
 import redis
 import os
+import uuid
+import time
 from functools import wraps
 from models import SessionLocal, Task, TaskDependency, TaskLog, load_env
 from task_registry import TASK_REGISTRY, validate_task_payload
@@ -401,6 +403,44 @@ def cancel_task(task_id):
     finally:
         db.close()
 
+@app.route('/tasks/<int:task_id>/claim', methods=['POST'])
+@require_api_key
+def claim_task(task_id):
+    db = SessionLocal()
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+            
+        if task.status not in ['pending', 'retryable']:
+            return jsonify({'error': f'Task cannot be claimed in status {task.status}'}), 400
+            
+        data = request.json or {}
+        worker_id = data.get('worker_id')
+        if not worker_id:
+            return jsonify({'error': 'worker_id is required'}), 400
+            
+        lease_token = str(uuid.uuid4())
+        task.status = 'running'
+        task.assigned_worker_id = worker_id
+        task.lease_token = lease_token
+        task.lease_expires_at = datetime.now() + timedelta(seconds=30)
+        task.started_at = datetime.now()
+        
+        create_task_log(db, task.id, "task_claimed", f"Worker claimed task", worker_id=worker_id)
+        
+        db.commit()
+        db.refresh(task)
+        
+        # Return task payload, lease_token, lease_expires_at
+        td = task.to_dict()
+        return jsonify(td), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
 @app.route('/tasks/<int:task_id>', methods=['PATCH'])
 @require_api_key
 def update_task(task_id):
@@ -412,6 +452,21 @@ def update_task(task_id):
         
         data = request.json
         worker_id = data.get('worker_id')
+        lease_token = data.get('lease_token')
+        
+        # Stale update validation for running task completion/failure
+        if data.get('status') in ['completed', 'failed']:
+            if task.status != 'running' or not worker_id or not lease_token or task.assigned_worker_id != worker_id or task.lease_token != lease_token:
+                # Log stale_worker_update_rejected
+                create_task_log(
+                    db, 
+                    task.id, 
+                    "stale_worker_update_rejected", 
+                    f"Rejected status update to {data.get('status')} from worker {worker_id} with token {lease_token}", 
+                    worker_id=worker_id
+                )
+                db.commit()
+                return jsonify({'error': 'Stale worker update rejected'}), 409
         
         if 'status' in data:
             task.status = data['status']
@@ -507,6 +562,340 @@ def get_workers():
         if worker_data:
             workers.append(json.loads(worker_data))
     return jsonify(workers), 200
+
+def scan_and_recover_tasks(db):
+    now = datetime.now()
+    # Scan running tasks where lease_expires_at < now
+    expired_tasks = db.query(Task).filter(
+        Task.status == 'running',
+        Task.lease_expires_at.isnot(None),
+        Task.lease_expires_at < now
+    ).all()
+    
+    for task in expired_tasks:
+        task.recovered_count = (task.recovered_count or 0) + 1
+        
+        if task.retry_count < task.max_retries:
+            task.status = 'pending'
+            task.retry_count += 1
+            task.assigned_worker_id = None
+            task.lease_token = None
+            task.lease_expires_at = None
+            
+            # Requeue task to correct Redis priority queue
+            add_task_to_queue(task.id, task.priority, db=db)
+            
+            create_task_log(
+                db, 
+                task.id, 
+                "task_recovered_after_lease_expiry", 
+                f"Task lease expired. Requeued (Attempt {task.retry_count}/{task.max_retries})"
+            )
+        else:
+            task.status = 'failed'
+            task.assigned_worker_id = None
+            task.lease_token = None
+            task.lease_expires_at = None
+            task.error_message = "Max retries exceeded after lease expiry"
+            
+            create_task_log(
+                db, 
+                task.id, 
+                "max_retries_exceeded_after_lease_expiry", 
+                "Max retries exceeded after lease expiry. Marked as failed."
+            )
+            
+    if expired_tasks:
+        db.commit()
+    return len(expired_tasks)
+
+def run_recovery_scanner():
+    print("[Recovery Scanner] Started background thread.", flush=True)
+    while True:
+        try:
+            time.sleep(10)
+            db = SessionLocal()
+            try:
+                scan_and_recover_tasks(db)
+            except Exception as e:
+                db.rollback()
+                print(f"[Recovery Scanner] Error during scan: {e}", flush=True)
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"[Recovery Scanner] Error in loop: {e}", flush=True)
+
+@app.route('/tasks/test-recovery', methods=['GET', 'POST'])
+def test_recovery_flow():
+    test_logs = []
+    def log_test(msg):
+        test_logs.append(msg)
+        print(f"[Test Recovery Flow] {msg}", flush=True)
+
+    log_test("Starting recovery flow integration test suite...")
+    
+    with app.test_client() as client:
+        headers = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
+        
+        # Test A: Normal valid task completes.
+        log_test("--- Test A: Normal valid task completes ---")
+        task_payload = {
+            "type": "send_email",
+            "priority": "medium",
+            "data": {
+                "to": "test_normal@example.com",
+                "subject": "Normal Task",
+                "body": "This is a normal test task."
+            }
+        }
+        res = client.post('/tasks', json=task_payload, headers=headers)
+        if res.status_code != 201:
+            return jsonify({"status": "failed", "step": "create_normal_task", "error": res.json}), 400
+        
+        task_id = res.json['id']
+        log_test(f"Task #{task_id} created successfully.")
+        
+        # Verify it's in Redis
+        queue_name = PRIORITY_QUEUES['medium']
+        in_queue = redis_client.lrange(queue_name, 0, -1)
+        if str(task_id) not in in_queue:
+            return jsonify({"status": "failed", "step": "verify_redis_queue", "error": f"Task not in Redis queue {queue_name}"}), 400
+        log_test(f"Verified Task #{task_id} is in Redis queue.")
+        
+        # Pop from Redis to isolate
+        redis_client.lrem(queue_name, 0, str(task_id))
+        log_test(f"Removed Task #{task_id} from Redis queue to isolate test.")
+        
+        # Worker 1 claims task
+        res = client.post(f'/tasks/{task_id}/claim', json={"worker_id": "worker-normal-1"}, headers=headers)
+        if res.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_normal_task", "error": res.json}), 400
+        
+        lease_token = res.json['lease_token']
+        log_test(f"Task #{task_id} claimed by worker-normal-1. Token: {lease_token}")
+        
+        # Worker 1 completes task
+        res = client.patch(f'/tasks/{task_id}', json={
+            "status": "completed",
+            "worker_id": "worker-normal-1",
+            "lease_token": lease_token
+        }, headers=headers)
+        if res.status_code != 200:
+            return jsonify({"status": "failed", "step": "complete_normal_task", "error": res.json}), 400
+        log_test(f"Task #{task_id} marked completed by worker-normal-1.")
+        
+        # Verify DB
+        db = SessionLocal()
+        try:
+            db_task = db.query(Task).filter(Task.id == task_id).first()
+            if db_task.status != "completed":
+                return jsonify({"status": "failed", "step": "verify_normal_db", "error": f"Expected completed, got {db_task.status}"}), 400
+            log_test(f"Verified Task #{task_id} DB status is 'completed'.")
+        finally:
+            db.close()
+            
+        # Test B, C, D: Lease Expiry, Recovery, Claim by another worker, Stale Reject
+        log_test("--- Test B, C, D: Lease Expiry, Recovery, Claim, Stale Reject ---")
+        task_payload_hang = {
+            "type": "send_email",
+            "priority": "medium",
+            "data": {
+                "to": "test_hang@example.com",
+                "subject": "Hang Task",
+                "body": "This is a hang simulation task.",
+                "simulate_hang_seconds": 45
+            }
+        }
+        res = client.post('/tasks', json=task_payload_hang, headers=headers)
+        if res.status_code != 201:
+            return jsonify({"status": "failed", "step": "create_hang_task", "error": res.json}), 400
+        
+        hang_task_id = res.json['id']
+        log_test(f"Hang Task #{hang_task_id} created successfully.")
+        
+        in_queue = redis_client.lrange(queue_name, 0, -1)
+        if str(hang_task_id) not in in_queue:
+            return jsonify({"status": "failed", "step": "verify_hang_redis_queue", "error": "Hang task not in Redis"}), 400
+        log_test("Verified Hang Task is in Redis queue.")
+        
+        # Pop from Redis to isolate
+        redis_client.lrem(queue_name, 0, str(hang_task_id))
+        log_test("Removed Hang Task from Redis queue to isolate test.")
+        
+        # Worker 1 claims task
+        res = client.post(f'/tasks/{hang_task_id}/claim', json={"worker_id": "worker-hang-1"}, headers=headers)
+        if res.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_hang_task", "error": res.json}), 400
+        
+        hang_lease_token_1 = res.json['lease_token']
+        log_test(f"Hang Task #{hang_task_id} claimed by worker-hang-1. Token: {hang_lease_token_1}")
+        
+        # Simulate lease expiry by modifying lease_expires_at in DB
+        db = SessionLocal()
+        try:
+            db_task = db.query(Task).filter(Task.id == hang_task_id).first()
+            db_task.lease_expires_at = datetime.now() - timedelta(seconds=10)
+            db.commit()
+            log_test("Manually expired lease of Hang Task in database.")
+            
+            # Trigger recovery scanner logic
+            num_recovered = scan_and_recover_tasks(db)
+            log_test(f"Ran recovery scanner logic. Recovered count: {num_recovered}")
+            
+            # Verify DB state
+            db_task = db.query(Task).filter(Task.id == hang_task_id).first()
+            if db_task.status != "pending" or db_task.retry_count != 1 or db_task.recovered_count != 1:
+                return jsonify({
+                    "status": "failed", 
+                    "step": "verify_recovered_status", 
+                    "error": f"Unexpected recovered state: status={db_task.status}, retry={db_task.retry_count}, recovered={db_task.recovered_count}"
+                }), 400
+            log_test("Verified task state is pending with recovered/retry count = 1.")
+        finally:
+            db.close()
+            
+        # Verify it has been requeued in Redis
+        in_queue = redis_client.lrange(queue_name, 0, -1)
+        if str(hang_task_id) not in in_queue:
+            return jsonify({"status": "failed", "step": "verify_requeued_redis", "error": "Recovered task was not requeued"}), 400
+        log_test("Verified recovered task was successfully requeued in Redis.")
+        
+        # Pop from Redis to isolate
+        redis_client.lrem(queue_name, 0, str(hang_task_id))
+        
+        # Worker 2 claims the recovered task
+        res = client.post(f'/tasks/{hang_task_id}/claim', json={"worker_id": "worker-hang-2"}, headers=headers)
+        if res.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_recovered_task", "error": res.json}), 400
+        
+        hang_lease_token_2 = res.json['lease_token']
+        log_test(f"Recovered Task claimed by worker-hang-2. Token: {hang_lease_token_2}")
+        
+        # Worker 1 (stale) tries to complete the task with its old token
+        log_test("Worker 1 (stale) attempting completion...")
+        res = client.patch(f'/tasks/{hang_task_id}', json={
+            "status": "completed",
+            "worker_id": "worker-hang-1",
+            "lease_token": hang_lease_token_1
+        }, headers=headers)
+        
+        if res.status_code != 409:
+            return jsonify({"status": "failed", "step": "verify_stale_completion_rejected", "error": f"Expected status 409, got {res.status_code}"}), 400
+        log_test("Stale completion attempt by worker-hang-1 successfully rejected with 409.")
+        
+        # Verify task log contains the stale_worker_update_rejected event
+        db = SessionLocal()
+        try:
+            logs = db.query(TaskLog).filter(TaskLog.task_id == hang_task_id, TaskLog.event_type == "stale_worker_update_rejected").all()
+            if not logs:
+                return jsonify({"status": "failed", "step": "verify_stale_log", "error": "No 'stale_worker_update_rejected' log event"}), 400
+            log_test("Verified 'stale_worker_update_rejected' log event recorded in DB.")
+        finally:
+            db.close()
+            
+        # Worker 2 completes the task
+        res = client.patch(f'/tasks/{hang_task_id}', json={
+            "status": "completed",
+            "worker_id": "worker-hang-2",
+            "lease_token": hang_lease_token_2
+        }, headers=headers)
+        if res.status_code != 200:
+            return jsonify({"status": "failed", "step": "complete_recovered_task", "error": res.json}), 400
+        log_test("Task completed successfully by worker-hang-2.")
+        
+        # Verify final status in DB
+        db = SessionLocal()
+        try:
+            db_task = db.query(Task).filter(Task.id == hang_task_id).first()
+            if db_task.status != "completed":
+                return jsonify({"status": "failed", "step": "verify_hang_completed_db", "error": f"Expected completed, got {db_task.status}"}), 400
+            log_test("Verified task final DB status is 'completed'.")
+        finally:
+            db.close()
+            
+        # Test E: Max retries exceeded
+        log_test("--- Test E: Max retries exceeded ---")
+        task_payload_fail = {
+            "type": "send_email",
+            "priority": "medium",
+            "max_retries": 1,
+            "data": {
+                "to": "test_max_retry@example.com",
+                "subject": "Max Retry Task",
+                "body": "Should fail after max retries."
+            }
+        }
+        res = client.post('/tasks', json=task_payload_fail, headers=headers)
+        if res.status_code != 201:
+            return jsonify({"status": "failed", "step": "create_max_retry_task", "error": res.json}), 400
+        
+        fail_task_id = res.json['id']
+        log_test(f"Max retry task #{fail_task_id} created.")
+        
+        # Pop from Redis to isolate
+        redis_client.lrem(queue_name, 0, str(fail_task_id))
+        
+        # Claim
+        res = client.post(f'/tasks/{fail_task_id}/claim', json={"worker_id": "worker-fail-1"}, headers=headers)
+        if res.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_fail_task", "error": res.json}), 400
+        log_test("Max retry task claimed by worker-fail-1.")
+        
+        # 1st Expiry -> recovery
+        db = SessionLocal()
+        try:
+            db_task = db.query(Task).filter(Task.id == fail_task_id).first()
+            db_task.lease_expires_at = datetime.now() - timedelta(seconds=10)
+            db.commit()
+            
+            scan_and_recover_tasks(db)
+            
+            db_task = db.query(Task).filter(Task.id == fail_task_id).first()
+            log_test(f"After 1st recovery: status={db_task.status}, retry_count={db_task.retry_count}")
+            if db_task.status != "pending" or db_task.retry_count != 1:
+                return jsonify({"status": "failed", "step": "first_fail_recovery", "error": f"Unexpected state: status={db_task.status}, retry={db_task.retry_count}"}), 400
+        finally:
+            db.close()
+            
+        # Pop from Redis to isolate
+        redis_client.lrem(queue_name, 0, str(fail_task_id))
+        
+        # 2nd Claim
+        res = client.post(f'/tasks/{fail_task_id}/claim', json={"worker_id": "worker-fail-2"}, headers=headers)
+        if res.status_code != 200:
+            return jsonify({"status": "failed", "step": "second_claim_fail_task", "error": res.json}), 400
+            
+        # 2nd Expiry -> recovery (max retries exceeded)
+        db = SessionLocal()
+        try:
+            db_task = db.query(Task).filter(Task.id == fail_task_id).first()
+            db_task.lease_expires_at = datetime.now() - timedelta(seconds=10)
+            db.commit()
+            
+            scan_and_recover_tasks(db)
+            
+            db_task = db.query(Task).filter(Task.id == fail_task_id).first()
+            log_test(f"After 2nd recovery: status={db_task.status}, retry_count={db_task.retry_count}")
+            if db_task.status != "failed":
+                return jsonify({"status": "failed", "step": "second_fail_recovery", "error": f"Expected status 'failed', got '{db_task.status}'"}), 400
+            
+            # Check log
+            logs = db.query(TaskLog).filter(TaskLog.task_id == fail_task_id, TaskLog.event_type == "max_retries_exceeded_after_lease_expiry").all()
+            if not logs:
+                return jsonify({"status": "failed", "step": "verify_max_retry_log", "error": "No 'max_retries_exceeded_after_lease_expiry' event found"}), 400
+            log_test("Verified task failed due to lease expiry exceeding max retries.")
+        finally:
+            db.close()
+            
+        log_test("All integration tests passed successfully.")
+        return jsonify({
+            "status": "success",
+            "logs": test_logs
+        }), 200
+
+import threading
+scanner_thread = threading.Thread(target=run_recovery_scanner, daemon=True)
+scanner_thread.start()
 
 if __name__ == '__main__':
     port = int(os.environ.get("API_PORT", 5000))

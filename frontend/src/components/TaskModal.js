@@ -101,6 +101,40 @@ const TaskModal = ({ taskId, onClose, onActionComplete }) => {
                 <label>Dependencies</label>
                 <span>{details.dependencies.length > 0 ? details.dependencies.join(', ') : 'None'}</span>
               </div>
+              {details.recovered_count !== undefined && (
+                <div className="detail-item">
+                  <label>Recovered Count</label>
+                  <span>{details.recovered_count}</span>
+                </div>
+              )}
+              {details.assigned_worker_id && (
+                <div className="detail-item">
+                  <label>Assigned Worker ID</label>
+                  <span style={{ fontFamily: 'monospace', color: '#3b82f6' }}>{details.assigned_worker_id}</span>
+                </div>
+              )}
+              {details.lease_expires_at && (
+                <>
+                  <div className="detail-item">
+                    <label>Lease Expiry</label>
+                    <span>{new Date(details.lease_expires_at).toLocaleString()}</span>
+                  </div>
+                  <div className="detail-item">
+                    <label>Lease Remaining</label>
+                    <span>
+                      {(() => {
+                        const remaining = Math.max(0, Math.floor((new Date(details.lease_expires_at) - Date.now()) / 1000));
+                        const expiresSoon = remaining <= 10;
+                        return (
+                          <span style={{ color: expiresSoon ? '#ef4444' : '#10b981', fontWeight: expiresSoon ? 'bold' : 'normal' }}>
+                            {remaining}s {expiresSoon && ' (Expires Soon!)'}
+                          </span>
+                        );
+                      })()}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="detail-section">

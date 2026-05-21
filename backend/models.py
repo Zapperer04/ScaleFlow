@@ -63,6 +63,11 @@ class Task(Base):
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     
+    assigned_worker_id = Column(String(100), nullable=True)
+    lease_token = Column(String(100), nullable=True)
+    lease_expires_at = Column(DateTime, nullable=True)
+    recovered_count = Column(Integer, default=0)
+    
     dependent_on = relationship(
         'Task',
         secondary='task_dependencies',
@@ -90,7 +95,19 @@ class Task(Base):
             'error_message': self.error_message,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'started_at': self.started_at.isoformat() if self.started_at else None,
-            'completed_at': self.completed_at.isoformat() if self.completed_at else None
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'assigned_worker_id': self.assigned_worker_id,
+            'lease_token': self.lease_token,
+            'lease_expires_at': self.lease_expires_at.isoformat() if self.lease_expires_at else None,
+            'recovered_count': self.recovered_count
         }
 
 Base.metadata.create_all(engine)
+
+# Auto-migration for existing tables
+from sqlalchemy import text
+with engine.begin() as conn:
+    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_worker_id VARCHAR(100);"))
+    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_token VARCHAR(100);"))
+    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMP;"))
+    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recovered_count INTEGER DEFAULT 0;"))

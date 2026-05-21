@@ -44,6 +44,7 @@ const TaskLog = ({ tasks, workers, onTaskClick, page, totalPages, onPageChange }
                     <span className={`log-badge status-${task.status}`}>
                       {task.status}
                       {task.retry_count > 0 && ` (Retry ${task.retry_count}/${task.max_retries})`}
+                      {task.recovered_count > 0 && ` (Recovered ${task.recovered_count})`}
                     </span>
                     {stuck && (
                       <span className="stuck-badge">
@@ -92,6 +93,47 @@ const TaskLog = ({ tasks, workers, onTaskClick, page, totalPages, onPageChange }
                         <span className="detail-label">Pending For:</span>
                         <span className="detail-val duration">{getPendingDuration(task.created_at)}</span>
                       </div>
+                    </div>
+                  )}
+
+                  {task.status === 'running' && (
+                    <div className="running-details" style={{
+                      width: '100%',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                      background: 'rgba(59, 130, 246, 0.05)',
+                      border: '1px dashed rgba(59, 130, 246, 0.2)',
+                      borderRadius: '8px',
+                      padding: '10px 14px',
+                      marginTop: '8px'
+                    }}>
+                      {task.assigned_worker_id && (
+                        <div className="running-detail-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.775rem' }}>
+                          <span style={{ color: '#94a3b8', fontWeight: 500 }}>Assigned Worker:</span>
+                          <span style={{ fontWeight: 700, color: '#3b82f6', fontFamily: 'monospace' }}>{task.assigned_worker_id}</span>
+                        </div>
+                      )}
+                      {task.lease_expires_at && (() => {
+                        const remainingSec = Math.max(0, Math.floor((new Date(task.lease_expires_at) - Date.now()) / 1000));
+                        const expiresSoon = remainingSec <= 10;
+                        return (
+                          <>
+                            <div className="running-detail-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.775rem' }}>
+                              <span style={{ color: '#94a3b8', fontWeight: 500 }}>Lease Expiry:</span>
+                              <span style={{ fontWeight: 700, color: expiresSoon ? '#ef4444' : '#cbd5e1' }}>
+                                {new Date(task.lease_expires_at).toLocaleTimeString()}
+                              </span>
+                            </div>
+                            <div className="running-detail-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.775rem' }}>
+                              <span style={{ color: '#94a3b8', fontWeight: 500 }}>Lease Remaining:</span>
+                              <span style={{ fontWeight: 700, color: expiresSoon ? '#ef4444' : '#cbd5e1' }}>
+                                {remainingSec}s {expiresSoon && <span style={{ color: '#ef4444', animation: 'pulse 1.5s infinite', marginLeft: '6px' }}>⚠️ Expires Soon</span>}
+                              </span>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   )}
 
