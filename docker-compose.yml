@@ -11,6 +11,7 @@ services:
       WORKER_ID: "worker-1"
       API_KEY: "${API_KEY:-dev_secret_api_key}"
       PYTHONUNBUFFERED: "1"
+      MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.3}"
     volumes:
       - ./backend/storage:/app/storage
     depends_on:
@@ -30,6 +31,7 @@ services:
       WORKER_ID: "worker-2"
       API_KEY: "${API_KEY:-dev_secret_api_key}"
       PYTHONUNBUFFERED: "1"
+      MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.3}"
     volumes:
       - ./backend/storage:/app/storage
     depends_on:
@@ -49,6 +51,7 @@ services:
       WORKER_ID: "worker-3"
       API_KEY: "${API_KEY:-dev_secret_api_key}"
       PYTHONUNBUFFERED: "1"
+      MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.3}"
     volumes:
       - ./backend/storage:/app/storage
     depends_on:

@@ -450,11 +450,15 @@ def handle_retrieve_context(payload, input_artifacts):
     print(f"[{WORKER_ID}] Searching Qdrant collection scaleflow_chunks with top_k={top_k}, filters={filters}", flush=True)
     results = search_similar("scaleflow_chunks", vector, top_k=top_k, filters=filters)
     
+    # Filter results by MIN_RETRIEVAL_SCORE
+    min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
+    filtered_results = [r for r in results if r.get("score", 0.0) >= min_score]
+    
     artifact_data = {
         "query": query,
-        "results": results
+        "results": filtered_results
     }
-    print(f"[{WORKER_ID}] [OK] Retrieved {len(results)} context chunks", flush=True)
+    print(f"[{WORKER_ID}] [OK] Retrieved {len(filtered_results)} context chunks (filtered from {len(results)} total, threshold={min_score})", flush=True)
     return artifact_data
 
 def handle_generate_answer_report(payload, input_artifacts):
@@ -465,18 +469,23 @@ def handle_generate_answer_report(payload, input_artifacts):
     query = context_data.get("query", "")
     results = context_data.get("results", [])
     
+    # Verify score threshold in case retrieve_context was bypassed or not filtered
+    min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
+    valid_results = [r for r in results if r.get("score", 0.0) >= min_score]
+    
     confidence = "low"
-    if results:
-        top_score = results[0].get("score", 0.0)
+    if valid_results:
+        top_score = valid_results[0].get("score", 0.0)
         if top_score >= 0.8:
             confidence = "high"
         elif top_score >= 0.6:
             confidence = "medium"
             
-    top_chunks = results[:3]
+    top_chunks = valid_results[:3]
     if not top_chunks:
-        answer = f"No relevant context chunks were retrieved from the vector database for the query: '{query}'."
+        answer = "No sufficiently relevant context was found for this query."
         citations = []
+        confidence = "low"
     else:
         answer_parts = []
         citations = []

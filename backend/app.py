@@ -2011,6 +2011,65 @@ def get_query_pipeline_answer(pipeline_id):
     finally:
         db.close()
 
+@app.route('/vectors/cleanup-test-data', methods=['POST'])
+@require_api_key
+def cleanup_test_data():
+    """
+    Dev-only endpoint to clear Qdrant test data.
+    Do not run in production. For local demo cleanup only.
+    """
+    is_production = os.getenv("ENV", "development").lower() == "production"
+    if is_production:
+        return jsonify({"error": "This cleanup endpoint is disabled in production."}), 403
+        
+    try:
+        from services.vector_store import client as qd_client
+        from qdrant_client.http import models as qmodels
+        
+        data = request.json or {}
+        clear_all = data.get("clear_all", False)
+        collection_name = "scaleflow_chunks"
+        
+        if clear_all:
+            # Recreate or delete all points
+            qd_client.delete(
+                collection_name=collection_name,
+                points_selector=qmodels.Filter(
+                    must=[]  # matches all points
+                )
+            )
+            message = "Successfully cleared all points from Qdrant."
+        else:
+            # Delete only test files
+            qd_client.delete(
+                collection_name=collection_name,
+                points_selector=qmodels.Filter(
+                    should=[
+                        qmodels.FieldCondition(
+                            key="original_filename",
+                            match=qmodels.MatchText(text="test_")
+                        ),
+                        qmodels.FieldCondition(
+                            key="original_filename",
+                            match=qmodels.MatchValue(value="test_retrieval_doc.txt")
+                        ),
+                        qmodels.FieldCondition(
+                            key="original_filename",
+                            match=qmodels.MatchValue(value="test_ingestion_file.txt")
+                        ),
+                        qmodels.FieldCondition(
+                            key="original_filename",
+                            match=qmodels.MatchValue(value="test_vector_search_doc.txt")
+                        )
+                    ]
+                )
+            )
+            message = "Successfully deleted test points from Qdrant."
+            
+        return jsonify({"status": "success", "message": message}), 200
+    except Exception as e:
+        return jsonify({"error": f"Cleanup failed: {str(e)}"}), 500
+
 @app.route('/query-pipelines/test-retrieval', methods=['POST'])
 def test_retrieval_flow():
     test_logs = []
@@ -2026,7 +2085,12 @@ def test_retrieval_flow():
         
         # A. Upload and index a known text file
         import io
-        known_content = "ScaleFlow is a distributed orchestration engine designed by Advanced Agentic Coding. It handles task leasing, worker heartbeats, and reliable task recovery. It uses Qdrant for semantic vector search."
+        known_content = (
+            "ScaleFlow supports renewable leases for long-running tasks. Workers send a worker heartbeat "
+            "periodically to renew the lease. If a lease expires, the expired lease is detected by the "
+            "recovery scanner, which triggers a requeue of the task. Any stale completion rejection "
+            "prevents duplicate execution of completed tasks."
+        )
         data = {
             'file': (io.BytesIO(known_content.encode('utf-8')), 'test_retrieval_doc.txt'),
             'pipeline_type': 'document_processing_demo'
@@ -2156,60 +2220,150 @@ def test_retrieval_flow():
         client.patch(f'/tasks/{task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
         log_test("Completed generate_answer_report task.")
         
-        # G. Confirm final answer contains relevant text from indexed document
+        # G. Confirm final answer asserts
         log_test("Asserting correctness of generated answer and citations...")
         ans_text = answer_res.get("answer", "")
-        if "ScaleFlow" not in ans_text and "orchestration" not in ans_text:
-            return jsonify({"status": "failed", "step": "verify_answer_content", "error": f"Answer does not contain expected text. Answer: {ans_text}"}), 400
+        
+        min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
+        top_score = retrieve_res.get("results", [{}])[0].get("score", 0.0)
+        log_test(f"Top retrieval score: {top_score} vs min threshold: {min_score}")
+        if top_score < min_score:
+            return jsonify({"status": "failed", "step": "verify_top_score", "error": f"Top score {top_score} is below threshold {min_score}"}), 400
+            
+        terms = ["lease", "worker", "recovery", "requeue", "stale"]
+        found_terms = [t for t in terms if t in ans_text.lower()]
+        log_test(f"Found matching terms in answer: {found_terms}")
+        if len(found_terms) < 3:
+            return jsonify({"status": "failed", "step": "verify_concepts_in_answer", "error": f"Expected at least 3 terms, found {len(found_terms)}: {found_terms}. Answer: {ans_text}"}), 400
             
         citations = answer_res.get("citations", [])
         if not citations:
             return jsonify({"status": "failed", "step": "verify_citations", "error": "Citations list is empty"}), 400
             
+        # Assert that retrieve_res results do not come from other files
+        for hit in retrieve_res.get("results", []):
+            if hit.get("file_id") != doc_file_id:
+                return jsonify({"status": "failed", "step": "verify_retrieval_filtering", "error": f"Retrieved chunk from file_id {hit.get('file_id')}, expected only {doc_file_id}"}), 400
+        
         citation = citations[0]
         if citation.get("file_id") != doc_file_id or citation.get("original_filename") != "test_retrieval_doc.txt":
             return jsonify({"status": "failed", "step": "verify_citation_details", "error": f"Invalid citation details: {citation}"}), 400
         log_test("Verified final answer and citations successfully.")
         
-        # H. Confirm pipeline status completed
+        # H. Run negative retrieval test
+        log_test("Running negative retrieval test for unrelated query...")
+        neg_qp_payload = {
+            "name": "Negative Test Retrieval Pipeline",
+            "query": "What is the capital of Japan?",
+            "top_k": 3
+        }
+        res_neg_qp = client.post('/query-pipelines', json=neg_qp_payload, headers=headers)
+        if res_neg_qp.status_code != 201:
+            return jsonify({"status": "failed", "step": "create_negative_query_pipeline", "error": res_neg_qp.json}), 400
+            
+        neg_qp_id = res_neg_qp.json['pipeline_id']
+        neg_qp_tasks = res_neg_qp.json['tasks']
+        log_test(f"Negative Query Pipeline #{neg_qp_id} created.")
+        
+        # 1. embed_query
+        task = next(t for t in neg_qp_tasks if t['type'] == 'embed_query')
+        res_claim = client.post(f'/tasks/{task["id"]}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_neg_embed_query", "error": res_claim.json}), 400
+        redis_client.lrem('task_queue_test_high', 0, str(task["id"]))
+        neg_payload_data = json.loads(task["data"]) if isinstance(task["data"], str) else task["data"]
+        neg_embed_res = handle_embed_query(neg_payload_data, {})
+        uri, chk = save_artifact_to_disk(neg_qp_id, task["id"], "query_vector", neg_embed_res)
+        res_art = client.post('/artifacts', json={"pipeline_id": neg_qp_id, "task_id": task["id"], "artifact_type": "query_vector", "storage_uri": uri, "checksum": chk}, headers=headers)
+        client.patch(f'/tasks/{task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
+        
+        # 2. retrieve_context
+        task = next(t for t in neg_qp_tasks if t['type'] == 'retrieve_context')
+        res_claim = client.post(f'/tasks/{task["id"]}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_neg_retrieve_context", "error": res_claim.json}), 400
+        redis_client.lrem('task_queue_test_medium', 0, str(task["id"]))
+        neg_retrieve_res = handle_retrieve_context({}, {"query_vector": neg_embed_res})
+        uri, chk = save_artifact_to_disk(neg_qp_id, task["id"], "retrieved_context", neg_retrieve_res)
+        res_art = client.post('/artifacts', json={"pipeline_id": neg_qp_id, "task_id": task["id"], "artifact_type": "retrieved_context", "storage_uri": uri, "checksum": chk}, headers=headers)
+        client.patch(f'/tasks/{task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
+        
+        # Assert retrieved results below threshold are rejected (empty list)
+        neg_results = neg_retrieve_res.get("results", [])
+        log_test(f"Negative query retrieved results count: {len(neg_results)}")
+        if len(neg_results) > 0:
+            return jsonify({"status": "failed", "step": "verify_negative_retrieved_results", "error": f"Expected 0 results above threshold, got {len(neg_results)}: {neg_results}"}), 400
+            
+        # 3. generate_answer_report
+        task = next(t for t in neg_qp_tasks if t['type'] == 'generate_answer_report')
+        res_claim = client.post(f'/tasks/{task["id"]}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_neg_generate_answer_report", "error": res_claim.json}), 400
+        redis_client.lrem('task_queue_test_medium', 0, str(task["id"]))
+        neg_answer_res = handle_generate_answer_report({}, {"retrieved_context": neg_retrieve_res})
+        uri, chk = save_artifact_to_disk(neg_qp_id, task["id"], "final_answer", neg_answer_res)
+        res_art = client.post('/artifacts', json={"pipeline_id": neg_qp_id, "task_id": task["id"], "artifact_type": "final_answer", "storage_uri": uri, "checksum": chk}, headers=headers)
+        client.patch(f'/tasks/{task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
+        
+        # Assert fallback answers
+        neg_ans_text = neg_answer_res.get("answer", "")
+        neg_citations = neg_answer_res.get("citations", [])
+        neg_confidence = neg_answer_res.get("confidence", "")
+        
+        log_test(f"Negative final answer: {neg_ans_text}")
+        if neg_ans_text != "No sufficiently relevant context was found for this query.":
+            return jsonify({"status": "failed", "step": "verify_negative_answer", "error": f"Expected fallback answer, got: '{neg_ans_text}'"}), 400
+        if len(neg_citations) != 0:
+            return jsonify({"status": "failed", "step": "verify_negative_citations", "error": f"Expected 0 citations, got: {neg_citations}"}), 400
+        if neg_confidence != "low":
+            return jsonify({"status": "failed", "step": "verify_negative_confidence", "error": f"Expected low confidence, got: '{neg_confidence}'"}), 400
+            
+        log_test("Negative retrieval test passed successfully.")
+        
+        # I. Confirm pipeline status completed
         db = SessionLocal()
         try:
             pipeline = db.query(Pipeline).filter(Pipeline.id == qp_id).first()
             if pipeline.status != 'completed':
                 return jsonify({"status": "failed", "step": "verify_pipeline_completed", "error": f"Pipeline status is {pipeline.status}, expected completed"}), 400
-            log_test(f"Confirmed pipeline status is {pipeline.status}.")
+            log_test(f"Confirmed positive pipeline status is {pipeline.status}.")
+            
+            neg_pipeline = db.query(Pipeline).filter(Pipeline.id == neg_qp_id).first()
+            if neg_pipeline.status != 'completed':
+                return jsonify({"status": "failed", "step": "verify_neg_pipeline_completed", "error": f"Negative pipeline status is {neg_pipeline.status}, expected completed"}), 400
+            log_test(f"Confirmed negative pipeline status is {neg_pipeline.status}.")
         finally:
             db.close()
             
-        # I. Confirm Redis production queues return to 0
+        # J. Confirm Redis production queues return to 0
         for q in ['task_queue_high', 'task_queue_medium', 'task_queue_low']:
             len_q = redis_client.llen(q)
             if len_q != 0:
                 return jsonify({"status": "failed", "step": "verify_production_queues_empty", "error": f"Production queue {q} has size {len_q}, expected 0"}), 400
         log_test("Confirmed production Redis queues return to 0.")
         
-        # J. Confirm /vectors/test-search still passes
+        # K. Confirm /vectors/test-search still passes
         log_test("Verifying compatibility: running /vectors/test-search...")
         res_search = client.post('/vectors/test-search', headers=auth_headers)
         if res_search.status_code != 200:
             return jsonify({"status": "failed", "step": "verify_test_search", "error": res_search.json}), 400
         log_test("Confirmed /vectors/test-search passes successfully.")
         
-        # K. Confirm /tasks/test-lease-renewal still passes
+        # L. Confirm /tasks/test-lease-renewal still passes
         log_test("Verifying compatibility: running /tasks/test-lease-renewal...")
         res_lease = client.post('/tasks/test-lease-renewal', headers=headers)
         if res_lease.status_code != 200:
             return jsonify({"status": "failed", "step": "verify_test_lease_renewal", "error": res_lease.json}), 400
         log_test("Confirmed /tasks/test-lease-renewal passes successfully.")
         
-        # L. Confirm /tasks/test-recovery still passes
+        # M. Confirm /tasks/test-recovery still passes
         log_test("Verifying compatibility: running /tasks/test-recovery...")
         res_rec = client.post('/tasks/test-recovery', headers=headers)
         if res_rec.status_code != 200:
             return jsonify({"status": "failed", "step": "verify_test_recovery", "error": res_rec.json}), 400
         log_test("Confirmed /tasks/test-recovery passes successfully.")
         
-        # M. Confirm standalone send_email still works
+        # N. Confirm standalone send_email still works
         log_test("Verifying compatibility: executing standalone send_email task...")
         res_email = client.post('/tasks', json={
             "type": "send_email",
@@ -2245,7 +2399,9 @@ def test_retrieval_flow():
         return jsonify({
             "status": "passed",
             "query_pipeline_id": qp_id,
+            "negative_query_pipeline_id": neg_qp_id,
             "final_answer": answer_res,
+            "negative_final_answer": neg_answer_res,
             "logs": test_logs
         }), 200
 

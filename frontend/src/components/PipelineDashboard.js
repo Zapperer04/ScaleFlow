@@ -1183,12 +1183,10 @@ const PipelineDashboard = () => {
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: '600' }}>Pipeline ID Filter (Optional)</label>
-                    <input 
-                      type="number" 
+                    <label style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: '600' }}>Pipeline ID Filter</label>
+                    <select 
                       value={retrievalPipelineFilter}
                       onChange={(e) => setRetrievalPipelineFilter(e.target.value)}
-                      placeholder="e.g. 1"
                       style={{
                         padding: '10px',
                         fontSize: '0.85rem',
@@ -1196,18 +1194,22 @@ const PipelineDashboard = () => {
                         border: '1px solid rgba(148, 163, 184, 0.2)',
                         borderRadius: '8px',
                         color: '#f1f5f9',
-                        width: '100%'
+                        width: '100%',
+                        outline: 'none'
                       }}
-                    />
+                    >
+                      <option value="">All Pipelines (No Filter)</option>
+                      {pipelines.map(p => (
+                        <option key={p.id} value={p.id}>#{p.id} - {p.name}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: '600' }}>File ID Filter (Optional)</label>
-                    <input 
-                      type="number" 
+                    <label style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: '600' }}>File ID Filter</label>
+                    <select 
                       value={retrievalFileFilter}
                       onChange={(e) => setRetrievalFileFilter(e.target.value)}
-                      placeholder="e.g. 15"
                       style={{
                         padding: '10px',
                         fontSize: '0.85rem',
@@ -1215,9 +1217,15 @@ const PipelineDashboard = () => {
                         border: '1px solid rgba(148, 163, 184, 0.2)',
                         borderRadius: '8px',
                         color: '#f1f5f9',
-                        width: '100%'
+                        width: '100%',
+                        outline: 'none'
                       }}
-                    />
+                    >
+                      <option value="">All Files (No Filter)</option>
+                      {uploadedFiles.map(f => (
+                        <option key={f.id} value={f.id}>{f.original_filename} (ID: {f.id})</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
