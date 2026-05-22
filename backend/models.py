@@ -115,6 +115,7 @@ class Task(Base):
     lease_token = Column(String(100), nullable=True)
     lease_expires_at = Column(DateTime, nullable=True)
     recovered_count = Column(Integer, default=0)
+    lease_renewal_count = Column(Integer, default=0)
     
     # Phase 2 columns
     pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True)
@@ -164,6 +165,7 @@ class Task(Base):
             'lease_token': self.lease_token,
             'lease_expires_at': self.lease_expires_at.isoformat() if self.lease_expires_at else None,
             'recovered_count': self.recovered_count,
+            'lease_renewal_count': self.lease_renewal_count,
             'pipeline_id': self.pipeline_id,
             'input_artifact_ids': input_ids,
             'output_artifact_ids': output_ids,
@@ -205,6 +207,7 @@ with engine.begin() as conn:
     conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_token VARCHAR(100);"))
     conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMP;"))
     conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recovered_count INTEGER DEFAULT 0;"))
+    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_renewal_count INTEGER DEFAULT 0;"))
     conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pipeline_id INTEGER;"))
     conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS input_artifact_ids TEXT;"))
     conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS output_artifact_ids TEXT;"))

@@ -129,6 +129,38 @@ TASK_REGISTRY = {
         "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
         "estimated_runtime_seconds": 3,
         "handler_name": "handle_final_report"
+    },
+    "embed_query": {
+        "label": "Embed Query",
+        "description": "Generates query embedding vector.",
+        "required_fields": ["query"],
+        "optional_fields": ["top_k", "pipeline_id_filter", "file_id_filter", "simulate_hang_seconds"],
+        "frontend_fields": [
+            {"name": "query", "label": "Query Text", "type": "textarea", "placeholder": "Search query..."}
+        ],
+        "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 2,
+        "handler_name": "handle_embed_query"
+    },
+    "retrieve_context": {
+        "label": "Retrieve Context",
+        "description": "Retrieves semantic match context from Qdrant.",
+        "required_fields": [],
+        "optional_fields": ["simulate_hang_seconds"],
+        "frontend_fields": [],
+        "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 3,
+        "handler_name": "handle_retrieve_context"
+    },
+    "generate_answer_report": {
+        "label": "Generate Answer Report",
+        "description": "Compiles retrieved context chunks into a final extractive report.",
+        "required_fields": [],
+        "optional_fields": ["simulate_hang_seconds"],
+        "frontend_fields": [],
+        "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 2,
+        "handler_name": "handle_generate_answer_report"
     }
 }
 

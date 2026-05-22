@@ -392,6 +392,124 @@ def handle_final_report(payload, input_artifacts):
     print(f"[{WORKER_ID}]   [OK] Generated final report", flush=True)
     return report
 
+def to_int_or_none(val):
+    if val is None or str(val).strip() == "":
+        return None
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return None
+
+def handle_embed_query(payload, input_artifacts):
+    from services.embedding_service import embed_text
+    query = payload.get("query")
+    if not query:
+        raise ValueError("Missing 'query' in embed_query task payload")
+    
+    vector = embed_text(query)
+    artifact_data = {
+        "query": query,
+        "embedding_model": "all-MiniLM-L6-v2",
+        "dimension": 384,
+        "vector": vector,
+        "top_k": payload.get("top_k"),
+        "pipeline_id_filter": payload.get("pipeline_id_filter"),
+        "file_id_filter": payload.get("file_id_filter")
+    }
+    print(f"[{WORKER_ID}] [OK] Generated query vector for query: {query[:50]}...", flush=True)
+    return artifact_data
+
+def handle_retrieve_context(payload, input_artifacts):
+    from services.vector_store import search_similar
+    query_vector_data = input_artifacts.get("query_vector")
+    if not query_vector_data:
+        raise ValueError("Missing 'query_vector' in retrieve_context input artifacts")
+        
+    query = query_vector_data.get("query")
+    vector = query_vector_data.get("vector")
+    top_k = query_vector_data.get("top_k", 5)
+    pipeline_id_filter = query_vector_data.get("pipeline_id_filter")
+    file_id_filter = query_vector_data.get("file_id_filter")
+    
+    if top_k is None:
+        top_k = 5
+    else:
+        try:
+            top_k = int(top_k)
+        except (ValueError, TypeError):
+            top_k = 5
+            
+    filters = {}
+    p_id = to_int_or_none(pipeline_id_filter)
+    if p_id is not None:
+        filters["pipeline_id"] = p_id
+    f_id = to_int_or_none(file_id_filter)
+    if f_id is not None:
+        filters["file_id"] = f_id
+        
+    print(f"[{WORKER_ID}] Searching Qdrant collection scaleflow_chunks with top_k={top_k}, filters={filters}", flush=True)
+    results = search_similar("scaleflow_chunks", vector, top_k=top_k, filters=filters)
+    
+    artifact_data = {
+        "query": query,
+        "results": results
+    }
+    print(f"[{WORKER_ID}] [OK] Retrieved {len(results)} context chunks", flush=True)
+    return artifact_data
+
+def handle_generate_answer_report(payload, input_artifacts):
+    context_data = input_artifacts.get("retrieved_context")
+    if not context_data:
+        raise ValueError("Missing 'retrieved_context' in generate_answer_report input artifacts")
+        
+    query = context_data.get("query", "")
+    results = context_data.get("results", [])
+    
+    confidence = "low"
+    if results:
+        top_score = results[0].get("score", 0.0)
+        if top_score >= 0.8:
+            confidence = "high"
+        elif top_score >= 0.6:
+            confidence = "medium"
+            
+    top_chunks = results[:3]
+    if not top_chunks:
+        answer = f"No relevant context chunks were retrieved from the vector database for the query: '{query}'."
+        citations = []
+    else:
+        answer_parts = []
+        citations = []
+        seen_citations = set()
+        for idx, hit in enumerate(top_chunks):
+            chunk_text = hit.get("chunk_text", "").strip()
+            score = hit.get("score", 0.0)
+            fname = hit.get("original_filename") or "unknown_file"
+            fid = hit.get("file_id")
+            cidx = hit.get("chunk_index", 0)
+            
+            answer_parts.append(f"Source [{idx+1}] (Confidence Score: {score}): \"{chunk_text}\"")
+            
+            citation_key = (fid, cidx)
+            if citation_key not in seen_citations:
+                seen_citations.add(citation_key)
+                citations.append({
+                    "file_id": fid,
+                    "original_filename": fname,
+                    "chunk_index": cidx
+                })
+        
+        answer = f"Based on the retrieved context, here are the most relevant sections matching your query:\n\n" + "\n\n".join(answer_parts)
+        
+    artifact_data = {
+        "query": query,
+        "answer": answer,
+        "citations": citations,
+        "confidence": confidence
+    }
+    print(f"[{WORKER_ID}] [OK] Generated final answer with {len(citations)} citations and confidence '{confidence}'", flush=True)
+    return artifact_data
+
 HANDLER_MAP = {
     "send_email": handle_send_email,
     "process_video": handle_process_video,
@@ -408,7 +526,10 @@ HANDLER_MAP = {
     "parse_logs": handle_parse_logs,
     "detect_error_patterns": handle_detect_error_patterns,
     "summarize_logs": handle_summarize_logs,
-    "final_report": handle_final_report
+    "final_report": handle_final_report,
+    "embed_query": handle_embed_query,
+    "retrieve_context": handle_retrieve_context,
+    "generate_answer_report": handle_generate_answer_report
 }
 
 OUTPUT_ARTIFACT_TYPES = {
@@ -419,8 +540,73 @@ OUTPUT_ARTIFACT_TYPES = {
     "parse_logs": "parsed_logs",
     "detect_error_patterns": "error_patterns",
     "summarize_logs": "log_summary",
-    "final_report": "final_report"
+    "final_report": "final_report",
+    "embed_query": "query_vector",
+    "retrieve_context": "retrieved_context",
+    "generate_answer_report": "final_answer"
 }
+
+LEASE_DURATIONS = {
+    "send_email": 30,
+    "process_video": 120,
+    "generate_report": 60,
+    "parse_document": 60,
+    "chunk_text": 60,
+    "generate_embeddings": 180,
+    "summarize_document": 60,
+    "parse_logs": 60,
+    "detect_error_patterns": 60,
+    "summarize_logs": 60,
+    "final_report": 60,
+    "embed_query": 60,
+    "retrieve_context": 60,
+    "generate_answer_report": 60
+}
+
+current_renewer = None
+
+class LeaseRenewer(threading.Thread):
+    def __init__(self, task_id, task_type, lease_token):
+        super().__init__(name=f"LeaseRenewer-{task_id}")
+        self.task_id = task_id
+        self.task_type = task_type
+        self.lease_token = lease_token
+        self.stop_event = threading.Event()
+        self.aborted = False
+        self.daemon = True
+
+    def run(self):
+        lease_duration = LEASE_DURATIONS.get(self.task_type, 30)
+        interval = max(1, lease_duration // 2)
+        
+        while not self.stop_event.wait(interval):
+            if self.stop_event.is_set():
+                break
+            try:
+                payload = {
+                    "worker_id": WORKER_ID,
+                    "lease_token": self.lease_token,
+                    "extend_by_seconds": lease_duration
+                }
+                res = requests.post(
+                    f"{API_URL}/tasks/{self.task_id}/renew-lease", 
+                    json=payload, 
+                    headers=HEADERS, 
+                    timeout=5
+                )
+                if res.status_code == 200:
+                    print(f"Renewed lease for task #{self.task_id}", flush=True)
+                elif res.status_code == 409:
+                    print(f"Lease renewal rejected for task #{self.task_id}", flush=True)
+                    self.aborted = True
+                    break
+                else:
+                    print(f"[{WORKER_ID}] Lease renewal for task #{self.task_id} returned {res.status_code}: {res.text}", flush=True)
+            except Exception as e:
+                print(f"[{WORKER_ID}] Error renewing lease for task #{self.task_id}: {e}", flush=True)
+
+    def stop(self):
+        self.stop_event.set()
 
 def execute_task(task):
     """Simulate doing the actual work - with random failures for testing retry"""
@@ -433,16 +619,29 @@ def execute_task(task):
     
     print(f"[{WORKER_ID}] [{datetime.now().strftime('%H:%M:%S')}] Executing task {task_id}: {task_type} [Priority: {priority.upper()}] (Attempt {retry_count + 1})", flush=True)
     
+    if current_renewer and current_renewer.aborted:
+        raise Exception("Task execution aborted: lease expired or rejected.")
+
     # Check for simulate_hang_seconds in payload
     simulate_hang_seconds = task_data.get('simulate_hang_seconds')
     if simulate_hang_seconds is not None:
         try:
             hang_time = float(simulate_hang_seconds)
             print(f"[{WORKER_ID}]   [HANG] [Simulation] Hanging task for {hang_time} seconds...", flush=True)
-            time.sleep(hang_time)
+            start_hang = time.time()
+            while time.time() - start_hang < hang_time:
+                if current_renewer and current_renewer.aborted:
+                    print(f"[{WORKER_ID}]   [HANG] Aborting hang simulation: lease rejected!", flush=True)
+                    break
+                time.sleep(0.5)
+            if current_renewer and current_renewer.aborted:
+                raise Exception("Task execution aborted during hang: lease expired or rejected.")
             print(f"[{WORKER_ID}]   [HANG] [Simulation] Wake up after hang!", flush=True)
         except (ValueError, TypeError):
             print(f"[{WORKER_ID}]   [WARN] Invalid simulate_hang_seconds value: {simulate_hang_seconds}", flush=True)
+
+    if current_renewer and current_renewer.aborted:
+        raise Exception("Task execution aborted: lease expired or rejected.")
 
     if random.random() < 0.1 and retry_count < 2:
         print(f"[{WORKER_ID}]   [FAIL] Task failed! Will retry...", flush=True)
@@ -476,7 +675,12 @@ def execute_task(task):
             if isinstance(task_data, dict):
                 task_data['_task_id'] = task_id
                 task_data['_pipeline_id'] = task.get('pipeline_id')
+            
+            if current_renewer and current_renewer.aborted:
+                raise Exception("Task execution aborted: lease expired or rejected.")
             output_data = handler(task_data, input_artifacts)
+            if current_renewer and current_renewer.aborted:
+                raise Exception("Task execution aborted: lease expired or rejected.")
             
             # Save artifact to disk
             pipeline_id = task.get('pipeline_id')
@@ -562,11 +766,16 @@ def worker_loop():
                     
                 task = response.json()
                 lease_token = task.get('lease_token')
+                task_type = task.get('type')
                 
                 worker_state['last_action'] = f"Executing task #{task_id}"
-                print(f"[{WORKER_ID}] Starting task {task_id} ({task.get('type')})...", flush=True)
+                print(f"[{WORKER_ID}] Starting task {task_id} ({task_type})...", flush=True)
                 worker_state['status'] = 'busy'
                 worker_state['current_task_id'] = task_id
+                
+                global current_renewer
+                current_renewer = LeaseRenewer(task_id, task_type, lease_token)
+                current_renewer.start()
                 
                 try:
                     retry_count = task.get('retry_count', 0)
@@ -574,45 +783,64 @@ def worker_loop():
                         delay = min(2 ** retry_count, 30)
                         worker_state['last_action'] = f"Backing off task #{task_id} for {delay}s"
                         print(f"[{WORKER_ID}] Waiting {delay}s backoff before retry...", flush=True)
-                        time.sleep(delay)
+                        start_sleep = time.time()
+                        while time.time() - start_sleep < delay:
+                            if current_renewer.aborted:
+                                break
+                            time.sleep(0.5)
                         worker_state['last_action'] = f"Executing task #{task_id}"
                     
+                    if current_renewer.aborted:
+                        raise Exception("Task lease renewal was rejected (lease expired or worker mismatch) during backoff")
+                        
                     execute_task(task)
                     
-                    output_artifact_ids = task.get('output_artifact_ids', [])
-                    res_complete = requests.patch(f"{API_URL}/tasks/{task_id}", 
-                                 json={
-                                     'status': 'completed', 
-                                     'worker_id': WORKER_ID, 
-                                     'lease_token': lease_token,
-                                     'output_artifact_ids': output_artifact_ids
-                                 }, headers=HEADERS, timeout=5)
-                    if res_complete.status_code != 200:
-                        print(f"[{WORKER_ID}] Warning: failed to patch status to completed: {res_complete.status_code} - {res_complete.text}", flush=True)
-                        if res_complete.status_code == 409:
-                            print(f"[{WORKER_ID}] [WARN] Task completion rejected: lease expired or owned by another worker.", flush=True)
+                    current_renewer.stop()
+                    current_renewer.join(timeout=2)
+                    
+                    if current_renewer.aborted:
+                        print(f"[{WORKER_ID}] Skipping task completion PATCH for task #{task_id} due to lease rejection.", flush=True)
                     else:
-                        worker_state['tasks_completed'] += 1
-                        
-                    worker_state['last_action'] = f"Completed task #{task_id}"
-                    print(f"[{WORKER_ID}] Completed task {task_id} successfully!", flush=True)
+                        output_artifact_ids = task.get('output_artifact_ids', [])
+                        res_complete = requests.patch(f"{API_URL}/tasks/{task_id}", 
+                                     json={
+                                         'status': 'completed', 
+                                         'worker_id': WORKER_ID, 
+                                         'lease_token': lease_token,
+                                         'output_artifact_ids': output_artifact_ids
+                                     }, headers=HEADERS, timeout=5)
+                        if res_complete.status_code != 200:
+                            print(f"[{WORKER_ID}] Warning: failed to patch status to completed: {res_complete.status_code} - {res_complete.text}", flush=True)
+                            if res_complete.status_code == 409:
+                                print(f"[{WORKER_ID}] [WARN] Task completion rejected: lease expired or owned by another worker.", flush=True)
+                        else:
+                            worker_state['tasks_completed'] += 1
+                            worker_state['last_action'] = f"Completed task #{task_id}"
+                            print(f"[{WORKER_ID}] Completed task {task_id} successfully!", flush=True)
                     
                 except Exception as e:
+                    current_renewer.stop()
+                    current_renewer.join(timeout=2)
+                    
                     worker_state['last_action'] = f"Failed task #{task_id}"
                     print(f"[{WORKER_ID}] Failed task {task_id}: {str(e)}", flush=True)
-                    res_fail = requests.patch(f"{API_URL}/tasks/{task_id}", 
-                                 json={
-                                     'status': 'failed',
-                                     'error_message': str(e),
-                                     'worker_id': WORKER_ID,
-                                     'lease_token': lease_token
-                                 }, headers=HEADERS, timeout=5)
-                    if res_fail.status_code != 200:
-                        print(f"[{WORKER_ID}] Warning: failed to patch status to failed: {res_fail.status_code} - {res_fail.text}", flush=True)
-                        if res_fail.status_code == 409:
-                            print(f"[{WORKER_ID}] [WARN] Task failure report rejected: lease expired or owned by another worker.", flush=True)
+                    
+                    if current_renewer.aborted:
+                        print(f"[{WORKER_ID}] Skipping task failure PATCH for task #{task_id} due to lease rejection.", flush=True)
                     else:
-                        worker_state['tasks_failed'] += 1
+                        res_fail = requests.patch(f"{API_URL}/tasks/{task_id}", 
+                                     json={
+                                         'status': 'failed',
+                                         'error_message': str(e),
+                                         'worker_id': WORKER_ID,
+                                         'lease_token': lease_token
+                                     }, headers=HEADERS, timeout=5)
+                        if res_fail.status_code != 200:
+                            print(f"[{WORKER_ID}] Warning: failed to patch status to failed: {res_fail.status_code} - {res_fail.text}", flush=True)
+                            if res_fail.status_code == 409:
+                                print(f"[{WORKER_ID}] [WARN] Task failure report rejected: lease expired or owned by another worker.", flush=True)
+                        else:
+                            worker_state['tasks_failed'] += 1
                     
                 finally:
                     worker_state['status'] = 'idle'

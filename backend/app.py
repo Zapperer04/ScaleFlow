@@ -117,10 +117,10 @@ def add_task_to_queue(task_id, priority='medium', db=None):
                 pipeline = local_db.query(Pipeline).filter(Pipeline.id == task.pipeline_id).first()
                 if pipeline and (pipeline.name.startswith("Test ") or "test" in pipeline.name.lower()):
                     is_test = True
-            if not is_test and task.type == "send_email" and task.data:
+            if not is_test and task.data:
                 try:
                     data = json.loads(task.data) if isinstance(task.data, str) else task.data
-                    if any(term in str(data) for term in ["test_normal", "test_hang", "test_max_retry"]):
+                    if any(term in str(data) for term in ["test_normal", "test_hang", "test_max_retry", "simulate_hang_seconds"]):
                         is_test = True
                 except:
                     pass
@@ -435,6 +435,23 @@ def cancel_task(task_id):
     finally:
         db.close()
 
+LEASE_DURATIONS = {
+    "send_email": 30,
+    "process_video": 120,
+    "generate_report": 60,
+    "parse_document": 60,
+    "chunk_text": 60,
+    "generate_embeddings": 180,
+    "summarize_document": 60,
+    "parse_logs": 60,
+    "detect_error_patterns": 60,
+    "summarize_logs": 60,
+    "final_report": 60,
+    "embed_query": 180,
+    "retrieve_context": 60,
+    "generate_answer_report": 60
+}
+
 @app.route('/tasks/<int:task_id>/claim', methods=['POST'])
 @require_api_key
 def claim_task(task_id):
@@ -452,12 +469,14 @@ def claim_task(task_id):
         if not worker_id:
             return jsonify({'error': 'worker_id is required'}), 400
             
+        lease_duration = LEASE_DURATIONS.get(task.type, 30)
         lease_token = str(uuid.uuid4())
         task.status = 'running'
         task.assigned_worker_id = worker_id
         task.lease_token = lease_token
-        task.lease_expires_at = datetime.now() + timedelta(seconds=30)
+        task.lease_expires_at = datetime.now() + timedelta(seconds=lease_duration)
         task.started_at = datetime.now()
+        task.lease_renewal_count = 0
         
         create_task_log(db, task.id, "task_claimed", f"Worker claimed task", worker_id=worker_id)
         
@@ -467,6 +486,78 @@ def claim_task(task_id):
         # Return task payload, lease_token, lease_expires_at
         td = task.to_dict()
         return jsonify(td), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/tasks/<int:task_id>/renew-lease', methods=['POST'])
+@require_api_key
+def renew_task_lease(task_id):
+    db = SessionLocal()
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+
+        data = request.json or {}
+        worker_id = data.get('worker_id')
+        lease_token = data.get('lease_token')
+        extend_by_seconds = data.get('extend_by_seconds', 30)
+
+        # Validate task status is running
+        if task.status != 'running':
+            create_task_log(db, task.id, "task_lease_renewal_rejected", 
+                            f"Lease renewal rejected for worker {worker_id}: Task status is {task.status}", 
+                            worker_id=worker_id)
+            db.commit()
+            return jsonify({'error': f'Lease renewal rejected. Task is in status {task.status}'}), 409
+
+        # Validate assigned_worker_id matches worker_id
+        if task.assigned_worker_id != worker_id:
+            create_task_log(db, task.id, "task_lease_renewal_rejected", 
+                            f"Lease renewal rejected: worker mismatch (assigned={task.assigned_worker_id}, request={worker_id})", 
+                            worker_id=worker_id)
+            db.commit()
+            return jsonify({'error': 'Lease renewal rejected. Worker mismatch.'}), 409
+
+        # Validate lease_token matches
+        if task.lease_token != lease_token:
+            create_task_log(db, task.id, "task_lease_renewal_rejected", 
+                            f"Lease renewal rejected: token mismatch for worker {worker_id}", 
+                            worker_id=worker_id)
+            db.commit()
+            return jsonify({'error': 'Lease renewal rejected. Token mismatch.'}), 409
+
+        # Validate current lease has not expired
+        if task.lease_expires_at is None or task.lease_expires_at < datetime.now():
+            create_task_log(db, task.id, "task_lease_renewal_rejected", 
+                            f"Lease renewal rejected for worker {worker_id}: lease already expired", 
+                            worker_id=worker_id)
+            db.commit()
+            return jsonify({'error': 'Lease renewal rejected. Lease already expired.'}), 409
+
+        # Extend lease_expires_at = now + extend_by_seconds
+        task.lease_expires_at = datetime.now() + timedelta(seconds=extend_by_seconds)
+        
+        # Increment lease_renewal_count
+        if hasattr(task, 'lease_renewal_count') and task.lease_renewal_count is not None:
+            task.lease_renewal_count += 1
+        else:
+            task.lease_renewal_count = 1
+
+        create_task_log(db, task.id, "task_lease_renewed", 
+                        f"Lease renewed by worker {worker_id}. Count: {task.lease_renewal_count}", 
+                        worker_id=worker_id)
+        db.commit()
+        db.refresh(task)
+
+        return jsonify({
+            'lease_expires_at': task.lease_expires_at.isoformat(),
+            'lease_renewal_count': task.lease_renewal_count
+        }), 200
+
     except Exception as e:
         db.rollback()
         return jsonify({"error": str(e)}), 500
@@ -619,6 +710,7 @@ def scan_and_recover_tasks(db):
         Task.lease_expires_at < now
     ).all()
     
+    tasks_to_requeue = []
     for task in expired_tasks:
         task.recovered_count = (task.recovered_count or 0) + 1
         
@@ -629,8 +721,8 @@ def scan_and_recover_tasks(db):
             task.lease_token = None
             task.lease_expires_at = None
             
-            # Requeue task to correct Redis priority queue
-            add_task_to_queue(task.id, task.priority, db=db)
+            # Save for requeue after commit
+            tasks_to_requeue.append((task.id, task.priority))
             
             create_task_log(
                 db, 
@@ -661,6 +753,11 @@ def scan_and_recover_tasks(db):
             
     if expired_tasks:
         db.commit()
+        # Requeue task to correct Redis priority queue after commit is successful
+        if tasks_to_requeue:
+            for task_id, priority in tasks_to_requeue:
+                add_task_to_queue(task_id, priority, db=db)
+            db.commit()
     return len(expired_tasks)
 
 def run_recovery_scanner():
@@ -1770,6 +1867,388 @@ def test_vectors_search():
             "logs": test_logs
         }), 200
 
+@app.route('/query-pipelines', methods=['POST'])
+@require_api_key
+def create_query_pipeline():
+    db = SessionLocal()
+    try:
+        data = request.json or {}
+        query = data.get("query")
+        if not query:
+            return jsonify({"error": "Missing 'query' field"}), 400
+            
+        top_k = data.get("top_k", 5)
+        pipeline_id_filter = data.get("pipeline_id_filter")
+        file_id_filter = data.get("file_id_filter")
+        
+        initial_payload = {
+            "query": query,
+            "top_k": top_k,
+            "pipeline_id_filter": pipeline_id_filter,
+            "file_id_filter": file_id_filter
+        }
+        
+        pipeline_type = "retrieval_answer_demo"
+        name = data.get("name")
+        if not name:
+            name = f"Retrieval: {query[:30]}"
+            if len(query) > 30:
+                name += "..."
+            
+        dag_definition = get_dag_template(pipeline_type, initial_payload)
+        
+        pipeline = Pipeline(
+            name=name,
+            pipeline_type=pipeline_type,
+            status='created'
+        )
+        db.add(pipeline)
+        db.flush()
+        
+        node_to_task_map = {}
+        for node in dag_definition["nodes"]:
+            registry_info = TASK_REGISTRY.get(node["task_type"], {})
+            default_max_retries = registry_info.get("retry_policy", {}).get("max_retries", 3)
+            
+            initial_status = "blocked" if node.get("depends_on") else "pending"
+            task = Task(
+                type=node["task_type"],
+                data=json.dumps(node["payload"]),
+                priority=node.get("priority", "medium"),
+                max_retries=default_max_retries,
+                status=initial_status,
+                pipeline_id=pipeline.id
+            )
+            db.add(task)
+            db.flush()
+            node_to_task_map[node["id"]] = task
+            
+        for node in dag_definition["nodes"]:
+            task = node_to_task_map[node["id"]]
+            legacy_deps = []
+            for parent_node_id in node.get("depends_on", []):
+                parent_task = node_to_task_map[parent_node_id]
+                db.add(TaskDependency(task_id=task.id, depends_on_id=parent_task.id))
+                legacy_deps.append(parent_task.id)
+            task.dependencies = json.dumps(legacy_deps)
+            
+        db.commit()
+        
+        for node_id, task in node_to_task_map.items():
+            create_task_log(db, task.id, "task_created", f"Task created as part of pipeline {pipeline.name}")
+            if json.loads(task.dependencies):
+                create_task_log(db, task.id, "dependency_waiting", f"Waiting on dependencies")
+                
+        for node in dag_definition["nodes"]:
+            if not node.get("depends_on"):
+                task = node_to_task_map[node["id"]]
+                add_task_to_queue(task.id, task.priority, db=db)
+                
+        from orchestrator.dependency_resolver import update_pipeline_status
+        update_pipeline_status(db, pipeline.id)
+        db.commit()
+        
+        return jsonify({
+            "pipeline_id": pipeline.id,
+            "status": pipeline.status,
+            "tasks": [t.to_dict() for t in node_to_task_map.values()]
+        }), 201
+        
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/query-pipelines/<int:pipeline_id>/answer', methods=['GET'])
+def get_query_pipeline_answer(pipeline_id):
+    db = SessionLocal()
+    try:
+        pipeline = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
+        if not pipeline:
+            return jsonify({"error": "Pipeline not found"}), 404
+            
+        from context.artifact_store import load_artifact_from_disk
+        
+        query = ""
+        embed_task = db.query(Task).filter(Task.pipeline_id == pipeline_id, Task.type == 'embed_query').first()
+        if embed_task:
+            try:
+                payload = json.loads(embed_task.data)
+                query = payload.get("query", "")
+            except:
+                pass
+                
+        retrieved_context = None
+        retrieved_art = db.query(Artifact).filter(
+            Artifact.pipeline_id == pipeline_id, 
+            Artifact.artifact_type == 'retrieved_context'
+        ).first()
+        if retrieved_art:
+            try:
+                retrieved_context = load_artifact_from_disk(retrieved_art.storage_uri)
+            except Exception as e:
+                print(f"Error loading retrieved_context: {e}", flush=True)
+                
+        final_answer = None
+        final_art = db.query(Artifact).filter(
+            Artifact.pipeline_id == pipeline_id, 
+            Artifact.artifact_type == 'final_answer'
+        ).first()
+        if final_art:
+            try:
+                final_answer = load_artifact_from_disk(final_art.storage_uri)
+            except Exception as e:
+                print(f"Error loading final_answer: {e}", flush=True)
+                
+        return jsonify({
+            "pipeline_id": pipeline.id,
+            "status": pipeline.status,
+            "query": query,
+            "retrieved_context": retrieved_context,
+            "final_answer": final_answer
+        }), 200
+    finally:
+        db.close()
+
+@app.route('/query-pipelines/test-retrieval', methods=['POST'])
+def test_retrieval_flow():
+    test_logs = []
+    def log_test(msg):
+        test_logs.append(msg)
+        print(f"[Test Retrieval Flow] {msg}", flush=True)
+
+    log_test("Starting Phase 5 Retrieval Pipeline integration test suite...")
+    
+    with app.test_client() as client:
+        headers = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
+        auth_headers = {"X-API-Key": API_KEY}
+        
+        # A. Upload and index a known text file
+        import io
+        known_content = "ScaleFlow is a distributed orchestration engine designed by Advanced Agentic Coding. It handles task leasing, worker heartbeats, and reliable task recovery. It uses Qdrant for semantic vector search."
+        data = {
+            'file': (io.BytesIO(known_content.encode('utf-8')), 'test_retrieval_doc.txt'),
+            'pipeline_type': 'document_processing_demo'
+        }
+        
+        log_test("Uploading test document to index in Qdrant...")
+        res_upload = client.post('/files/upload', data=data, content_type='multipart/form-data', headers=auth_headers)
+        if res_upload.status_code != 201:
+            return jsonify({"status": "failed", "step": "upload_file", "error": res_upload.json}), 400
+            
+        doc_file_id = res_upload.json['file_id']
+        doc_pipeline_id = res_upload.json['pipeline_id']
+        doc_tasks = res_upload.json['tasks']
+        log_test(f"Uploaded. file_id={doc_file_id}, pipeline_id={doc_pipeline_id}")
+        
+        # Claim and run the indexing tasks step-by-step
+        # 1. parse_document
+        task = next(t for t in doc_tasks if t['type'] == 'parse_document')
+        res_claim = client.post(f'/tasks/{task["id"]}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_parse", "error": res_claim.json}), 400
+        redis_client.lrem('task_queue_test_high', 0, str(task["id"]))
+        from worker import handle_parse_document, handle_chunk_text, handle_generate_embeddings, handle_summarize_document
+        from context.artifact_store import save_artifact_to_disk
+        
+        parsed_out = handle_parse_document({}, {"uploaded_file": known_content})
+        uri, chk = save_artifact_to_disk(doc_pipeline_id, task["id"], "parsed_text", parsed_out)
+        res_art = client.post('/artifacts', json={"pipeline_id": doc_pipeline_id, "task_id": task["id"], "artifact_type": "parsed_text", "storage_uri": uri, "checksum": chk}, headers=headers)
+        client.patch(f'/tasks/{task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
+        
+        # 2. chunk_text
+        task = next(t for t in doc_tasks if t['type'] == 'chunk_text')
+        res_claim = client.post(f'/tasks/{task["id"]}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_chunk", "error": res_claim.json}), 400
+        redis_client.lrem('task_queue_test_medium', 0, str(task["id"]))
+        chunked_out = handle_chunk_text({}, {"parsed_text": parsed_out})
+        uri, chk = save_artifact_to_disk(doc_pipeline_id, task["id"], "text_chunks", chunked_out)
+        res_art = client.post('/artifacts', json={"pipeline_id": doc_pipeline_id, "task_id": task["id"], "artifact_type": "text_chunks", "storage_uri": uri, "checksum": chk}, headers=headers)
+        client.patch(f'/tasks/{task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
+        
+        # 3. generate_embeddings
+        task = next(t for t in doc_tasks if t['type'] == 'generate_embeddings')
+        redis_client.lrem('task_queue_test_medium', 0, str(task["id"]))
+        embed_out = handle_generate_embeddings({"_pipeline_id": doc_pipeline_id, "_task_id": task["id"]}, {"text_chunks": chunked_out})
+        uri, chk = save_artifact_to_disk(doc_pipeline_id, task["id"], "vector_index", embed_out)
+        res_claim = client.post(f'/tasks/{task["id"]}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        res_art = client.post('/artifacts', json={"pipeline_id": doc_pipeline_id, "task_id": task["id"], "artifact_type": "vector_index", "storage_uri": uri, "checksum": chk}, headers=headers)
+        client.patch(f'/tasks/{task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
+        
+        # 4. summarize_document
+        task = next(t for t in doc_tasks if t['type'] == 'summarize_document')
+        res_claim = client.post(f'/tasks/{task["id"]}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_summarize", "error": res_claim.json}), 400
+        redis_client.lrem('task_queue_test_medium', 0, str(task["id"]))
+        sum_out = handle_summarize_document({"_pipeline_id": doc_pipeline_id}, {"vector_index": embed_out})
+        uri, chk = save_artifact_to_disk(doc_pipeline_id, task["id"], "summary", sum_out)
+        res_art = client.post('/artifacts', json={"pipeline_id": doc_pipeline_id, "task_id": task["id"], "artifact_type": "summary", "storage_uri": uri, "checksum": chk}, headers=headers)
+        client.patch(f'/tasks/{task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
+        
+        log_test("Document indexed successfully in Qdrant.")
+        
+        # B. Confirm Qdrant has vectors
+        from services.vector_store import get_collection_stats
+        stats = get_collection_stats()
+        pts_count = stats.get("points_count", 0)
+        log_test(f"Qdrant collection scaleflow_chunks stats: points_count={pts_count}")
+        if pts_count == 0:
+            return jsonify({"status": "failed", "step": "verify_qdrant_vectors", "error": "Qdrant collection scaleflow_chunks has 0 points"}), 400
+            
+        # C. Create retrieval_answer_demo pipeline
+        log_test("Creating retrieval_answer_demo query pipeline...")
+        qp_payload = {
+            "name": "Test Retrieval Pipeline",
+            "query": "How does ScaleFlow recover failed workers?",
+            "top_k": 3,
+            "pipeline_id_filter": doc_pipeline_id,
+            "file_id_filter": doc_file_id
+        }
+        res_qp = client.post('/query-pipelines', json=qp_payload, headers=headers)
+        if res_qp.status_code != 201:
+            return jsonify({"status": "failed", "step": "create_query_pipeline", "error": res_qp.json}), 400
+            
+        qp_id = res_qp.json['pipeline_id']
+        qp_tasks = res_qp.json['tasks']
+        log_test(f"Query Pipeline #{qp_id} created with tasks: {[t['type'] for t in qp_tasks]}")
+        
+        # D. Confirm and run embed_query
+        task = next(t for t in qp_tasks if t['type'] == 'embed_query')
+        res_claim = client.post(f'/tasks/{task["id"]}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_embed_query", "error": res_claim.json}), 400
+        redis_client.lrem('task_queue_test_high', 0, str(task["id"]))
+        
+        from worker import handle_embed_query, handle_retrieve_context, handle_generate_answer_report
+        payload_data = json.loads(task["data"]) if isinstance(task["data"], str) else task["data"]
+        embed_res = handle_embed_query(payload_data, {})
+        uri, chk = save_artifact_to_disk(qp_id, task["id"], "query_vector", embed_res)
+        res_art = client.post('/artifacts', json={"pipeline_id": qp_id, "task_id": task["id"], "artifact_type": "query_vector", "storage_uri": uri, "checksum": chk}, headers=headers)
+        client.patch(f'/tasks/{task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
+        log_test("Completed embed_query task.")
+        
+        # E. Confirm and run retrieve_context
+        task = next(t for t in qp_tasks if t['type'] == 'retrieve_context')
+        res_claim = client.post(f'/tasks/{task["id"]}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_retrieve_context", "error": res_claim.json}), 400
+        redis_client.lrem('task_queue_test_medium', 0, str(task["id"]))
+        
+        retrieve_res = handle_retrieve_context({}, {"query_vector": embed_res})
+        uri, chk = save_artifact_to_disk(qp_id, task["id"], "retrieved_context", retrieve_res)
+        res_art = client.post('/artifacts', json={"pipeline_id": qp_id, "task_id": task["id"], "artifact_type": "retrieved_context", "storage_uri": uri, "checksum": chk}, headers=headers)
+        client.patch(f'/tasks/{task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
+        log_test("Completed retrieve_context task.")
+        
+        # F. Confirm and run generate_answer_report
+        task = next(t for t in qp_tasks if t['type'] == 'generate_answer_report')
+        res_claim = client.post(f'/tasks/{task["id"]}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_generate_answer_report", "error": res_claim.json}), 400
+        redis_client.lrem('task_queue_test_medium', 0, str(task["id"]))
+        
+        answer_res = handle_generate_answer_report({}, {"retrieved_context": retrieve_res})
+        uri, chk = save_artifact_to_disk(qp_id, task["id"], "final_answer", answer_res)
+        res_art = client.post('/artifacts', json={"pipeline_id": qp_id, "task_id": task["id"], "artifact_type": "final_answer", "storage_uri": uri, "checksum": chk}, headers=headers)
+        client.patch(f'/tasks/{task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
+        log_test("Completed generate_answer_report task.")
+        
+        # G. Confirm final answer contains relevant text from indexed document
+        log_test("Asserting correctness of generated answer and citations...")
+        ans_text = answer_res.get("answer", "")
+        if "ScaleFlow" not in ans_text and "orchestration" not in ans_text:
+            return jsonify({"status": "failed", "step": "verify_answer_content", "error": f"Answer does not contain expected text. Answer: {ans_text}"}), 400
+            
+        citations = answer_res.get("citations", [])
+        if not citations:
+            return jsonify({"status": "failed", "step": "verify_citations", "error": "Citations list is empty"}), 400
+            
+        citation = citations[0]
+        if citation.get("file_id") != doc_file_id or citation.get("original_filename") != "test_retrieval_doc.txt":
+            return jsonify({"status": "failed", "step": "verify_citation_details", "error": f"Invalid citation details: {citation}"}), 400
+        log_test("Verified final answer and citations successfully.")
+        
+        # H. Confirm pipeline status completed
+        db = SessionLocal()
+        try:
+            pipeline = db.query(Pipeline).filter(Pipeline.id == qp_id).first()
+            if pipeline.status != 'completed':
+                return jsonify({"status": "failed", "step": "verify_pipeline_completed", "error": f"Pipeline status is {pipeline.status}, expected completed"}), 400
+            log_test(f"Confirmed pipeline status is {pipeline.status}.")
+        finally:
+            db.close()
+            
+        # I. Confirm Redis production queues return to 0
+        for q in ['task_queue_high', 'task_queue_medium', 'task_queue_low']:
+            len_q = redis_client.llen(q)
+            if len_q != 0:
+                return jsonify({"status": "failed", "step": "verify_production_queues_empty", "error": f"Production queue {q} has size {len_q}, expected 0"}), 400
+        log_test("Confirmed production Redis queues return to 0.")
+        
+        # J. Confirm /vectors/test-search still passes
+        log_test("Verifying compatibility: running /vectors/test-search...")
+        res_search = client.post('/vectors/test-search', headers=auth_headers)
+        if res_search.status_code != 200:
+            return jsonify({"status": "failed", "step": "verify_test_search", "error": res_search.json}), 400
+        log_test("Confirmed /vectors/test-search passes successfully.")
+        
+        # K. Confirm /tasks/test-lease-renewal still passes
+        log_test("Verifying compatibility: running /tasks/test-lease-renewal...")
+        res_lease = client.post('/tasks/test-lease-renewal', headers=headers)
+        if res_lease.status_code != 200:
+            return jsonify({"status": "failed", "step": "verify_test_lease_renewal", "error": res_lease.json}), 400
+        log_test("Confirmed /tasks/test-lease-renewal passes successfully.")
+        
+        # L. Confirm /tasks/test-recovery still passes
+        log_test("Verifying compatibility: running /tasks/test-recovery...")
+        res_rec = client.post('/tasks/test-recovery', headers=headers)
+        if res_rec.status_code != 200:
+            return jsonify({"status": "failed", "step": "verify_test_recovery", "error": res_rec.json}), 400
+        log_test("Confirmed /tasks/test-recovery passes successfully.")
+        
+        # M. Confirm standalone send_email still works
+        log_test("Verifying compatibility: executing standalone send_email task...")
+        res_email = client.post('/tasks', json={
+            "type": "send_email",
+            "data": {
+                "to": "test@example.com",
+                "subject": "Compatibility test",
+                "body": "Ingestion test run",
+                "test_normal": True
+            }
+        }, headers=headers)
+        if res_email.status_code != 201:
+            return jsonify({"status": "failed", "step": "create_standalone_task", "error": res_email.json}), 400
+            
+        standalone_task_id = res_email.json['id']
+        res_claim_email = client.post(f'/tasks/{standalone_task_id}/claim', json={"worker_id": "test-worker"}, headers=headers)
+        if res_claim_email.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_standalone_task", "error": res_claim_email.json}), 400
+        email_lease_token = res_claim_email.json['lease_token']
+        
+        res_patch_email = client.patch(f'/tasks/{standalone_task_id}', json={
+            "status": "completed",
+            "worker_id": "test-worker",
+            "lease_token": email_lease_token
+        }, headers=headers)
+        if res_patch_email.status_code != 200:
+            return jsonify({"status": "failed", "step": "complete_standalone_task", "error": res_patch_email.json}), 400
+        log_test("Confirmed standalone send_email task completed successfully.")
+        
+        # Clean up Redis test queues
+        for q in ['task_queue_test_high', 'task_queue_test_medium', 'task_queue_test_low']:
+            redis_client.delete(q)
+            
+        return jsonify({
+            "status": "passed",
+            "query_pipeline_id": qp_id,
+            "final_answer": answer_res,
+            "logs": test_logs
+        }), 200
+
 @app.route('/pipelines/test-dag', methods=['POST', 'GET'])
 def test_dag_flow():
     test_logs = []
@@ -2293,6 +2772,179 @@ def test_recovery_flow():
             db.close()
             
         log_test("All integration tests passed successfully.")
+        return jsonify({
+            "status": "success",
+            "logs": test_logs
+        }), 200
+
+@app.route('/tasks/test-lease-renewal', methods=['POST'])
+@require_api_key
+def test_lease_renewal_flow():
+    test_logs = []
+    def log_test(msg):
+        test_logs.append(msg)
+        print(f"[Test Lease Renewal Flow] {msg}", flush=True)
+
+    log_test("Starting lease renewal flow integration test suite...")
+    
+    with app.test_client() as client:
+        headers = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
+        
+        # A. Create a long-running generate_embeddings-style task.
+        log_test("--- A. Create a long-running generate_embeddings-style task ---")
+        task_payload = {
+            "type": "generate_embeddings",
+            "priority": "medium",
+            "data": {
+                "simulate_hang_seconds": 10
+            }
+        }
+        res = client.post('/tasks', json=task_payload, headers=headers)
+        if res.status_code != 201:
+            return jsonify({"status": "failed", "step": "create_task", "error": res.json}), 400
+        
+        task_id = res.json['id']
+        log_test(f"Task #{task_id} created successfully.")
+        
+        # Isolate task from Redis to avoid other workers picking it up
+        queue_name = 'task_queue_test_medium'
+        redis_client.lrem(queue_name, 0, str(task_id))
+        log_test(f"Isolated Task #{task_id} from Redis queue.")
+        
+        # B. Claim task.
+        log_test("--- B. Claim task ---")
+        res_claim = client.post(f'/tasks/{task_id}/claim', json={"worker_id": "worker-renew-test"}, headers=headers)
+        if res_claim.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_task", "error": res_claim.json}), 400
+            
+        claim_data = res_claim.json
+        lease_token = claim_data['lease_token']
+        original_expires_str = claim_data['lease_expires_at']
+        log_test(f"Task #{task_id} claimed by worker-renew-test. Token: {lease_token}, Original Expiry: {original_expires_str}")
+        
+        # C. Renew lease successfully.
+        log_test("--- C. Renew lease successfully ---")
+        res_renew = client.post(f'/tasks/{task_id}/renew-lease', json={
+            "worker_id": "worker-renew-test",
+            "lease_token": lease_token,
+            "extend_by_seconds": 300
+        }, headers=headers)
+        if res_renew.status_code != 200:
+            return jsonify({"status": "failed", "step": "renew_lease", "error": res_renew.json}), 400
+            
+        renew_data = res_renew.json
+        renewed_expires_str = renew_data['lease_expires_at']
+        renewal_count = renew_data['lease_renewal_count']
+        log_test(f"Lease renewed. New Expiry: {renewed_expires_str}, Renewal Count: {renewal_count}")
+        
+        # D. Confirm lease_expires_at increased.
+        log_test("--- D. Confirm lease_expires_at increased ---")
+        original_expires = datetime.fromisoformat(original_expires_str)
+        renewed_expires = datetime.fromisoformat(renewed_expires_str)
+        if renewed_expires <= original_expires:
+            return jsonify({"status": "failed", "step": "verify_lease_increase", "error": f"Lease was not extended. Original: {original_expires_str}, Renewed: {renewed_expires_str}"}), 400
+        log_test("Confirmed lease_expires_at increased.")
+        
+        # E. Wrong token renewal returns 409.
+        log_test("--- E. Wrong token renewal returns 409 ---")
+        res_renew_wrong = client.post(f'/tasks/{task_id}/renew-lease', json={
+            "worker_id": "worker-renew-test",
+            "lease_token": "wrong-token-123",
+            "extend_by_seconds": 30
+        }, headers=headers)
+        if res_renew_wrong.status_code != 409:
+            return jsonify({"status": "failed", "step": "verify_wrong_token", "error": f"Expected 409, got {res_renew_wrong.status_code}"}), 400
+        log_test("Confirmed wrong token renewal returns 409.")
+        
+        # G. Recovery scanner does not recover a task while lease is renewed.
+        log_test("--- G. Recovery scanner does not recover a task while lease is renewed ---")
+        db = SessionLocal()
+        try:
+            # Set lease_expires_at to a future time
+            db_task = db.query(Task).filter(Task.id == task_id).first()
+            db_task.lease_expires_at = datetime.now() + timedelta(seconds=120)
+            db.commit()
+            
+            # Run scanner
+            num_recovered = scan_and_recover_tasks(db)
+            log_test(f"Ran recovery scanner. Recovered count: {num_recovered}")
+            
+            # Verify status remains running
+            db_task = db.query(Task).filter(Task.id == task_id).first()
+            if db_task.status != "running":
+                return jsonify({"status": "failed", "step": "verify_scanner_ignores_active", "error": f"Task should be running, got {db_task.status}"}), 400
+            log_test("Confirmed recovery scanner does not recover active/renewed task.")
+        finally:
+            db.close()
+            
+        # F. Stale completion after lease ownership mismatch is rejected.
+        log_test("--- F. Stale completion after lease ownership mismatch is rejected ---")
+        db = SessionLocal()
+        try:
+            # Manually expire lease in database
+            db_task = db.query(Task).filter(Task.id == task_id).first()
+            db_task.lease_expires_at = datetime.now() - timedelta(seconds=10)
+            db.commit()
+            log_test("Manually expired task lease in DB.")
+            
+            # Run scanner to recover the task
+            num_recovered = scan_and_recover_tasks(db)
+            log_test(f"Ran recovery scanner to recover task. Recovered count: {num_recovered}")
+            
+            # Verify status is pending
+            db_task = db.query(Task).filter(Task.id == task_id).first()
+            if db_task.status != "pending":
+                return jsonify({"status": "failed", "step": "verify_recovered", "error": f"Expected task status to be pending, got {db_task.status}"}), 400
+            log_test("Task recovered successfully (status is pending).")
+        finally:
+            db.close()
+            
+        # Isolate from Redis again after recovery requeued it
+        redis_client.lrem(queue_name, 0, str(task_id))
+        
+        # Claim task by another worker
+        res_claim_2 = client.post(f'/tasks/{task_id}/claim', json={"worker_id": "worker-renew-test-2"}, headers=headers)
+        if res_claim_2.status_code != 200:
+            return jsonify({"status": "failed", "step": "claim_task_by_worker_2", "error": res_claim_2.json}), 400
+        new_lease_token = res_claim_2.json['lease_token']
+        log_test(f"Task #{task_id} claimed by worker-renew-test-2. New Token: {new_lease_token}")
+        
+        # Try to complete using original worker and original token
+        res_complete_stale = client.patch(f'/tasks/{task_id}', json={
+            "status": "completed",
+            "worker_id": "worker-renew-test",
+            "lease_token": lease_token
+        }, headers=headers)
+        if res_complete_stale.status_code != 409:
+            return jsonify({"status": "failed", "step": "verify_stale_complete_reject", "error": f"Expected 409 for stale update, got {res_complete_stale.status_code}"}), 400
+        log_test("Confirmed stale completion is rejected with 409.")
+        
+        # H. Recovery scanner recovers task after renewals stop and lease expires.
+        log_test("--- H. Recovery scanner recovers task after renewals stop and lease expires ---")
+        db = SessionLocal()
+        try:
+            # Manually expire the new worker's lease
+            db_task = db.query(Task).filter(Task.id == task_id).first()
+            db_task.lease_expires_at = datetime.now() - timedelta(seconds=10)
+            db.commit()
+            log_test("Expired new lease in database.")
+            
+            # Run scanner
+            num_recovered = scan_and_recover_tasks(db)
+            log_test(f"Ran recovery scanner. Recovered count: {num_recovered}")
+            
+            # Verify recovered
+            db_task = db.query(Task).filter(Task.id == task_id).first()
+            if db_task.status != "pending":
+                return jsonify({"status": "failed", "step": "verify_second_recovery", "error": f"Task should be pending after second recovery, got {db_task.status}"}), 400
+            log_test("Confirmed task recovered after renewals stop and lease expires.")
+        finally:
+            db.close()
+            
+        # Clean up
+        redis_client.lrem(queue_name, 0, str(task_id))
+        
+        log_test("All lease renewal integration tests passed successfully.")
         return jsonify({
             "status": "success",
             "logs": test_logs

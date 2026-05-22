@@ -127,4 +127,15 @@ export const fetchVectorStats = async () => {
   return response.data;
 };
 
+export const createRetrievalPipeline = async (queryData) => {
+  const response = await apiClient.post('/query-pipelines', queryData);
+  return response.data;
+};
+
+export const fetchRetrievalPipelineAnswer = async (pipelineId) => {
+  const response = await apiClient.get(`/query-pipelines/${pipelineId}/answer`);
+  return response.data;
+};
+
+
 

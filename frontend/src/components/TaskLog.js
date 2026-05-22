@@ -126,11 +126,35 @@ const TaskLog = ({ tasks, workers, onTaskClick, page, totalPages, onPageChange }
                               </span>
                             </div>
                             <div className="running-detail-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.775rem' }}>
-                              <span style={{ color: '#94a3b8', fontWeight: 500 }}>Lease Remaining:</span>
+                              <span style={{ color: '#94a3b8', fontWeight: 500 }}>Seconds Remaining:</span>
                               <span style={{ fontWeight: 700, color: expiresSoon ? '#ef4444' : '#cbd5e1' }}>
-                                {remainingSec}s {expiresSoon && <span style={{ color: '#ef4444', animation: 'pulse 1.5s infinite', marginLeft: '6px' }}>⚠️ Expires Soon</span>}
+                                {remainingSec}s
                               </span>
                             </div>
+                            <div className="running-detail-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.775rem' }}>
+                              <span style={{ color: '#94a3b8', fontWeight: 500 }}>Lease Renewal Count:</span>
+                              <span style={{ fontWeight: 700, color: '#10b981' }}>
+                                {task.lease_renewal_count || 0}
+                              </span>
+                            </div>
+                            {expiresSoon && (
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid rgba(239, 68, 68, 0.2)',
+                                borderRadius: '6px',
+                                padding: '6px 10px',
+                                marginTop: '4px',
+                                color: '#ef4444',
+                                fontSize: '0.75rem',
+                                fontWeight: 600
+                              }}>
+                                <AlertTriangle size={14} style={{ animation: 'bounce 1s infinite' }} />
+                                <span>Warning: Lease expires in less than 10 seconds!</span>
+                              </div>
+                            )}
                           </>
                         );
                       })()}
