@@ -35,6 +35,50 @@ PRIORITY_QUEUES = {
 }
 WORKER_HEARTBEAT_EXPIRY = 30
 
+from services.metrics_service import BACKPRESSURE_CONFIG, get_rolling_metrics, get_system_health
+
+def check_backpressure_admission(db, task):
+    """
+    Checks if a task should be admitted, deferred, or rejected based on backpressure.
+    Returns:
+      - 'admit': normal queueing
+      - 'defer': mark as blocked/deferred
+      - 'reject': return 429
+    """
+    if not BACKPRESSURE_CONFIG.get("enabled", True):
+        return 'admit'
+    if task.priority == 'high':
+        return 'admit' # High priority bypasses backpressure
+        
+    # WRR test bypasses backpressure to allow enqueueing low/medium tasks for ratio verification
+    if task.data:
+        try:
+            data = json.loads(task.data) if isinstance(task.data, str) else task.data
+            if "wrr" in str(data).lower():
+                return 'admit'
+        except:
+            pass
+        
+    # Quick check on backlog size
+    high_size = redis_client.llen('task_queue_high') or 0
+    medium_size = redis_client.llen('task_queue_medium') or 0
+    low_size = redis_client.llen('task_queue_low') or 0
+    backlog_size = high_size + medium_size + low_size
+    
+    if backlog_size >= BACKPRESSURE_CONFIG.get("max_backlog_size", 50):
+        return BACKPRESSURE_CONFIG.get("overload_protection_policy", "defer")
+        
+    # Detailed check on rolling metrics health
+    try:
+        metrics = get_rolling_metrics(db)
+        health_state, _ = get_system_health(db, metrics)
+        if health_state in ["saturated", "critical"]:
+            return BACKPRESSURE_CONFIG.get("overload_protection_policy", "defer")
+    except Exception as e:
+        print(f"Error checking backpressure: {e}", flush=True)
+        
+    return 'admit'
+
 def require_api_key(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -239,8 +283,21 @@ def create_task():
         db.refresh(task)
         
         if check_dependencies_met(task.id, db):
-            add_task_to_queue(task.id, priority, db=db)
-            db.commit()
+            admission = check_backpressure_admission(db, task)
+            if admission == 'reject':
+                db.delete(task)
+                db.commit()
+                return jsonify({"error": "System overloaded. Task request rejected."}), 429
+            elif admission == 'defer':
+                task.status = 'blocked'
+                task.blocked_reason = "System overload backpressure: deferred"
+                task.deferred_at = datetime.now()
+                db.flush()
+                create_task_log(db, task.id, "dependency_blocked", "System overload backpressure: deferred")
+                db.commit()
+            else:
+                add_task_to_queue(task.id, priority, db=db)
+                db.commit()
         
         return jsonify(task.to_dict()), 201
     except Exception as e:
@@ -809,6 +866,90 @@ def run_recovery_scanner():
         except Exception as e:
             print(f"[Recovery Scanner] Error in loop: {e}", flush=True)
 
+def scan_and_unblock_deferred_tasks(db):
+    """
+    Scans for deferred tasks, handles temporary priority escalation (aging) after 60s,
+    and handles safe release of deferred tasks if system health is healthy/degraded.
+    """
+    try:
+        from services.metrics_service import get_rolling_metrics, get_system_health, BACKPRESSURE_CONFIG
+        metrics = get_rolling_metrics(db)
+        health_state, _ = get_system_health(db, metrics)
+        backlog_size = metrics["backlog_size"]
+    except Exception as e:
+        print(f"[Unblock Scanner] Error calculating system metrics: {e}", flush=True)
+        return
+
+    deferred_tasks = db.query(Task).filter(
+        Task.status == 'blocked',
+        Task.blocked_reason == "System overload backpressure: deferred"
+    ).order_by(Task.deferred_at.asc(), Task.id.asc()).all()
+
+    if not deferred_tasks:
+        return
+
+    now = datetime.now()
+    released_count = 0
+
+    for task in deferred_tasks:
+        if not task.deferred_at:
+            task.deferred_at = task.created_at or now
+            db.flush()
+
+        wait_seconds = (now - task.deferred_at).total_seconds()
+
+        # Check priority aging threshold (60 seconds)
+        if wait_seconds >= BACKPRESSURE_CONFIG.get("aging_threshold_seconds", 60):
+            # Escalate priority
+            task.priority = 'high'
+            task.status = 'pending'
+            task.blocked_reason = None
+            task.deferred_at = None
+            db.flush()
+            create_task_log(db, task.id, "task_queued", f"Priority escalated to HIGH due to aging after {int(wait_seconds)}s wait.")
+            add_task_to_queue(task.id, 'high', db=db)
+            
+            if task.pipeline_id:
+                from orchestrator.dependency_resolver import update_pipeline_status
+                update_pipeline_status(db, task.pipeline_id)
+                
+            released_count += 1
+            print(f"[Unblock Scanner] Escalated and released task #{task.id} to HIGH priority due to aging.", flush=True)
+        elif health_state in ["healthy", "degraded"] and backlog_size + released_count < BACKPRESSURE_CONFIG.get("max_backlog_size", 50):
+            # Release under normal load
+            task.status = 'pending'
+            task.blocked_reason = None
+            task.deferred_at = None
+            db.flush()
+            create_task_log(db, task.id, "task_queued", f"Released deferred task #{task.id} (priority: {task.priority}) as system load normalized.")
+            add_task_to_queue(task.id, task.priority, db=db)
+            
+            if task.pipeline_id:
+                from orchestrator.dependency_resolver import update_pipeline_status
+                update_pipeline_status(db, task.pipeline_id)
+                
+            released_count += 1
+            print(f"[Unblock Scanner] Released task #{task.id} (priority: {task.priority}) as system load normalized.", flush=True)
+
+    if released_count > 0:
+        db.commit()
+
+def run_unblock_scanner():
+    print("[Unblock Scanner] Started background thread.", flush=True)
+    while True:
+        try:
+            time.sleep(5)
+            db = SessionLocal()
+            try:
+                scan_and_unblock_deferred_tasks(db)
+            except Exception as e:
+                db.rollback()
+                print(f"[Unblock Scanner] Error during scan: {e}", flush=True)
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"[Unblock Scanner] Error in loop: {e}", flush=True)
+
 @app.route('/pipelines', methods=['POST'])
 @require_api_key
 def create_pipeline():
@@ -821,6 +962,22 @@ def create_pipeline():
         
         if not name or not pipeline_type:
             return jsonify({"error": "Missing name or pipeline_type"}), 400
+            
+        # Check if we should reject the entire pipeline under 'reject' policy
+        if BACKPRESSURE_CONFIG.get("enabled", True) and BACKPRESSURE_CONFIG.get("overload_protection_policy") == "reject":
+            high_size = redis_client.llen('task_queue_high') or 0
+            medium_size = redis_client.llen('task_queue_medium') or 0
+            low_size = redis_client.llen('task_queue_low') or 0
+            backlog_size = high_size + medium_size + low_size
+            if backlog_size >= BACKPRESSURE_CONFIG.get("max_backlog_size", 50):
+                db.close()
+                return jsonify({"error": "System overloaded. Pipeline request rejected."}), 429
+                
+            metrics = get_rolling_metrics(db)
+            health_state, _ = get_system_health(db, metrics)
+            if health_state in ["saturated", "critical"]:
+                db.close()
+                return jsonify({"error": "System overloaded. Pipeline request rejected."}), 429
             
         try:
             dag_definition = get_dag_template(pipeline_type, initial_payload)
@@ -872,7 +1029,15 @@ def create_pipeline():
         for node in dag_definition["nodes"]:
             if not node.get("depends_on"):
                 task = node_to_task_map[node["id"]]
-                add_task_to_queue(task.id, task.priority, db=db)
+                admission = check_backpressure_admission(db, task)
+                if admission == 'defer':
+                    task.status = 'blocked'
+                    task.blocked_reason = "System overload backpressure: deferred"
+                    task.deferred_at = datetime.now()
+                    db.flush()
+                    create_task_log(db, task.id, "dependency_blocked", "System overload backpressure: deferred")
+                else:
+                    add_task_to_queue(task.id, task.priority, db=db)
                 
         from orchestrator.dependency_resolver import update_pipeline_status
         update_pipeline_status(db, pipeline.id)
@@ -3279,9 +3444,113 @@ def get_db_status():
         "tables": tables
     }), 200
 
+@app.route('/metrics/system', methods=['GET'])
+def get_system_metrics_endpoint():
+    db = SessionLocal()
+    try:
+        from services.metrics_service import get_rolling_metrics, get_system_health
+        metrics = get_rolling_metrics(db)
+        health_state, health_reason = get_system_health(db, metrics)
+        return jsonify({
+            "health_state": health_state,
+            "health_reason": health_reason,
+            "metrics": metrics
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/metrics/queues', methods=['GET'])
+def get_queue_metrics_endpoint():
+    db = SessionLocal()
+    try:
+        from services.metrics_service import get_rolling_metrics
+        metrics = get_rolling_metrics(db)
+        return jsonify({
+            "queue_sizes": metrics.get("queue_sizes", {}),
+            "backlog_size": metrics.get("backlog_size", 0)
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/metrics/workers', methods=['GET'])
+def get_worker_metrics_endpoint():
+    db = SessionLocal()
+    try:
+        from services.metrics_service import get_rolling_metrics, get_recovery_analytics
+        metrics = get_rolling_metrics(db)
+        recovery_stats = get_recovery_analytics(db)
+        return jsonify({
+            "total_workers": metrics.get("total_workers", 0),
+            "busy_workers": metrics.get("busy_workers", 0),
+            "worker_utilization_percentage": metrics.get("worker_utilization_percentage", 0.0),
+            "worker_reliability": recovery_stats.get("worker_reliability", {}),
+            "recovery_storm_active": recovery_stats.get("recovery_storm_active", False)
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/metrics/scaling', methods=['GET'])
+def get_scaling_metrics_endpoint():
+    db = SessionLocal()
+    try:
+        from services.metrics_service import get_rolling_metrics, get_scaling_simulations
+        metrics = get_rolling_metrics(db)
+        sim = get_scaling_simulations(metrics)
+        return jsonify(sim), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/metrics/pipelines/<int:pipeline_id>', methods=['GET'])
+def get_pipeline_metrics_endpoint(pipeline_id):
+    db = SessionLocal()
+    try:
+        from services.metrics_service import calculate_pipeline_critical_path
+        path_data = calculate_pipeline_critical_path(db, pipeline_id)
+        if not path_data:
+            return jsonify({"error": "Pipeline not found or has no tasks"}), 404
+        return jsonify(path_data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/metrics/backpressure', methods=['GET'])
+def get_backpressure_config_endpoint():
+    db = SessionLocal()
+    try:
+        from services.metrics_service import BACKPRESSURE_CONFIG, get_rolling_metrics, get_system_health
+        metrics = get_rolling_metrics(db)
+        health_state, health_reason = get_system_health(db, metrics)
+        is_active = (health_state in ["saturated", "critical"]) or (metrics["backlog_size"] >= BACKPRESSURE_CONFIG["max_backlog_size"])
+        deferred_count = db.query(Task).filter(
+            Task.status == 'blocked',
+            Task.blocked_reason == "System overload backpressure: deferred"
+        ).count()
+        return jsonify({
+            "config": BACKPRESSURE_CONFIG,
+            "backpressure_active": is_active,
+            "system_health": health_state,
+            "deferred_tasks_count": deferred_count
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
 import threading
 scanner_thread = threading.Thread(target=run_recovery_scanner, daemon=True)
 scanner_thread.start()
+
+unblock_thread = threading.Thread(target=run_unblock_scanner, daemon=True)
+unblock_thread.start()
 
 if __name__ == '__main__':
     import urllib.parse

@@ -2,14 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { 
   GitBranch, Play, X, RefreshCw, FileText, CheckCircle2, 
   XCircle, AlertTriangle, Clock, ChevronRight, Activity, Trash2, Upload,
-  Search, Database, Sparkles, Cpu, BookOpen, Filter, Eye
+  Search, Database, Sparkles, Cpu, BookOpen, Filter, Eye, Gauge, Zap
 } from 'lucide-react';
 import { 
   fetchPipelines, fetchPipelineDetails, createPipeline, 
   cancelPipeline, runPipelineTests, fetchArtifactContent,
   uploadFile, fetchUploadedFiles, fetchUploadedFileDetail,
   searchVectors, fetchVectorStats, createRetrievalPipeline, fetchRetrievalPipelineAnswer,
-  fetchPipelineDag, fetchPipelineTimeline
+  fetchPipelineDag, fetchPipelineTimeline,
+  getSystemMetrics, getQueueMetrics, getWorkerMetrics,
+  getScalingMetrics, getPipelineMetrics, getBackpressureMetrics
 } from '../services/api';
 
 import ReactFlow, { MiniMap, Controls, Background, Position, Handle } from 'reactflow';
@@ -43,6 +45,9 @@ const CustomTaskNode = ({ data }) => {
     blocked_reason,
   } = data;
 
+  const isOnCriticalPath = data.isOnCriticalPath;
+  const isBottleneck = data.isBottleneck;
+
   let borderColor = '#475569';
   let glowColor = 'rgba(71, 85, 105, 0.1)';
 
@@ -61,6 +66,16 @@ const CustomTaskNode = ({ data }) => {
   } else if (status === 'recovering') {
     borderColor = '#8b5cf6';
     glowColor = 'rgba(139, 92, 246, 0.4)';
+  }
+
+  // Override if critical path or bottleneck
+  if (isOnCriticalPath) {
+    borderColor = '#f43f5e'; // Vibrant rose/crimson
+    glowColor = 'rgba(244, 63, 94, 0.6)';
+  }
+  if (isBottleneck) {
+    borderColor = '#ef4444'; // Red
+    glowColor = 'rgba(239, 68, 68, 0.8)';
   }
 
   const pulseClass = (status === 'running' || status === 'recovering') ? 'pulse-glow' : '';
@@ -83,6 +98,43 @@ const CustomTaskNode = ({ data }) => {
     >
       <Handle type="target" position={Position.Left} style={{ background: borderColor }} />
       
+      {isBottleneck && (
+        <div style={{
+          position: 'absolute',
+          top: '-12px',
+          left: '10px',
+          background: '#ef4444',
+          color: '#ffffff',
+          padding: '2px 8px',
+          borderRadius: '4px',
+          fontSize: '0.55rem',
+          fontWeight: 'bold',
+          border: '1px solid #f8fafc',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+          letterSpacing: '0.5px'
+        }}>
+          ⚠ BOTTLENECK
+        </div>
+      )}
+      {!isBottleneck && isOnCriticalPath && (
+        <div style={{
+          position: 'absolute',
+          top: '-12px',
+          left: '10px',
+          background: '#f43f5e',
+          color: '#ffffff',
+          padding: '2px 8px',
+          borderRadius: '4px',
+          fontSize: '0.55rem',
+          fontWeight: 'bold',
+          border: '1px solid #f8fafc',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+          letterSpacing: '0.5px'
+        }}>
+          CRITICAL PATH
+        </div>
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
         <span style={{ fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }} title={type}>
           {type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
@@ -114,6 +166,26 @@ const CustomTaskNode = ({ data }) => {
         <div>
           <strong>Wait:</strong> {queue_wait_duration}s | <strong>Exec:</strong> {execution_duration}s
         </div>
+
+        {data.weightDetails && (
+          <div style={{ 
+            borderTop: '1px dashed rgba(148, 163, 184, 0.15)', 
+            paddingTop: '4px', 
+            marginTop: '4px', 
+            fontSize: '0.65rem', 
+            color: '#cbd5e1', 
+            display: 'grid', 
+            gridTemplateColumns: '1fr 1fr', 
+            gap: '4px' 
+          }}>
+            <div><strong>Dep Wait:</strong> {data.weightDetails.dependency_wait}s</div>
+            <div><strong>Q Wait:</strong> {data.weightDetails.queue_wait}s</div>
+            <div><strong>Exec:</strong> {data.weightDetails.execution_duration}s</div>
+            {data.weightDetails.recovery_delay > 0 && (
+              <div style={{ color: '#f87171' }}><strong>Rec Delay:</strong> {data.weightDetails.recovery_delay}s</div>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '2px' }}>
           {retry_count > 0 && (
@@ -238,6 +310,37 @@ const PipelineDashboard = () => {
   const [pipelineName, setPipelineName] = useState('Demo Document Pipeline');
   const [payloadText, setPayloadText] = useState(JSON.stringify(DEFAULT_PAYLOADS.document_processing_demo, null, 2));
   
+  // Systems Observability & Backpressure States
+  const [dashboardTab, setDashboardTab] = useState('orchestration');
+  const [pipelineMetrics, setPipelineMetrics] = useState(null);
+  const [systemMetricsData, setSystemMetricsData] = useState(null);
+  const [scalingData, setScalingData] = useState(null);
+  const [backpressureData, setBackpressureData] = useState(null);
+
+  const loadPipelineMetrics = async (id) => {
+    try {
+      const data = await getPipelineMetrics(id);
+      setPipelineMetrics(data);
+    } catch (err) {
+      console.error('Failed to load pipeline metrics:', err);
+    }
+  };
+
+  const loadSystemObservabilityData = async () => {
+    try {
+      const [sys, scale, bp] = await Promise.all([
+        getSystemMetrics(),
+        getScalingMetrics(),
+        getBackpressureMetrics()
+      ]);
+      setSystemMetricsData(sys);
+      setScalingData(scale);
+      setBackpressureData(bp);
+    } catch (err) {
+      console.error('Failed to load system observability metrics:', err);
+    }
+  };
+
   // React Flow states
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
@@ -375,10 +478,92 @@ const PipelineDashboard = () => {
   const loadPipelineDag = async (id) => {
     try {
       const data = await fetchPipelineDag(id);
+      let metrics = null;
+      try {
+        metrics = await getPipelineMetrics(id);
+        setPipelineMetrics(metrics);
+      } catch (err) {
+        console.error('Failed to load pipeline metrics:', err);
+      }
+
       if (data && data.nodes && data.edges) {
+        // Pre-process nodes with critical path and bottleneck flags
+        const criticalNodeIds = metrics && metrics.critical_path 
+          ? metrics.critical_path.map(tid => `task-${tid}`) 
+          : [];
+        const bottleneckNodeId = metrics && metrics.bottleneck_node_id 
+          ? `task-${metrics.bottleneck_node_id}` 
+          : null;
+
+        const updatedNodes = data.nodes.map(node => {
+          const isOnCriticalPath = criticalNodeIds.includes(node.id);
+          const isBottleneck = node.id === bottleneckNodeId;
+          
+          // Inject wait/execution details if present in metrics node_weights
+          let weightDetails = null;
+          if (node.type === 'taskNode' && metrics && metrics.node_weights) {
+            const taskId = node.id.replace('task-', '');
+            weightDetails = metrics.node_weights[taskId] || null;
+          }
+
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              isOnCriticalPath,
+              isBottleneck,
+              weightDetails
+            }
+          };
+        });
+
+        // Highlight critical path edges
+        const updatedEdges = data.edges.map(edge => {
+          let isCriticalEdge = false;
+          
+          if (metrics && metrics.critical_path) {
+            const isSourceCritical = criticalNodeIds.includes(edge.source) || 
+              (edge.source.startsWith('artifact-') && data.nodes.some(n => n.id === edge.source && criticalNodeIds.includes(`task-${n.data.task_id}`)));
+              
+            const isTargetCritical = criticalNodeIds.includes(edge.target) ||
+              (edge.target.startsWith('artifact-') && data.nodes.some(n => n.id === edge.target && criticalNodeIds.includes(`task-${n.data.task_id}`)));
+
+            if (edge.source.startsWith('task-') && edge.target.startsWith('task-')) {
+              const srcId = parseInt(edge.source.replace('task-', ''));
+              const tgtId = parseInt(edge.target.replace('task-', ''));
+              const srcIdx = metrics.critical_path.indexOf(srcId);
+              const tgtIdx = metrics.critical_path.indexOf(tgtId);
+              isCriticalEdge = srcIdx !== -1 && tgtIdx !== -1 && (srcIdx + 1 === tgtIdx || tgtIdx + 1 === srcIdx);
+            } else if (edge.source.startsWith('task-') && edge.target.startsWith('artifact-')) {
+              const srcId = parseInt(edge.source.replace('task-', ''));
+              const artNode = data.nodes.find(n => n.id === edge.target);
+              const isSourceInPath = metrics.critical_path.includes(srcId);
+              isCriticalEdge = isSourceInPath && artNode && artNode.data.task_id === srcId;
+            } else if (edge.source.startsWith('artifact-') && edge.target.startsWith('task-')) {
+              const tgtId = parseInt(edge.target.replace('task-', ''));
+              const artNode = data.nodes.find(n => n.id === edge.source);
+              const isTargetInPath = metrics.critical_path.includes(tgtId);
+              const parentId = artNode ? artNode.data.task_id : null;
+              isCriticalEdge = isTargetInPath && parentId && metrics.critical_path.includes(parentId) && metrics.critical_path.indexOf(parentId) < metrics.critical_path.indexOf(tgtId);
+            }
+          }
+
+          if (isCriticalEdge) {
+            return {
+              ...edge,
+              animated: true,
+              style: {
+                stroke: '#f43f5e', // Vibrant rose/crimson
+                strokeWidth: 3.5
+              }
+            };
+          }
+          return edge;
+        });
+
         const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
-          data.nodes,
-          data.edges,
+          updatedNodes,
+          updatedEdges,
           'LR'
         );
         setNodes(layoutedNodes);
@@ -429,6 +614,9 @@ const PipelineDashboard = () => {
     if (selectedPipelineId) {
       loadPipelineDetails(selectedPipelineId);
     }
+    if (dashboardTab === 'observability') {
+      loadSystemObservabilityData();
+    }
     const interval = setInterval(() => {
       loadPipelinesList();
       loadUploadedFilesList();
@@ -436,9 +624,12 @@ const PipelineDashboard = () => {
       if (selectedPipelineId) {
         loadPipelineDetails(selectedPipelineId);
       }
+      if (dashboardTab === 'observability') {
+        loadSystemObservabilityData();
+      }
     }, 2000); // 2-second polling refresh
     return () => clearInterval(interval);
-  }, [selectedPipelineId]);
+  }, [selectedPipelineId, dashboardTab]);
 
 
   const handleSearch = async (e) => {
@@ -673,40 +864,85 @@ const PipelineDashboard = () => {
 
   return (
     <div className="panel execution-log" style={{ gridColumn: 'span 12', marginTop: '24px' }}>
-      <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <GitBranch size={22} className="text-purple" style={{ color: '#8b5cf6' }} />
-            Pipeline DAG Orchestration
-          </h2>
-          <span className="panel-subtitle">Manage dependent task pipelines & artifact-based communications</span>
-        </div>
-        
-        <button 
-          onClick={handleRunPipelineTests}
-          disabled={testing}
+      
+      {/* Dashboard Top Tabs */}
+      <div style={{ display: 'flex', gap: '16px', borderBottom: '1px solid rgba(148, 163, 184, 0.1)', paddingBottom: '10px', marginBottom: '20px' }}>
+        <button
+          onClick={() => setDashboardTab('orchestration')}
           style={{
-            background: 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%)',
-            color: '#ffffff',
+            background: 'none',
             border: 'none',
-            borderRadius: '8px',
-            padding: '8px 18px',
-            fontSize: '0.85rem',
-            fontWeight: '600',
-            cursor: testing ? 'not-allowed' : 'pointer',
-            boxShadow: '0 4px 14px rgba(139, 92, 246, 0.25)',
-            transition: 'all 0.2s ease',
+            color: dashboardTab === 'orchestration' ? '#8b5cf6' : '#94a3b8',
+            fontSize: '1rem',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            borderBottom: dashboardTab === 'orchestration' ? '2.5px solid #8b5cf6' : 'none',
+            paddingBottom: '6px',
             display: 'flex',
             alignItems: 'center',
             gap: '8px'
           }}
         >
-          {testing ? <RefreshCw className="animate-spin" size={14} /> : <Play size={14} />}
-          {testing ? 'Running DAG Tests...' : 'Run Pipeline Tests'}
+          <GitBranch size={18} />
+          DAG Orchestration
+        </button>
+        <button
+          onClick={() => setDashboardTab('observability')}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: dashboardTab === 'observability' ? '#8b5cf6' : '#94a3b8',
+            fontSize: '1rem',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            borderBottom: dashboardTab === 'observability' ? '2.5px solid #8b5cf6' : 'none',
+            paddingBottom: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <Activity size={18} />
+          Systems Observability
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '24px', marginTop: '20px' }}>
+      {dashboardTab === 'orchestration' ? (
+        <>
+          <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+            <div>
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <GitBranch size={22} className="text-purple" style={{ color: '#8b5cf6' }} />
+                Pipeline DAG Orchestration
+              </h2>
+              <span className="panel-subtitle">Manage dependent task pipelines & artifact-based communications</span>
+            </div>
+            
+            <button 
+              onClick={handleRunPipelineTests}
+              disabled={testing}
+              style={{
+                background: 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%)',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 18px',
+                fontSize: '0.85rem',
+                fontWeight: '600',
+                cursor: testing ? 'not-allowed' : 'pointer',
+                boxShadow: '0 4px 14px rgba(139, 92, 246, 0.25)',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              {testing ? <RefreshCw className="animate-spin" size={14} /> : <Play size={14} />}
+              {testing ? 'Running DAG Tests...' : 'Run Pipeline Tests'}
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '24px', marginTop: '20px' }}>
         {/* Left Side: Create Form + Active Pipelines List */}
         <div style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
@@ -1021,6 +1257,19 @@ const PipelineDashboard = () => {
                 {selectedPipelineData.pipeline.error_message && (
                   <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#fca5a5', padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', fontSize: '0.85rem' }}>
                     <strong>Pipeline Error:</strong> {selectedPipelineData.pipeline.error_message}
+                  </div>
+                )}
+
+                {pipelineMetrics && (
+                  <div style={{ background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.15)', borderRadius: '8px', padding: '14px', marginBottom: '20px', fontSize: '0.8rem' }}>
+                    <h4 style={{ margin: 0, color: '#f43f5e', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                      <AlertTriangle size={14} /> Orchestration Bottleneck Analysis
+                    </h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', color: '#cbd5e1' }}>
+                      <div><strong>Total Orchestration Latency:</strong> {pipelineMetrics.total_latency_seconds}s</div>
+                      <div><strong>Orchestration Overhead:</strong> {pipelineMetrics.orchestration_overhead_seconds}s</div>
+                      <div><strong>Slowest Stage:</strong> <span style={{ color: '#ef4444', fontWeight: 'bold' }}>{pipelineMetrics.slowest_stage}</span> (Task #{pipelineMetrics.bottleneck_node_id})</div>
+                    </div>
                   </div>
                 )}
 
@@ -1895,6 +2144,319 @@ const PipelineDashboard = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+        </>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginTop: '10px' }}>
+          {/* 1. Health Status Banner */}
+          {systemMetricsData && (() => {
+            const health = systemMetricsData.health_state || 'healthy';
+            const reason = systemMetricsData.health_reason || 'System operating normally.';
+            const isBpActive = backpressureData?.backpressure_active;
+            
+            let healthColor = '#10b981';
+            let healthBg = 'rgba(16, 185, 129, 0.08)';
+            let healthBorder = 'rgba(16, 185, 129, 0.2)';
+            
+            if (health === 'degraded') {
+              healthColor = '#fbbf24';
+              healthBg = 'rgba(245, 158, 11, 0.08)';
+              healthBorder = 'rgba(245, 158, 11, 0.2)';
+            } else if (health === 'saturated') {
+              healthColor = '#f97316';
+              healthBg = 'rgba(249, 115, 22, 0.08)';
+              healthBorder = 'rgba(249, 115, 22, 0.2)';
+            } else if (health === 'critical') {
+              healthColor = '#ef4444';
+              healthBg = 'rgba(239, 68, 68, 0.08)';
+              healthBorder = 'rgba(239, 68, 68, 0.2)';
+            }
+
+            return (
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(12, 1fr)', 
+                gap: '20px',
+                background: healthBg,
+                border: `1px solid ${healthBorder}`,
+                borderRadius: '12px',
+                padding: '20px'
+              }}>
+                <div style={{ gridColumn: 'span 7', display: 'flex', gap: '16px', alignItems: 'center' }}>
+                  <div style={{ 
+                    width: '16px', 
+                    height: '16px', 
+                    borderRadius: '50%', 
+                    background: healthColor,
+                    boxShadow: `0 0 12px ${healthColor}`
+                  }} className={health === 'critical' ? 'animate-pulse' : ''} />
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      System Status: <span style={{ color: healthColor }}>{health}</span>
+                    </h3>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#94a3b8' }}>
+                      {reason}
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ gridColumn: 'span 5', borderLeft: '1px solid rgba(148, 163, 184, 0.1)', paddingLeft: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '4px' }}>
+                    <span style={{ color: '#94a3b8' }}>Backpressure Protection:</span>
+                    <span style={{ fontWeight: 'bold', color: isBpActive ? '#ef4444' : '#10b981' }}>
+                      {isBpActive ? 'ACTIVE (THROTTLED)' : 'INACTIVE (NORMAL)'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span style={{ color: '#94a3b8' }}>Deferred Task Backlog:</span>
+                    <span style={{ fontWeight: 'bold', color: backpressureData?.deferred_tasks_count > 0 ? '#fbbf24' : '#f8fafc' }}>
+                      {backpressureData?.deferred_tasks_count || 0} paused tasks
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* 2. Metrics Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '20px' }}>
+            
+            {/* Queue Pressures & Forecasts Card */}
+            <div style={{ gridColumn: 'span 4', background: 'rgba(30, 41, 59, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                <Gauge size={16} className="text-purple" style={{ color: '#a78bfa' }} />
+                Queue Saturation & Drain
+              </h3>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ background: 'rgba(15, 23, 42, 0.4)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(148, 163, 184, 0.05)' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>Total Queue Backlog</span>
+                  <span style={{ fontSize: '1.8rem', fontWeight: '800', color: '#ffffff' }}>
+                    {systemMetricsData?.metrics?.backlog_size || 0}
+                  </span>
+                  <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', marginTop: '4px' }}>
+                    High: {systemMetricsData?.metrics?.queue_sizes?.high || 0} | Med: {systemMetricsData?.metrics?.queue_sizes?.medium || 0} | Low: {systemMetricsData?.metrics?.queue_sizes?.low || 0}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(148, 163, 184, 0.05)', paddingBottom: '8px', fontSize: '0.8rem' }}>
+                  <span style={{ color: '#94a3b8' }}>Est. Saturation Time:</span>
+                  <span style={{ fontWeight: 'bold', color: scalingData?.estimated_saturation_time_seconds ? '#ef4444' : '#10b981' }}>
+                    {scalingData?.estimated_saturation_time_seconds !== null ? `${scalingData.estimated_saturation_time_seconds}s` : 'Stable / Normal'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(148, 163, 184, 0.05)', paddingBottom: '8px', fontSize: '0.8rem' }}>
+                  <span style={{ color: '#94a3b8' }}>Est. Recovery Time (to safe limit):</span>
+                  <span style={{ fontWeight: 'bold', color: '#fbbf24' }}>
+                    {scalingData?.projected_recovery_time_seconds !== 9999 && scalingData?.projected_recovery_time_seconds > 0 
+                      ? `${scalingData.projected_recovery_time_seconds}s` 
+                      : scalingData?.projected_recovery_time_seconds === 9999 || scalingData?.projected_recovery_time_seconds === 'Infinite (Saturated)'
+                        ? 'Infinite (Saturated)' 
+                        : 'Immediate / Safe'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                  <span style={{ color: '#94a3b8' }}>Est. Drain Completion:</span>
+                  <span style={{ fontWeight: 'bold', color: '#cbd5e1' }}>
+                    {scalingData?.current_estimated_drain_time_seconds === 'Infinite (Saturated)'
+                      ? 'Infinite (Saturated)'
+                      : scalingData?.current_estimated_drain_time_seconds > 0
+                        ? `${scalingData.current_estimated_drain_time_seconds}s`
+                        : 'No Backlog'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Smoothed Rates Card */}
+            <div style={{ gridColumn: 'span 4', background: 'rgba(30, 41, 59, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                <Activity size={16} className="text-blue" style={{ color: '#60a5fa' }} />
+                Smoothed Throughput Rates
+              </h3>
+
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem', color: '#cbd5e1' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(148, 163, 184, 0.1)', color: '#94a3b8', textAlign: 'left' }}>
+                    <th style={{ padding: '6px 0' }}>Window</th>
+                    <th style={{ padding: '6px 0' }}>Enqueue Rate</th>
+                    <th style={{ padding: '6px 0' }}>Dequeue Rate</th>
+                    <th style={{ padding: '6px 0' }}>Completions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style={{ borderBottom: '1px solid rgba(148, 163, 184, 0.05)' }}>
+                    <td style={{ padding: '8px 0', fontWeight: 'bold' }}>10s rolling</td>
+                    <td style={{ padding: '8px 0' }}>{systemMetricsData?.metrics?.enqueue_rate?.['10s'] || 0}/s</td>
+                    <td style={{ padding: '8px 0' }}>{systemMetricsData?.metrics?.dequeue_rate?.['10s'] || 0}/s</td>
+                    <td style={{ padding: '8px 0' }}>{systemMetricsData?.metrics?.completed_count?.['10s'] || 0}</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid rgba(148, 163, 184, 0.05)' }}>
+                    <td style={{ padding: '8px 0', fontWeight: 'bold' }}>30s rolling</td>
+                    <td style={{ padding: '8px 0' }}>{systemMetricsData?.metrics?.enqueue_rate?.['30s'] || 0}/s</td>
+                    <td style={{ padding: '8px 0' }}>{systemMetricsData?.metrics?.dequeue_rate?.['30s'] || 0}/s</td>
+                    <td style={{ padding: '8px 0' }}>{systemMetricsData?.metrics?.completed_count?.['30s'] || 0}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '8px 0', fontWeight: 'bold' }}>60s rolling</td>
+                    <td style={{ padding: '8px 0' }}>{systemMetricsData?.metrics?.enqueue_rate?.['60s'] || 0}/s</td>
+                    <td style={{ padding: '8px 0' }}>{systemMetricsData?.metrics?.dequeue_rate?.['60s'] || 0}/s</td>
+                    <td style={{ padding: '8px 0' }}>{systemMetricsData?.metrics?.completed_count?.['60s'] || 0}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div style={{ borderTop: '1px dashed rgba(148, 163, 184, 0.1)', marginTop: '12px', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                <div>
+                  <span style={{ color: '#64748b', display: 'block' }}>Avg. Wait Duration</span>
+                  <span style={{ fontWeight: 'bold', color: '#ffffff' }}>{systemMetricsData?.metrics?.average_queue_wait_time_seconds || 0}s</span>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ color: '#64748b', display: 'block' }}>Avg. Exec Duration</span>
+                  <span style={{ fontWeight: 'bold', color: '#ffffff' }}>{systemMetricsData?.metrics?.average_task_execution_time_seconds || 0}s</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Autoscaling Simulation Panel */}
+            <div style={{ gridColumn: 'span 4', background: 'rgba(30, 41, 59, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                <Zap size={16} className="text-pink" style={{ color: '#f472b6' }} />
+                Autoscaling Intelligence
+              </h3>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div style={{ background: 'rgba(15, 23, 42, 0.4)', padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
+                    <span style={{ fontSize: '0.65rem', color: '#64748b', display: 'block' }}>Current Workers</span>
+                    <span style={{ fontSize: '1.4rem', fontWeight: '800', color: '#ffffff' }}>
+                      {scalingData?.current_workers || 0}
+                    </span>
+                  </div>
+                  <div style={{ background: 'rgba(15, 23, 42, 0.4)', padding: '10px', borderRadius: '8px', textAlign: 'center', border: '1px solid rgba(139, 92, 246, 0.15)' }}>
+                    <span style={{ fontSize: '0.65rem', color: '#64748b', display: 'block' }}>Recommended</span>
+                    <span style={{ fontSize: '1.4rem', fontWeight: '800', color: '#a78bfa' }}>
+                      {scalingData?.recommended_workers || 0}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ background: 'rgba(139, 92, 246, 0.05)', padding: '12px', borderRadius: '8px', border: '1px dashed rgba(139, 92, 246, 0.2)', textAlign: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Autoscaling Simulation Action:</span>
+                  <span style={{ fontSize: '0.95rem', fontWeight: '800', color: '#ffffff', display: 'block', marginTop: '4px' }}>
+                    {scalingData?.scale_up_recommendation > 0 && `Scale UP by +${scalingData.scale_up_recommendation} workers`}
+                    {scalingData?.scale_down_recommendation > 0 && `Scale DOWN by -${scalingData.scale_down_recommendation} workers`}
+                    {scalingData?.scale_up_recommendation === 0 && scalingData?.scale_down_recommendation === 0 && 'NO ACTION REQUIRED (STABLE)'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                  <span style={{ color: '#64748b' }}>Post-Scaling Drain Time:</span>
+                  <span style={{ fontWeight: 'bold', color: '#a78bfa' }}>
+                    {scalingData?.projected_drain_time_after_scaling_seconds > 0 
+                      ? `${scalingData.projected_drain_time_after_scaling_seconds}s` 
+                      : 'No Backlog'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          {/* 3. Workers Pool Table & Reliability Scores */}
+          <div style={{ background: 'rgba(30, 41, 59, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                <Server size={18} className="text-emerald" style={{ color: '#34d399' }} />
+                Active Worker Reliability & Recovery Analytics
+              </h3>
+              
+              {systemMetricsData && (
+                <div style={{ display: 'flex', gap: '16px', fontSize: '0.85rem' }}>
+                  <span>Worker Pool Utilization: <strong style={{ color: '#10b981' }}>{systemMetricsData.metrics?.worker_utilization_percentage || 0}%</strong></span>
+                </div>
+              )}
+            </div>
+
+            {/* Storm Warning */}
+            {systemMetricsData?.metrics?.recovery_storm_active && (
+              <div className="animate-pulse" style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', color: '#fca5a5', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <AlertTriangle size={18} style={{ color: '#ef4444' }} />
+                CRITICAL WARNING: ACTIVE RECOVERY STORM DETECTED (Multiple worker recovery cycles triggered recently).
+              </div>
+            )}
+
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', color: '#cbd5e1' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(148, 163, 184, 0.15)', color: '#94a3b8', textAlign: 'left' }}>
+                  <th style={{ padding: '10px' }}>Worker ID</th>
+                  <th style={{ padding: '10px' }}>Completions (24h)</th>
+                  <th style={{ padding: '10px' }}>Failures (24h)</th>
+                  <th style={{ padding: '10px' }}>Stales (24h)</th>
+                  <th style={{ padding: '10px' }}>Lease Expirations (24h)</th>
+                  <th style={{ padding: '10px', width: '200px' }}>Reliability Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!systemMetricsData?.metrics?.worker_reliability || Object.keys(systemMetricsData.metrics.worker_reliability).length === 0 ? (
+                  <tr>
+                    <td colSpan="6" style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>
+                      No worker statistics recorded yet. Start workers to populate reliability scores.
+                    </td>
+                  </tr>
+                ) : (
+                  Object.entries(systemMetricsData.metrics.worker_reliability).map(([wid, stats]) => {
+                    const score = stats.reliability_score || 0;
+                    let barColor = '#10b981';
+                    if (score < 60) barColor = '#ef4444';
+                    else if (score < 85) barColor = '#fbbf24';
+                    
+                    return (
+                      <tr key={wid} style={{ borderBottom: '1px solid rgba(148, 163, 184, 0.05)' }}>
+                        <td style={{ padding: '12px 10px', fontWeight: 'bold', color: '#ffffff' }}>{wid}</td>
+                        <td style={{ padding: '12px 10px' }}>{stats.completions}</td>
+                        <td style={{ padding: '12px 10px', color: stats.failures > 0 ? '#fca5a5' : '#cbd5e1' }}>{stats.failures}</td>
+                        <td style={{ padding: '12px 10px', color: stats.stale_incidents > 0 ? '#fca5a5' : '#cbd5e1' }}>{stats.stale_incidents}</td>
+                        <td style={{ padding: '12px 10px', color: stats.lease_expirations > 0 ? '#fca5a5' : '#cbd5e1' }}>{stats.lease_expirations}</td>
+                        <td style={{ padding: '12px 10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontWeight: 'bold', color: barColor, width: '36px' }}>{score}%</span>
+                            <div style={{ flex: 1, height: '6px', background: '#334155', borderRadius: '4px', overflow: 'hidden' }}>
+                              <div style={{ width: `${score}%`, height: '100%', background: barColor }} />
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 4. Active Backpressure Config Details */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', background: 'rgba(30, 41, 59, 0.15)', border: '1px solid rgba(148, 163, 184, 0.05)', borderRadius: '12px', padding: '20px', fontSize: '0.8rem', color: '#94a3b8' }}>
+            <div>
+              <span style={{ fontWeight: 'bold', color: '#e2e8f0', display: 'block', marginBottom: '8px' }}>Active Backpressure Policies</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div>• Overload Protection Policy: <strong>{backpressureData?.config?.overload_protection_policy || 'defer'}</strong> (deferred root tasks)</div>
+                <div>• Queue Backlog limit: <strong>{backpressureData?.config?.max_backlog_size || 50} tasks</strong></div>
+                <div>• Low Priority Throttle threshold: <strong>{backpressureData?.config?.low_priority_throttle_limit || 5} active tasks</strong></div>
+              </div>
+            </div>
+            <div>
+              <span style={{ fontWeight: 'bold', color: '#e2e8f0', display: 'block', marginBottom: '8px' }}>Starvation Prevention & Aging</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div>• Priority Aging Threshold: <strong>{backpressureData?.config?.aging_threshold_seconds || 60} seconds</strong> (wait limit)</div>
+                <div>• Queue Scheduler Algorithm: <strong>Weighted Round-Robin (WRR)</strong></div>
+                <div>• WRR Target Cycle: <strong>[6 High : 3 Medium : 1 Low]</strong></div>
+              </div>
+            </div>
+          </div>
+
         </div>
       )}
     </div>

@@ -141,7 +141,32 @@ export const fetchPipelineTimeline = async (pipelineId) => {
   const response = await apiClient.get(`/pipelines/${pipelineId}/timeline`);
   return response.data;
 };
+export const getSystemMetrics = async () => {
+  const response = await apiClient.get('/metrics/system');
+  return response.data;
+};
 
+export const getQueueMetrics = async () => {
+  const response = await apiClient.get('/metrics/queues');
+  return response.data;
+};
 
+export const getWorkerMetrics = async () => {
+  const response = await apiClient.get('/metrics/workers');
+  return response.data;
+};
 
+export const getScalingMetrics = async () => {
+  const response = await apiClient.get('/metrics/scaling');
+  return response.data;
+};
 
+export const getPipelineMetrics = async (pipelineId) => {
+  const response = await apiClient.get(`/metrics/pipelines/${pipelineId}`);
+  return response.data;
+};
+
+export const getBackpressureMetrics = async () => {
+  const response = await apiClient.get('/metrics/backpressure');
+  return response.data;
+};

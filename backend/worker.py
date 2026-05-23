@@ -721,13 +721,34 @@ def execute_task(task):
         print(f"[{WORKER_ID}]   [WARN] Unknown task type / handler: {task_type}", flush=True)
 
 def get_next_task():
-    """Get next task from highest priority queue that has tasks"""
+    """Get next task using deterministic Weighted Round-Robin (WRR) scheduling"""
     try:
+        cycle_priorities = ['high', 'high', 'high', 'high', 'high', 'high', 'medium', 'medium', 'medium', 'low']
+        # Atomic increment wrr_index in Redis
+        wrr_idx = redis_client.incr('wrr_index') % len(cycle_priorities)
+        target_priority = cycle_priorities[wrr_idx]
+        target_queue = f"task_queue_{target_priority}"
+        
+        # 1. Try to pop from the target queue non-blockingly
+        val = redis_client.rpop(target_queue)
+        if val:
+            return (target_queue, val)
+            
+        # 2. Fall back to priority order non-blockingly to prevent starvation
+        for p in ['high', 'medium', 'low']:
+            q_name = f"task_queue_{p}"
+            if q_name == target_queue:
+                continue
+            val = redis_client.rpop(q_name)
+            if val:
+                return (q_name, val)
+                
+        # 3. If all queues are empty, block on brpop of all queues
         result = redis_client.brpop(PRIORITY_QUEUES, timeout=5)
         if result:
             return result
     except redis.exceptions.ConnectionError as ce:
-        print(f"[{WORKER_ID}] Redis connection error during brpop: {ce}", flush=True)
+        print(f"[{WORKER_ID}] Redis connection error during task pop: {ce}", flush=True)
         raise ce
     except redis.exceptions.TimeoutError:
         pass

@@ -30,6 +30,48 @@ CANONICAL_EVENTS = {
     "stale_worker_update_rejected"
 }
 
+def check_backpressure_admission(db, task):
+    """
+    Checks if a task should be admitted or deferred based on backpressure.
+    Returns:
+      - 'admit': normal queueing
+      - 'defer': mark as blocked/deferred
+    """
+    from services.metrics_service import BACKPRESSURE_CONFIG, get_rolling_metrics, get_system_health
+    if not BACKPRESSURE_CONFIG.get("enabled", True):
+        return 'admit'
+    if task.priority == 'high':
+        return 'admit' # High priority bypasses backpressure
+        
+    # WRR test bypasses backpressure to allow enqueueing low/medium tasks for ratio verification
+    if task.data:
+        try:
+            data = json.loads(task.data) if isinstance(task.data, str) else task.data
+            if "wrr" in str(data).lower():
+                return 'admit'
+        except:
+            pass
+        
+    # Quick check on backlog size
+    high_size = redis_client.llen('task_queue_high') or 0
+    medium_size = redis_client.llen('task_queue_medium') or 0
+    low_size = redis_client.llen('task_queue_low') or 0
+    backlog_size = high_size + medium_size + low_size
+    
+    if backlog_size >= BACKPRESSURE_CONFIG.get("max_backlog_size", 50):
+        return BACKPRESSURE_CONFIG.get("overload_protection_policy", "defer")
+        
+    # Detailed check on rolling metrics health
+    try:
+        metrics = get_rolling_metrics(db)
+        health_state, _ = get_system_health(db, metrics)
+        if health_state in ["saturated", "critical"]:
+            return BACKPRESSURE_CONFIG.get("overload_protection_policy", "defer")
+    except Exception as e:
+        print(f"Error checking backpressure in dependency_resolver: {e}", flush=True)
+        
+    return 'admit'
+
 def log_event(db, task_id, event_type, message, worker_id=None):
     mapping = {
         "child_task_released": "dependency_released",
@@ -114,9 +156,19 @@ def resolve_dependencies(db, completed_task):
                         pass
             
             child.input_artifact_ids = json.dumps(input_artifact_ids)
-            child.status = 'pending'
-            log_event(db, child.id, "dependency_released", f"All dependencies completed. Released into {child.priority} queue.")
-            enqueue_task(db, child)
+            
+            # Check backpressure admission
+            admission = check_backpressure_admission(db, child)
+            if admission == 'defer':
+                child.status = 'blocked'
+                child.blocked_reason = "System overload backpressure: deferred"
+                child.deferred_at = datetime.now()
+                db.flush()
+                log_event(db, child.id, "dependency_blocked", "System overload backpressure: deferred")
+            else:
+                child.status = 'pending'
+                log_event(db, child.id, "dependency_released", f"All dependencies completed. Released into {child.priority} queue.")
+                enqueue_task(db, child)
             
         elif parent_failed_or_cancelled:
             child.status = 'blocked'

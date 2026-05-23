@@ -157,6 +157,7 @@ class Task(Base):
     input_artifact_ids = Column(Text, nullable=True) # JSON list
     output_artifact_ids = Column(Text, nullable=True) # JSON list
     blocked_reason = Column(Text, nullable=True)
+    deferred_at = Column(DateTime, nullable=True)
     
     dependent_on = relationship(
         'Task',
@@ -218,6 +219,7 @@ class Task(Base):
             'input_artifact_ids': input_ids,
             'output_artifact_ids': output_ids,
             'blocked_reason': self.blocked_reason,
+            'deferred_at': self.deferred_at.isoformat() if self.deferred_at else None,
             'queue_wait_duration': round(queue_wait, 2),
             'execution_duration': round(execution, 2)
         }
@@ -263,4 +265,5 @@ if engine.dialect.name == "postgresql":
         conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS input_artifact_ids TEXT;"))
         conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS output_artifact_ids TEXT;"))
         conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS blocked_reason TEXT;"))
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deferred_at TIMESTAMP;"))
 
