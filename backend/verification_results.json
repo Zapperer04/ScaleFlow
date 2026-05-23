@@ -1,0 +1,157 @@
+{
+  "test_retrieval": {
+    "error": {
+      "error": {
+        "error": "No 'max_retries_exceeded_after_lease_expiry' event found",
+        "status": "failed",
+        "step": "verify_max_retry_log"
+      },
+      "status": "failed",
+      "step": "verify_tasks_test_recovery"
+    },
+    "status": "failed",
+    "step": "verify_test_search"
+  },
+  "test_search": {
+    "error": {
+      "error": "No 'max_retries_exceeded_after_lease_expiry' event found",
+      "status": "failed",
+      "step": "verify_max_retry_log"
+    },
+    "status": "failed",
+    "step": "verify_tasks_test_recovery"
+  },
+  "test_lease_renewal": {
+    "logs": [
+      "Starting lease renewal flow integration test suite...",
+      "--- A. Create a long-running generate_embeddings-style task ---",
+      "Task #297 created successfully.",
+      "Isolated Task #297 from Redis queue.",
+      "--- B. Claim task ---",
+      "Task #297 claimed by worker-renew-test. Token: a8e3bf6a-ca7c-43d9-9c43-c69af0a246d4, Original Expiry: 2026-05-23T14:49:43.132679",
+      "--- C. Renew lease successfully ---",
+      "Lease renewed. New Expiry: 2026-05-23T14:51:43.178116, Renewal Count: 1",
+      "--- D. Confirm lease_expires_at increased ---",
+      "Confirmed lease_expires_at increased.",
+      "--- E. Wrong token renewal returns 409 ---",
+      "Confirmed wrong token renewal returns 409.",
+      "--- G. Recovery scanner does not recover a task while lease is renewed ---",
+      "Ran recovery scanner. Recovered count: 0",
+      "Confirmed recovery scanner does not recover active/renewed task.",
+      "--- F. Stale completion after lease ownership mismatch is rejected ---",
+      "Manually expired task lease in DB.",
+      "Ran recovery scanner to recover task. Recovered count: 1",
+      "Task recovered successfully (status is pending).",
+      "Task #297 claimed by worker-renew-test-2. New Token: 8a42d51d-8d22-4d28-9ddf-bdb72ae106a0",
+      "Confirmed stale completion is rejected with 409.",
+      "--- H. Recovery scanner recovers task after renewals stop and lease expires ---",
+      "Expired new lease in database.",
+      "Ran recovery scanner. Recovered count: 1",
+      "Confirmed task recovered after renewals stop and lease expires.",
+      "All lease renewal integration tests passed successfully."
+    ],
+    "status": "success"
+  },
+  "test_recovery": {
+    "error": "No 'max_retries_exceeded_after_lease_expiry' event found",
+    "status": "failed",
+    "step": "verify_max_retry_log"
+  },
+  "test_dag": {
+    "logs": [
+      "Starting DAG Orchestration integration test suite...",
+      "--- Test A: Create document_processing_demo pipeline ---",
+      "Created Pipeline #61 with 4 tasks.",
+      "Verified root task parse_document is enqueued.",
+      "--- Test B: Complete parse_document & Release chunk_text ---",
+      "Registered parse output artifact #187",
+      "Verified chunk_text task is pending and has input artifact.",
+      "--- Test C: Complete chunk_text & Release generate_embeddings ---",
+      "Verified chunk_text completion released generate_embeddings (pending), while summarize_document remains blocked.",
+      "--- Test D: Complete generate_embeddings & Release summarize_document ---",
+      "Verified generate_embeddings completion released summarize_document task.",
+      "--- Test E: Complete summarize_document & Verify Pipeline Completed ---",
+      "Verified pipeline is completed successfully.",
+      "--- Test F: Branching Behavior in log_analysis_demo ---",
+      "Verified branching behavior: children released, downstream report waits.",
+      "--- Test G: Dependency Failure Propagation ---",
+      "Verified dependency failure blocked final_report. Reason: Dependency Task #307 is blocked or failed.",
+      "All integration tests passed successfully."
+    ],
+    "status": "success"
+  },
+  "positive_live_query": {
+    "final_answer": {
+      "answer": "Based on the retrieved context, here are the most relevant sections matching your query:\n\nSource [1] (Confidence Score: 0.7065): \"ScaleFlow supports renewable leases for long-running tasks. Workers send a worker heartbeat periodically to renew the lease. If a lease expires, the expired lease is detected by the recovery scanner, which triggers a requeue of the task. Any stale completion rejection prevents duplicate execution of\"\n\nSource [2] (Confidence Score: 0.7065): \"ScaleFlow supports renewable leases for long-running tasks. Workers send a worker heartbeat periodically to renew the lease. If a lease expires, the expired lease is detected by the recovery scanner, which triggers a requeue of the task. Any stale completion rejection prevents duplicate execution of\"\n\nSource [3] (Confidence Score: 0.7065): \"ScaleFlow supports renewable leases for long-running tasks. Workers send a worker heartbeat periodically to renew the lease. If a lease expires, the expired lease is detected by the recovery scanner, which triggers a requeue of the task. Any stale completion rejection prevents duplicate execution of\"",
+      "citations": [
+        {
+          "chunk_index": 0,
+          "file_id": 6,
+          "original_filename": "test_retrieval_doc.txt"
+        },
+        {
+          "chunk_index": 0,
+          "file_id": 16,
+          "original_filename": "test_retrieval_doc.txt"
+        },
+        {
+          "chunk_index": 0,
+          "file_id": 1,
+          "original_filename": "test_retrieval_doc.txt"
+        }
+      ],
+      "confidence": "medium",
+      "query": "How does ScaleFlow recover failed workers?"
+    },
+    "pipeline_id": 63,
+    "query": "How does ScaleFlow recover failed workers?",
+    "retrieved_context": {
+      "query": "How does ScaleFlow recover failed workers?",
+      "results": [
+        {
+          "chunk_index": 0,
+          "chunk_text": "ScaleFlow supports renewable leases for long-running tasks. Workers send a worker heartbeat periodically to renew the lease. If a lease expires, the expired lease is detected by the recovery scanner, which triggers a requeue of the task. Any stale completion rejection prevents duplicate execution of",
+          "file_id": 6,
+          "original_filename": "test_retrieval_doc.txt",
+          "pipeline_id": 9,
+          "score": 0.7065,
+          "task_id": 38
+        },
+        {
+          "chunk_index": 0,
+          "chunk_text": "ScaleFlow supports renewable leases for long-running tasks. Workers send a worker heartbeat periodically to renew the lease. If a lease expires, the expired lease is detected by the recovery scanner, which triggers a requeue of the task. Any stale completion rejection prevents duplicate execution of",
+          "file_id": 16,
+          "original_filename": "test_retrieval_doc.txt",
+          "pipeline_id": 46,
+          "score": 0.7065,
+          "task_id": 229
+        },
+        {
+          "chunk_index": 0,
+          "chunk_text": "ScaleFlow supports renewable leases for long-running tasks. Workers send a worker heartbeat periodically to renew the lease. If a lease expires, the expired lease is detected by the recovery scanner, which triggers a requeue of the task. Any stale completion rejection prevents duplicate execution of",
+          "file_id": 1,
+          "original_filename": "test_retrieval_doc.txt",
+          "pipeline_id": 1,
+          "score": 0.7065,
+          "task_id": 3
+        }
+      ]
+    },
+    "status": "completed"
+  },
+  "negative_live_query": {
+    "final_answer": {
+      "answer": "No sufficiently relevant context was found for this query.",
+      "citations": [],
+      "confidence": "low",
+      "query": "What is the capital of Japan?"
+    },
+    "pipeline_id": 64,
+    "query": "What is the capital of Japan?",
+    "retrieved_context": {
+      "query": "What is the capital of Japan?",
+      "results": []
+    },
+    "status": "completed"
+  }
+}

@@ -137,5 +137,11 @@ export const fetchRetrievalPipelineAnswer = async (pipelineId) => {
   return response.data;
 };
 
+export const fetchPipelineTimeline = async (pipelineId) => {
+  const response = await apiClient.get(`/pipelines/${pipelineId}/timeline`);
+  return response.data;
+};
+
+
 
 

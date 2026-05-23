@@ -2,14 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { 
   GitBranch, Play, X, RefreshCw, FileText, CheckCircle2, 
   XCircle, AlertTriangle, Clock, ChevronRight, Activity, Trash2, Upload,
-  Search, Database, Sparkles, Cpu, BookOpen
+  Search, Database, Sparkles, Cpu, BookOpen, Filter, Eye
 } from 'lucide-react';
 import { 
   fetchPipelines, fetchPipelineDetails, createPipeline, 
   cancelPipeline, runPipelineTests, fetchArtifactContent,
   uploadFile, fetchUploadedFiles, fetchUploadedFileDetail,
-  searchVectors, fetchVectorStats, createRetrievalPipeline, fetchRetrievalPipelineAnswer
+  searchVectors, fetchVectorStats, createRetrievalPipeline, fetchRetrievalPipelineAnswer,
+  fetchPipelineDag, fetchPipelineTimeline
 } from '../services/api';
+
+import ReactFlow, { MiniMap, Controls, Background, Position, Handle } from 'reactflow';
+import 'reactflow/dist/style.css';
+import dagre from 'dagre';
+
 
 const DEFAULT_PAYLOADS = {
   document_processing_demo: {
@@ -20,6 +26,210 @@ const DEFAULT_PAYLOADS = {
   }
 };
 
+const CustomTaskNode = ({ data }) => {
+  const {
+    id,
+    type,
+    status,
+    priority,
+    assigned_worker_id,
+    retry_count,
+    recovered_count,
+    lease_renewal_count,
+    queue_wait_duration,
+    execution_duration,
+    input_artifact_ids,
+    output_artifact_ids,
+    blocked_reason,
+  } = data;
+
+  let borderColor = '#475569';
+  let glowColor = 'rgba(71, 85, 105, 0.1)';
+
+  if (status === 'completed') {
+    borderColor = '#10b981';
+    glowColor = 'rgba(16, 185, 129, 0.25)';
+  } else if (status === 'running') {
+    borderColor = '#3b82f6';
+    glowColor = 'rgba(59, 130, 246, 0.5)';
+  } else if (status === 'failed') {
+    borderColor = '#ef4444';
+    glowColor = 'rgba(239, 68, 68, 0.4)';
+  } else if (status === 'blocked') {
+    borderColor = '#f59e0b';
+    glowColor = 'rgba(245, 158, 11, 0.4)';
+  } else if (status === 'recovering') {
+    borderColor = '#8b5cf6';
+    glowColor = 'rgba(139, 92, 246, 0.4)';
+  }
+
+  const pulseClass = (status === 'running' || status === 'recovering') ? 'pulse-glow' : '';
+
+  return (
+    <div 
+      className={`task-node-card ${pulseClass}`}
+      style={{
+        background: '#1e293b',
+        border: `2px solid ${borderColor}`,
+        borderRadius: '8px',
+        padding: '12px',
+        color: '#f8fafc',
+        width: '240px',
+        boxShadow: `0 0 10px ${glowColor}`,
+        position: 'relative',
+        fontSize: '0.75rem',
+        fontFamily: 'system-ui, -apple-system, sans-serif'
+      }}
+    >
+      <Handle type="target" position={Position.Left} style={{ background: borderColor }} />
+      
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+        <span style={{ fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }} title={type}>
+          {type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+        </span>
+        <span style={{ 
+          background: borderColor + '22', 
+          color: borderColor, 
+          padding: '1px 6px', 
+          borderRadius: '4px', 
+          fontSize: '0.6rem', 
+          fontWeight: 'bold', 
+          textTransform: 'uppercase' 
+        }}>
+          {status}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', color: '#94a3b8', fontSize: '0.7rem' }}>
+        <div><strong>Task ID:</strong> #{id}</div>
+        
+        {assigned_worker_id ? (
+          <div style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={assigned_worker_id}>
+            <strong>Worker:</strong> {assigned_worker_id}
+          </div>
+        ) : (
+          <div style={{ color: '#475569' }}><strong>Worker:</strong> unassigned</div>
+        )}
+        
+        <div>
+          <strong>Wait:</strong> {queue_wait_duration}s | <strong>Exec:</strong> {execution_duration}s
+        </div>
+
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '2px' }}>
+          {retry_count > 0 && (
+            <span style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#fca5a5', padding: '1px 4px', borderRadius: '3px', fontSize: '0.65rem' }}>
+              Retries: {retry_count}
+            </span>
+          )}
+          {recovered_count > 0 && (
+            <span style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#d8b4fe', padding: '1px 4px', borderRadius: '3px', fontSize: '0.65rem' }}>
+              Recovered: {recovered_count}
+            </span>
+          )}
+          {lease_renewal_count > 0 && (
+            <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#93c5fd', padding: '1px 4px', borderRadius: '3px', fontSize: '0.65rem' }}>
+              Renewals: {lease_renewal_count}
+            </span>
+          )}
+        </div>
+
+        {((input_artifact_ids && input_artifact_ids.length > 0) || (output_artifact_ids && output_artifact_ids.length > 0)) && (
+          <div style={{ borderTop: '1px solid rgba(148, 163, 184, 0.1)', paddingTop: '4px', marginTop: '4px', fontSize: '0.65rem', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {input_artifact_ids && input_artifact_ids.length > 0 && (
+              <div><strong>Inputs:</strong> {input_artifact_ids.map(aid => `#${aid}`).join(', ')}</div>
+            )}
+            {output_artifact_ids && output_artifact_ids.length > 0 && (
+              <div><strong>Outputs:</strong> {output_artifact_ids.map(aid => `#${aid}`).join(', ')}</div>
+            )}
+          </div>
+        )}
+
+        {blocked_reason && (
+          <div style={{ color: '#fbbf24', background: 'rgba(245, 158, 11, 0.1)', padding: '2px 4px', borderRadius: '4px', marginTop: '4px', fontSize: '0.65rem' }}>
+            <strong>Blocked:</strong> {blocked_reason}
+          </div>
+        )}
+      </div>
+
+      <Handle type="source" position={Position.Right} style={{ background: borderColor }} />
+    </div>
+  );
+};
+
+const CustomArtifactNode = ({ data }) => {
+  const { id, artifact_type } = data;
+  return (
+    <div 
+      style={{
+        background: '#0f172a',
+        border: '1.5px solid #10b981',
+        borderRadius: '20px',
+        padding: '6px 12px',
+        color: '#f8fafc',
+        width: '160px',
+        textAlign: 'center',
+        boxShadow: '0 0 8px rgba(16, 185, 129, 0.2)',
+        position: 'relative',
+        fontSize: '0.7rem',
+        fontFamily: 'system-ui, -apple-system, sans-serif'
+      }}
+    >
+      <Handle type="target" position={Position.Left} style={{ background: '#10b981' }} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+        <FileText size={12} style={{ color: '#10b981' }} />
+        <span style={{ fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={artifact_type}>
+          {artifact_type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+        </span>
+      </div>
+      <div style={{ color: '#64748b', fontSize: '0.6rem', marginTop: '2px' }}>
+        Artifact #{id}
+      </div>
+      <Handle type="source" position={Position.Right} style={{ background: '#10b981' }} />
+    </div>
+  );
+};
+
+const nodeTypes = {
+  taskNode: CustomTaskNode,
+  artifactNode: CustomArtifactNode,
+};
+
+const getLayoutedElements = (nodes, edges, direction = 'LR') => {
+  const dagreGraph = new dagre.graphlib.Graph();
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
+  dagreGraph.setGraph({ rankdir: direction, nodesep: 40, ranksep: 60 });
+
+  nodes.forEach((node) => {
+    const width = node.type === 'taskNode' ? 240 : 160;
+    const height = node.type === 'taskNode' ? 120 : 70;
+    dagreGraph.setNode(node.id, { width, height });
+  });
+
+  edges.forEach((edge) => {
+    dagreGraph.setEdge(edge.source, edge.target);
+  });
+
+  dagre.layout(dagreGraph);
+
+  const positionedNodes = nodes.map((node) => {
+    const nodeWithPosition = dagreGraph.node(node.id);
+    const width = node.type === 'taskNode' ? 240 : 160;
+    const height = node.type === 'taskNode' ? 120 : 70;
+    
+    return {
+      ...node,
+      targetPosition: direction === 'LR' ? 'left' : 'top',
+      sourcePosition: direction === 'LR' ? 'right' : 'bottom',
+      position: {
+        x: nodeWithPosition.x - width / 2,
+        y: nodeWithPosition.y - height / 2,
+      },
+    };
+  });
+
+  return { nodes: positionedNodes, edges };
+};
+
 const PipelineDashboard = () => {
   const [pipelines, setPipelines] = useState([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState(null);
@@ -27,6 +237,17 @@ const PipelineDashboard = () => {
   const [pipelineType, setPipelineType] = useState('document_processing_demo');
   const [pipelineName, setPipelineName] = useState('Demo Document Pipeline');
   const [payloadText, setPayloadText] = useState(JSON.stringify(DEFAULT_PAYLOADS.document_processing_demo, null, 2));
+  
+  // React Flow states
+  const [nodes, setNodes] = useState([]);
+  const [edges, setEdges] = useState([]);
+  
+  // Timeline states
+  const [activeTab, setActiveTab] = useState('artifacts');
+  const [pipelineTimeline, setPipelineTimeline] = useState([]);
+  const [timelineFilter, setTimelineFilter] = useState('all');
+  const [timelineSearch, setTimelineSearch] = useState('');
+
   
   // Test running state
   const [testing, setTesting] = useState(false);
@@ -150,11 +371,42 @@ const PipelineDashboard = () => {
     }
   };
 
+  // Sync selected pipeline DAG
+  const loadPipelineDag = async (id) => {
+    try {
+      const data = await fetchPipelineDag(id);
+      if (data && data.nodes && data.edges) {
+        const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+          data.nodes,
+          data.edges,
+          'LR'
+        );
+        setNodes(layoutedNodes);
+        setEdges(layoutedEdges);
+      }
+    } catch (err) {
+      console.error('Failed to load pipeline DAG:', err);
+    }
+  };
+
+  // Sync selected pipeline timeline
+  const loadPipelineTimeline = async (id) => {
+    try {
+      const data = await fetchPipelineTimeline(id);
+      setPipelineTimeline(data || []);
+    } catch (err) {
+      console.error('Failed to load pipeline timeline:', err);
+    }
+  };
+
   // Sync selected pipeline details
   const loadPipelineDetails = async (id) => {
     try {
       const data = await fetchPipelineDetails(id);
       setSelectedPipelineData(data);
+      // Simultaneously fetch DAG and Timeline
+      await loadPipelineDag(id);
+      await loadPipelineTimeline(id);
     } catch (err) {
       console.error('Failed to load pipeline details:', err);
     }
@@ -174,6 +426,9 @@ const PipelineDashboard = () => {
     loadPipelinesList();
     loadUploadedFilesList();
     loadVectorStatsData();
+    if (selectedPipelineId) {
+      loadPipelineDetails(selectedPipelineId);
+    }
     const interval = setInterval(() => {
       loadPipelinesList();
       loadUploadedFilesList();
@@ -181,9 +436,10 @@ const PipelineDashboard = () => {
       if (selectedPipelineId) {
         loadPipelineDetails(selectedPipelineId);
       }
-    }, 3000);
+    }, 2000); // 2-second polling refresh
     return () => clearInterval(interval);
   }, [selectedPipelineId]);
+
 
   const handleSearch = async (e) => {
     if (e) e.preventDefault();
@@ -768,215 +1024,362 @@ const PipelineDashboard = () => {
                   </div>
                 )}
 
-                {/* Visual DAG Stage-Based Representation */}
-                <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '0.5px', marginBottom: '16px', fontWeight: '700' }}>
-                  DAG Dependency Graph
+                {/* Visual DAG Representation */}
+                <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '0.5px', marginBottom: '16px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <GitBranch size={16} />
+                  DAG Dependency Graph (React Flow)
                 </h4>
 
                 <div 
                   style={{ 
-                    display: 'flex', 
-                    alignItems: 'stretch', 
-                    justifyContent: 'space-between',
-                    background: '#0f172a', 
+                    height: '420px',
+                    background: '#090d16', 
                     borderRadius: '12px', 
-                    padding: '24px', 
-                    overflowX: 'auto',
-                    border: '1px solid rgba(148, 163, 184, 0.05)',
-                    gap: '12px'
+                    border: '1px solid rgba(148, 163, 184, 0.1)',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    marginBottom: '20px',
+                    boxShadow: 'inset 0 0 20px rgba(0, 0, 0, 0.6)'
                   }}
                 >
-                  {stages.map((stageTasks, stageIdx) => (
-                    <React.Fragment key={stageIdx}>
-                      {stageIdx > 0 && (
-                        <div style={{ display: 'flex', alignItems: 'center', color: '#475569', padding: '0 4px' }}>
-                          <ChevronRight size={24} />
-                        </div>
-                      )}
-                      
-                      {/* Stage Column */}
-                      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '16px', flex: 1, minWidth: '160px' }}>
-                        <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'center', borderBottom: '1px solid rgba(148, 163, 184, 0.1)', paddingBottom: '4px', marginBottom: '4px' }}>
-                          Stage {stageIdx + 1}
-                        </div>
-                        
-                        {stageTasks.map((t) => (
-                          <div 
-                            key={t.id} 
-                            style={{
-                              background: t.status === 'running' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(30, 41, 59, 0.9)',
-                              border: t.status === 'running' 
-                                ? '1px solid #3b82f6' 
-                                : t.status === 'completed'
-                                ? '1px solid rgba(16, 185, 129, 0.4)'
-                                : t.status === 'failed'
-                                ? '1px solid #ef4444'
-                                : t.status === 'blocked'
-                                ? '1px solid #f59e0b'
-                                : '1px solid rgba(148, 163, 184, 0.15)',
-                              borderRadius: '8px',
-                              padding: '10px 12px',
-                              boxShadow: t.status === 'running' ? '0 0 12px rgba(59, 130, 246, 0.15)' : 'none',
-                              position: 'relative'
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {t.type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-                              </span>
-                              {getStatusIcon(t.status)}
-                            </div>
-                            
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', fontSize: '0.7rem', color: '#94a3b8' }}>
-                              <span>Task #{t.id}</span>
-                              <span style={{ 
-                                background: t.priority === 'high' ? 'rgba(239, 68, 68, 0.15)' : t.priority === 'medium' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(148, 163, 184, 0.15)',
-                                color: t.priority === 'high' ? '#fca5a5' : t.priority === 'medium' ? '#93c5fd' : '#cbd5e1',
-                                padding: '1px 4px',
-                                borderRadius: '3px',
-                                fontSize: '0.65rem'
-                              }}>
-                                {t.priority}
-                              </span>
-                            </div>
-
-                            {t.assigned_worker_id && (
-                              <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                ⚙ {t.assigned_worker_id}
-                              </div>
-                            )}
-
-                            {t.blocked_reason && (
-                              <div 
-                                title={t.blocked_reason}
-                                style={{ 
-                                  fontSize: '0.65rem', 
-                                  color: '#fbbf24', 
-                                  marginTop: '4px', 
-                                  background: 'rgba(245, 158, 11, 0.1)', 
-                                  padding: '2px 4px', 
-                                  borderRadius: '4px',
-                                  whiteSpace: 'nowrap', 
-                                  overflow: 'hidden', 
-                                  textOverflow: 'ellipsis' 
-                                }}
-                              >
-                                ⚠ {t.blocked_reason}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </React.Fragment>
-                  ))}
+                  <ReactFlow
+                    nodes={nodes}
+                    edges={edges}
+                    nodeTypes={nodeTypes}
+                    fitView
+                    fitViewOptions={{ padding: 0.15 }}
+                    minZoom={0.05}
+                    maxZoom={1.5}
+                  >
+                    <Background color="#334155" gap={16} size={1} />
+                    <Controls showInteractive={false} />
+                    <MiniMap 
+                      nodeColor={(n) => {
+                        if (n.type === 'artifactNode') return '#10b981';
+                        const status = n.data?.status;
+                        if (status === 'completed') return '#10b981';
+                        if (status === 'running') return '#3b82f6';
+                        if (status === 'failed') return '#ef4444';
+                        if (status === 'blocked') return '#f59e0b';
+                        if (status === 'recovering') return '#8b5cf6';
+                        return '#64748b';
+                      }}
+                      maskColor="rgba(15, 23, 42, 0.6)"
+                      style={{
+                        background: '#1e293b',
+                        border: '1px solid rgba(148, 163, 184, 0.1)',
+                        borderRadius: '6px'
+                      }}
+                    />
+                  </ReactFlow>
                 </div>
 
-                {/* Pipeline Artifacts Subsection */}
-                <div style={{ marginTop: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                  
-                  {/* Left Column: Artifacts List */}
-                  <div>
-                    <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '0.5px', marginBottom: '12px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <FileText size={16} />
-                      Generated Artifacts
-                    </h4>
+                {/* Tab buttons */}
+                <div style={{ display: 'flex', gap: '16px', borderBottom: '1px solid rgba(148, 163, 184, 0.1)', paddingBottom: '10px', marginTop: '24px', marginBottom: '16px' }}>
+                  <button
+                    onClick={() => setActiveTab('artifacts')}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: activeTab === 'artifacts' ? '#8b5cf6' : '#94a3b8',
+                      fontSize: '0.9rem',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      borderBottom: activeTab === 'artifacts' ? '2px solid #8b5cf6' : 'none',
+                      paddingBottom: '6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <FileText size={16} />
+                    Artifacts Flow
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('timeline')}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: activeTab === 'timeline' ? '#8b5cf6' : '#94a3b8',
+                      fontSize: '0.9rem',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      borderBottom: activeTab === 'timeline' ? '2px solid #8b5cf6' : 'none',
+                      paddingBottom: '6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Clock size={16} />
+                    Audit Timeline
+                  </button>
+                </div>
+
+                {activeTab === 'artifacts' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                     
-                    {selectedPipelineData.artifacts.length === 0 ? (
-                      <div style={{ background: '#0f172a', borderRadius: '8px', padding: '24px', textAlign: 'center', border: '1px solid rgba(148, 163, 184, 0.05)', color: '#64748b', fontSize: '0.8rem' }}>
-                        No artifacts registered yet for this pipeline.
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxH: '250px', overflowY: 'auto' }}>
-                        {selectedPipelineData.artifacts.map((a) => (
-                          <div 
-                            key={a.id}
-                            onClick={() => handleViewArtifact(a)}
-                            style={{
-                              background: '#0f172a',
-                              border: '1px solid rgba(148, 163, 184, 0.1)',
-                              borderRadius: '8px',
-                              padding: '10px 12px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              transition: 'all 0.2s',
-                              hover: { borderColor: '#8b5cf6' }
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.borderColor = '#8b5cf6'}
-                            onMouseLeave={(e) => e.currentTarget.style.borderColor = 'rgba(148, 163, 184, 0.1)'}
-                          >
-                            <div>
-                              <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#f1f5f9' }}>
-                                {a.artifact_type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-                              </div>
-                              <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '2px' }}>
-                                Task #{a.task_id} • ID #{a.id}
-                              </div>
-                            </div>
-                            <button 
-                              style={{ 
-                                background: 'rgba(139, 92, 246, 0.1)', 
-                                border: 'none', 
-                                color: '#a78bfa', 
-                                borderRadius: '4px', 
-                                padding: '4px 8px', 
-                                fontSize: '0.7rem', 
-                                cursor: 'pointer',
-                                fontWeight: '600'
-                              }}
-                            >
-                              Inspect
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Right Column: Artifact Viewer panel */}
-                  <div>
-                    <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '0.5px', marginBottom: '12px', fontWeight: '700' }}>
-                      Artifact Data Inspector
-                    </h4>
-
-                    <div 
-                      style={{ 
-                        background: '#0f172a', 
-                        borderRadius: '8px', 
-                        padding: '16px', 
-                        border: '1px solid rgba(148, 163, 184, 0.05)',
-                        minHeight: '200px',
-                        maxHeight: '250px',
-                        overflowY: 'auto',
-                        fontFamily: 'monospace',
-                        fontSize: '0.75rem',
-                        color: '#cbd5e1'
-                      }}
-                    >
-                      {artifactLoading ? (
-                        <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
-                          <RefreshCw className="animate-spin" size={20} />
-                          <span style={{ marginLeft: '8px' }}>Loading content from disk...</span>
-                        </div>
-                      ) : activeArtifact ? (
-                        <div>
-                          <div style={{ borderBottom: '1px solid rgba(148, 163, 184, 0.1)', paddingBottom: '6px', marginBottom: '8px', color: '#8b5cf6', fontWeight: 'bold' }}>
-                            Type: {activeArtifact.artifact_type} (ID: {activeArtifact.id})
-                          </div>
-                          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                            {JSON.stringify(activeArtifact.content, null, 2)}
-                          </pre>
+                    {/* Left Column: Artifacts List */}
+                    <div>
+                      <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '0.5px', marginBottom: '12px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <FileText size={16} />
+                        Generated Artifacts
+                      </h4>
+                      
+                      {selectedPipelineData.artifacts.length === 0 ? (
+                        <div style={{ background: '#0f172a', borderRadius: '8px', padding: '24px', textAlign: 'center', border: '1px solid rgba(148, 163, 184, 0.05)', color: '#64748b', fontSize: '0.8rem' }}>
+                          No artifacts registered yet for this pipeline.
                         </div>
                       ) : (
-                        <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#64748b', textAlign: 'center', padding: '20px 0' }}>
-                          Select an artifact to inspect its serialized content.
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxH: '250px', overflowY: 'auto' }}>
+                          {selectedPipelineData.artifacts.map((a) => (
+                            <div 
+                              key={a.id}
+                              onClick={() => handleViewArtifact(a)}
+                              style={{
+                                background: '#0f172a',
+                                border: '1px solid rgba(148, 163, 184, 0.1)',
+                                borderRadius: '8px',
+                                padding: '10px 12px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                justifyStyle: 'space-between',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                transition: 'all 0.2s',
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.borderColor = '#8b5cf6'}
+                              onMouseLeave={(e) => e.currentTarget.style.borderColor = 'rgba(148, 163, 184, 0.1)'}
+                            >
+                              <div>
+                                <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#f1f5f9' }}>
+                                  {a.artifact_type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                                </div>
+                                <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '2px' }}>
+                                  Task #{a.task_id} • ID #{a.id}
+                                </div>
+                              </div>
+                              <button 
+                                style={{ 
+                                  background: 'rgba(139, 92, 246, 0.1)', 
+                                  border: 'none', 
+                                  color: '#a78bfa', 
+                                  borderRadius: '4px', 
+                                  padding: '4px 8px', 
+                                  fontSize: '0.7rem', 
+                                  cursor: 'pointer',
+                                  fontWeight: '600'
+                                }}
+                              >
+                                Inspect
+                              </button>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
-                  </div>
 
-                </div>
+                    {/* Right Column: Artifact Viewer panel */}
+                    <div>
+                      <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '0.5px', marginBottom: '12px', fontWeight: '700' }}>
+                        Artifact Data Inspector
+                      </h4>
+
+                      <div 
+                        style={{ 
+                          background: '#0f172a', 
+                          borderRadius: '8px', 
+                          padding: '16px', 
+                          border: '1px solid rgba(148, 163, 184, 0.05)',
+                          minHeight: '200px',
+                          maxHeight: '250px',
+                          overflowY: 'auto',
+                          fontFamily: 'monospace',
+                          fontSize: '0.75rem',
+                          color: '#cbd5e1'
+                        }}
+                      >
+                        {artifactLoading ? (
+                          <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                            <RefreshCw className="animate-spin" size={20} />
+                            <span style={{ marginLeft: '8px' }}>Loading content from disk...</span>
+                          </div>
+                        ) : activeArtifact ? (
+                          <div>
+                            <div style={{ borderBottom: '1px solid rgba(148, 163, 184, 0.1)', paddingBottom: '6px', marginBottom: '8px', color: '#8b5cf6', fontWeight: 'bold' }}>
+                              Type: {activeArtifact.artifact_type} (ID: {activeArtifact.id})
+                            </div>
+                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                              {JSON.stringify(activeArtifact.content, null, 2)}
+                            </pre>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#64748b', textAlign: 'center', padding: '20px 0' }}>
+                            Select an artifact to inspect its serialized content.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+                )}
+
+                {activeTab === 'timeline' && (
+                  <div style={{ background: '#0f172a', borderRadius: '12px', padding: '20px', border: '1px solid rgba(148, 163, 184, 0.05)' }}>
+                    {/* Filter and Search controls */}
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px', borderBottom: '1px dashed rgba(148, 163, 184, 0.1)', paddingBottom: '12px' }}>
+                      <div style={{ flex: 1, minWidth: '200px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Filter Search</label>
+                        <input 
+                          type="text" 
+                          value={timelineSearch}
+                          onChange={(e) => setTimelineSearch(e.target.value)}
+                          placeholder="Search worker ID, task type, message, task ID..."
+                          style={{
+                            padding: '8px 12px',
+                            fontSize: '0.8rem',
+                            background: 'rgba(15, 23, 42, 0.6)',
+                            border: '1px solid rgba(148, 163, 184, 0.15)',
+                            borderRadius: '6px',
+                            color: '#cbd5e1'
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ width: '180px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Event Filter</label>
+                        <select 
+                          value={timelineFilter}
+                          onChange={(e) => setTimelineFilter(e.target.value)}
+                          style={{
+                            padding: '8px',
+                            fontSize: '0.8rem',
+                            background: 'rgba(15, 23, 42, 0.6)',
+                            border: '1px solid rgba(148, 163, 184, 0.15)',
+                            borderRadius: '6px',
+                            color: '#cbd5e1'
+                          }}
+                        >
+                          <option value="all">All Event Types</option>
+                          <option value="task_created">task_created</option>
+                          <option value="task_queued">task_queued</option>
+                          <option value="task_claimed">task_claimed</option>
+                          <option value="lease_renewed">lease_renewed</option>
+                          <option value="lease_expired">lease_expired</option>
+                          <option value="task_started">task_started</option>
+                          <option value="task_completed">task_completed</option>
+                          <option value="task_failed">task_failed</option>
+                          <option value="task_recovered">task_recovered</option>
+                          <option value="artifact_created">artifact_created</option>
+                          <option value="dependency_released">dependency_released</option>
+                          <option value="dependency_blocked">dependency_blocked</option>
+                          <option value="stale_worker_update_rejected">stale_worker_update_rejected</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Timeline List */}
+                    <div style={{ maxHeight: '350px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '4px' }}>
+                      {pipelineTimeline.length === 0 ? (
+                        <div style={{ padding: '30px 0', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
+                          No audit events registered for this pipeline.
+                        </div>
+                      ) : (
+                        (() => {
+                          const filtered = pipelineTimeline.filter(log => {
+                            if (timelineFilter !== 'all' && log.event_type !== timelineFilter) return false;
+                            if (timelineSearch) {
+                              const q = timelineSearch.toLowerCase();
+                              return (
+                                log.message?.toLowerCase().includes(q) ||
+                                log.worker_id?.toLowerCase().includes(q) ||
+                                log.task_type?.toLowerCase().includes(q) ||
+                                String(log.task_id).includes(q) ||
+                                log.event_type?.toLowerCase().includes(q)
+                              );
+                            }
+                            return true;
+                          });
+
+                          if (filtered.length === 0) {
+                            return (
+                              <div style={{ padding: '30px 0', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
+                                No matching events found for the active filter.
+                              </div>
+                            );
+                          }
+
+                          return filtered.map((log) => {
+                            let badgeColor = '#64748b';
+
+                            if (log.event_type === 'task_completed' || log.event_type === 'dependency_released') {
+                              badgeColor = '#10b981';
+                            } else if (log.event_type === 'task_failed' || log.event_type === 'lease_expired' || log.event_type === 'dependency_blocked' || log.event_type === 'stale_worker_update_rejected') {
+                              badgeColor = '#ef4444';
+                            } else if (log.event_type === 'task_started' || log.event_type === 'task_claimed') {
+                              badgeColor = '#3b82f6';
+                            } else if (log.event_type === 'task_recovered') {
+                              badgeColor = '#8b5cf6';
+                            } else if (log.event_type === 'artifact_created') {
+                              badgeColor = '#059669';
+                            } else if (log.event_type === 'lease_renewed') {
+                              badgeColor = '#fbbf24';
+                            }
+
+                            return (
+                              <div 
+                                key={log.id} 
+                                style={{
+                                  background: 'rgba(15, 23, 42, 0.4)',
+                                  borderLeft: `4px solid ${badgeColor}`,
+                                  border: '1px solid rgba(148, 163, 184, 0.08)',
+                                  borderRadius: '6px',
+                                  padding: '10px 14px',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '4px'
+                                }}
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{
+                                      fontSize: '0.65rem',
+                                      fontWeight: '800',
+                                      textTransform: 'uppercase',
+                                      color: '#ffffff',
+                                      background: badgeColor,
+                                      padding: '1px 6px',
+                                      borderRadius: '4px'
+                                    }}>
+                                      {log.event_type}
+                                    </span>
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#cbd5e1' }}>
+                                      {log.task_type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} (Task #{log.task_id})
+                                    </span>
+                                  </div>
+                                  <span style={{ fontSize: '0.65rem', color: '#64748b' }}>
+                                    {new Date(log.created_at).toLocaleTimeString()}
+                                  </span>
+                                </div>
+
+                                <div style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: '1.4' }}>
+                                  {log.message}
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '12px', fontSize: '0.65rem', color: '#64748b', borderTop: '1px solid rgba(148, 163, 184, 0.03)', paddingTop: '4px', marginTop: '2px' }}>
+                                  {log.worker_id && (
+                                    <span>⚙ <strong>Worker:</strong> {log.worker_id}</span>
+                                  )}
+                                  <span>ℹ <strong>Pipeline:</strong> #{log.pipeline_id}</span>
+                                </div>
+                              </div>
+                            );
+                          });
+                        })()
+                      )}
+                    </div>
+                  </div>
+                )}
 
               </div>
             </>

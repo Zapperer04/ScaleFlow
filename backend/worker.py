@@ -766,11 +766,25 @@ def worker_loop():
                 
                 worker_state['last_action'] = f"Claiming task #{task_id}"
                 print(f"[{WORKER_ID}] Claiming task #{task_id} from API...", flush=True)
-                response = requests.post(f"{API_URL}/tasks/{task_id}/claim", json={'worker_id': WORKER_ID}, headers=HEADERS, timeout=5)
                 
-                if response.status_code != 200:
+                # Retry claim in case of DB transaction commit race condition
+                max_attempts = 5
+                response = None
+                for attempt in range(max_attempts):
+                    response = requests.post(f"{API_URL}/tasks/{task_id}/claim", json={'worker_id': WORKER_ID}, headers=HEADERS, timeout=5)
+                    if response.status_code == 200:
+                        break
+                    elif response.status_code == 400 and attempt < max_attempts - 1:
+                        # Sleep briefly and retry
+                        time.sleep(0.2)
+                    else:
+                        break
+                
+                if not response or response.status_code != 200:
                     worker_state['last_action'] = f"Failed to claim task #{task_id}"
-                    print(f"[{WORKER_ID}] Claim failed: {response.status_code} - {response.text}", flush=True)
+                    status_code = response.status_code if response else "No Response"
+                    text = response.text if response else ""
+                    print(f"[{WORKER_ID}] Claim failed: {status_code} - {text}", flush=True)
                     continue
                     
                 task = response.json()

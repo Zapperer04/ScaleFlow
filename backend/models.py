@@ -6,20 +6,55 @@ import json
 import os
 
 def load_env():
-    try:
-        with open('.env') as f:
-            for line in f:
-                if line.strip() and not line.startswith('#'):
-                    key, val = line.strip().split('=', 1)
-                    os.environ.setdefault(key.strip(), val.strip())
-    except FileNotFoundError:
-        pass
+    for path in ['.env', 'backend/.env', '../backend/.env']:
+        try:
+            with open(path) as f:
+                for line in f:
+                    if line.strip() and not line.startswith('#'):
+                        key, val = line.strip().split('=', 1)
+                        os.environ.setdefault(key.strip(), val.strip())
+                break
+        except FileNotFoundError:
+            pass
 
 load_env()
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/task_schedular")
+import sys
+DB_MODE = os.environ.get("DB_MODE", "postgres").lower()
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/task_schedular")
 
-engine = create_engine(DATABASE_URL)
+if DB_MODE == "sqlite":
+    DATABASE_URL = "sqlite:///task_schedular.db"
+elif DB_MODE == "postgres":
+    try:
+        temp_engine = create_engine(DATABASE_URL, connect_args={"connect_timeout": 3})
+        with temp_engine.connect() as conn:
+            pass
+    except Exception as e:
+        print(f"DATABASE STARTUP ERROR: Failed to connect to PostgreSQL in postgres mode. URL: {DATABASE_URL}", file=sys.stderr)
+        raise e
+elif DB_MODE == "auto":
+    try:
+        temp_engine = create_engine(DATABASE_URL, connect_args={"connect_timeout": 2})
+        with temp_engine.connect() as conn:
+            pass
+    except Exception as e:
+        print(f"DATABASE WARNING: PostgreSQL connection failed. Falling back to SQLite task_schedular.db. Error: {e}", file=sys.stderr)
+        DATABASE_URL = "sqlite:///task_schedular.db"
+else:
+    print(f"DATABASE WARNING: Invalid DB_MODE '{DB_MODE}'. Defaulting to postgres.", file=sys.stderr)
+    temp_engine = create_engine(DATABASE_URL, connect_args={"connect_timeout": 3})
+    with temp_engine.connect() as conn:
+        pass
+
+ACTIVE_DATABASE_URL = DATABASE_URL
+ACTIVE_DB_MODE = DB_MODE
+
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL)
+
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
@@ -148,6 +183,19 @@ class Task(Base):
         except Exception:
             output_ids = []
             
+        # Compute queue wait duration and execution duration
+        queue_wait = 0
+        execution = 0
+        if self.started_at and self.created_at:
+            queue_wait = (self.started_at - self.created_at).total_seconds()
+        elif self.created_at:
+            queue_wait = (datetime.now() - self.created_at).total_seconds()
+            
+        if self.completed_at and self.started_at:
+            execution = (self.completed_at - self.started_at).total_seconds()
+        elif self.started_at:
+            execution = (datetime.now() - self.started_at).total_seconds()
+
         return {
             'id': self.id,
             'type': self.type,
@@ -169,7 +217,9 @@ class Task(Base):
             'pipeline_id': self.pipeline_id,
             'input_artifact_ids': input_ids,
             'output_artifact_ids': output_ids,
-            'blocked_reason': self.blocked_reason
+            'blocked_reason': self.blocked_reason,
+            'queue_wait_duration': round(queue_wait, 2),
+            'execution_duration': round(execution, 2)
         }
 
 class FileRecord(Base):
@@ -201,14 +251,16 @@ class FileRecord(Base):
 Base.metadata.create_all(engine)
 
 # Auto-migration for existing tables
-from sqlalchemy import text
-with engine.begin() as conn:
-    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_worker_id VARCHAR(100);"))
-    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_token VARCHAR(100);"))
-    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMP;"))
-    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recovered_count INTEGER DEFAULT 0;"))
-    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_renewal_count INTEGER DEFAULT 0;"))
-    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pipeline_id INTEGER;"))
-    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS input_artifact_ids TEXT;"))
-    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS output_artifact_ids TEXT;"))
-    conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS blocked_reason TEXT;"))
+if engine.dialect.name == "postgresql":
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_worker_id VARCHAR(100);"))
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_token VARCHAR(100);"))
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMP;"))
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recovered_count INTEGER DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_renewal_count INTEGER DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pipeline_id INTEGER;"))
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS input_artifact_ids TEXT;"))
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS output_artifact_ids TEXT;"))
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS blocked_reason TEXT;"))
+

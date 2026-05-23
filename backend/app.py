@@ -8,7 +8,7 @@ import uuid
 import time
 import hashlib
 from functools import wraps
-from models import SessionLocal, Task, TaskDependency, TaskLog, Pipeline, Artifact, FileRecord, load_env
+from models import SessionLocal, Task, TaskDependency, TaskLog, Pipeline, Artifact, FileRecord, load_env, ACTIVE_DB_MODE, ACTIVE_DATABASE_URL, engine
 from task_registry import TASK_REGISTRY, validate_task_payload
 from orchestrator.dag_builder import get_dag_template
 
@@ -44,10 +44,43 @@ def require_api_key(f):
         return f(*args, **kwargs)
     return decorated_function
 
+CANONICAL_EVENTS = {
+    "task_created",
+    "task_queued",
+    "task_claimed",
+    "lease_renewed",
+    "lease_expired",
+    "task_started",
+    "task_completed",
+    "task_failed",
+    "task_recovered",
+    "artifact_created",
+    "dependency_released",
+    "dependency_blocked",
+    "stale_worker_update_rejected"
+}
+
 def create_task_log(db, task_id, event_type, message, worker_id=None):
+    mapping = {
+        "task_timed_out": "lease_expired",
+        "task_retried": "task_queued",
+        "task_requeued": "task_queued",
+        "task_cancelled": "task_failed",
+        "dependency_waiting": "dependency_blocked",
+        "dependency_resolved": "dependency_released",
+        "task_lease_renewal_rejected": "task_failed",
+        "task_lease_renewed": "lease_renewed",
+        "task_recovered_after_lease_expiry": "task_recovered",
+        "max_retries_exceeded_after_lease_expiry": "task_failed",
+        "input_artifact_received": "artifact_created"
+    }
+    canonical_type = mapping.get(event_type, event_type)
+    if canonical_type not in CANONICAL_EVENTS:
+        raise ValueError(f"Event type '{event_type}' (mapped to '{canonical_type}') is not canonical. Allowed types: {CANONICAL_EVENTS}")
+        
     log = TaskLog(
         task_id=task_id,
-        event_type=event_type,
+        event_type=canonical_type,
         message=message,
         worker_id=worker_id
     )
@@ -914,30 +947,132 @@ def get_pipeline_dag(pipeline_id):
             return jsonify({"error": "Pipeline not found"}), 404
             
         tasks = db.query(Task).filter(Task.pipeline_id == pipeline_id).all()
+        artifacts = db.query(Artifact).filter(Artifact.pipeline_id == pipeline_id).all()
         
+        # Build artifact lookup map by producing task_id
+        art_map = {}
+        for art in artifacts:
+            if art.task_id:
+                if art.task_id not in art_map:
+                    art_map[art.task_id] = []
+                art_map[art.task_id].append(art)
+                
         nodes = []
         edges = []
         
+        # 1. Add Task Nodes
         for task in tasks:
+            td = task.to_dict()
             nodes.append({
-                "id": task.id,
-                "label": task.type,
-                "task_type": task.type,
-                "status": task.status,
-                "priority": task.priority,
-                "blocked_reason": task.blocked_reason
+                "id": f"task-{task.id}",
+                "type": "taskNode",
+                "position": {"x": 0, "y": 0},
+                "data": td
             })
             
+        # 2. Add Artifact Nodes
+        for art in artifacts:
+            nodes.append({
+                "id": f"artifact-{art.id}",
+                "type": "artifactNode",
+                "position": {"x": 0, "y": 0},
+                "data": art.to_dict()
+            })
+            
+        # 3. Add Edges (handling artifact relationships)
+        drawn_direct_edges = set()
+        for task in tasks:
             for parent in task.dependent_on:
-                edges.append({
-                    "from": parent.id,
-                    "to": task.id
+                parent_arts = art_map.get(parent.id, [])
+                
+                # Check if this parent produced an artifact that this task consumes
+                if parent_arts:
+                    for art in parent_arts:
+                        # Draw Task parent -> Artifact art
+                        edge_1_id = f"e-task-{parent.id}-art-{art.id}"
+                        if edge_1_id not in drawn_direct_edges:
+                            # Edge is animated if parent is running
+                            is_animated = (parent.status == 'running')
+                            edges.append({
+                                "id": edge_1_id,
+                                "source": f"task-{parent.id}",
+                                "target": f"artifact-{art.id}",
+                                "animated": is_animated,
+                                "style": {"stroke": "#10b981", "strokeWidth": 2}  # Solid green
+                            })
+                            drawn_direct_edges.add(edge_1_id)
+                            
+                        # Draw Artifact art -> Task child
+                        edge_2_id = f"e-art-{art.id}-task-{task.id}"
+                        is_animated = (task.status == 'running')
+                        stroke_color = "#10b981" if task.status == 'completed' else "#3b82f6" if task.status == 'running' else "#64748b"
+                        edges.append({
+                            "id": edge_2_id,
+                            "source": f"artifact-{art.id}",
+                            "target": f"task-{task.id}",
+                            "animated": is_animated,
+                            "style": {
+                                "stroke": stroke_color,
+                                "strokeWidth": 2 if task.status in ['completed', 'running'] else 1.5,
+                                "strokeDasharray": "5" if task.status != 'completed' else None
+                            }
+                        })
+                else:
+                    # No artifact exists yet, draw direct dependency edge: Task parent -> Task child
+                    edge_id = f"e-task-{parent.id}-task-{task.id}"
+                    is_animated = (parent.status == 'running' or task.status == 'running')
+                    stroke_color = "#3b82f6" if task.status == 'running' or parent.status == 'running' else "#64748b"
+                    edges.append({
+                        "id": edge_id,
+                        "source": f"task-{parent.id}",
+                        "target": f"task-{task.id}",
+                        "animated": is_animated,
+                        "style": {
+                            "stroke": stroke_color,
+                            "strokeWidth": 1.5,
+                            "strokeDasharray": "5"
+                        }
+                    })
+                    
+        return jsonify({
+            "pipeline": pipeline.to_dict(),
+            "nodes": nodes,
+            "edges": edges,
+            "tasks": [t.to_dict() for t in tasks],
+            "artifacts": [a.to_dict() for a in artifacts]
+        }), 200
+    finally:
+        db.close()
+
+@app.route('/pipelines/<int:pipeline_id>/timeline', methods=['GET'])
+def get_pipeline_timeline(pipeline_id):
+    db = SessionLocal()
+    try:
+        pipeline = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
+        if not pipeline:
+            return jsonify({"error": "Pipeline not found"}), 404
+            
+        tasks = db.query(Task).filter(Task.pipeline_id == pipeline_id).all()
+        task_ids = [t.id for t in tasks]
+        
+        timeline = []
+        if task_ids:
+            logs = db.query(TaskLog).filter(TaskLog.task_id.in_(task_ids)).order_by(TaskLog.created_at.asc()).all()
+            task_type_map = {t.id: t.type for t in tasks}
+            
+            for log in logs:
+                timeline.append({
+                    "id": log.id,
+                    "task_id": log.task_id,
+                    "task_type": task_type_map.get(log.task_id, "unknown"),
+                    "event_type": log.event_type,
+                    "message": log.message,
+                    "worker_id": log.worker_id,
+                    "pipeline_id": pipeline_id,
+                    "created_at": log.created_at.isoformat() if log.created_at else None
                 })
                 
-        return jsonify({
-            "nodes": nodes,
-            "edges": edges
-        }), 200
+        return jsonify(timeline), 200
     finally:
         db.close()
 
@@ -999,6 +1134,16 @@ def register_artifact():
         db.add(artifact)
         db.commit()
         db.refresh(artifact)
+        
+        # Log artifact creation
+        if task_id:
+            try:
+                worker_id = meta.get("worker_id") if isinstance(meta, dict) else None
+                create_task_log(db, task_id, "artifact_created", f"Artifact '{artifact_type}' (ID: {artifact.id}) created", worker_id=worker_id)
+                db.commit()
+            except Exception as e:
+                print(f"Error logging artifact creation log: {e}", flush=True)
+                
         return jsonify(artifact.to_dict()), 201
     except Exception as e:
         db.rollback()
@@ -1106,7 +1251,7 @@ def upload_file():
         # 3. Rename file to final path
         final_filename = f"{file_record.id}_{original_filename}"
         final_path = os.path.join(UPLOAD_DIR, final_filename)
-        os.rename(temp_path, final_path)
+        os.replace(temp_path, final_path)
         
         storage_uri = f"storage/uploads/{final_filename}"
         file_record.storage_uri = storage_uri
@@ -3106,10 +3251,54 @@ def test_lease_renewal_flow():
             "logs": test_logs
         }), 200
 
+@app.route('/database/status', methods=['GET'])
+def get_db_status():
+    import urllib.parse
+    masked_url = ACTIVE_DATABASE_URL
+    try:
+        parsed = urllib.parse.urlparse(ACTIVE_DATABASE_URL)
+        if parsed.password:
+            masked_url = ACTIVE_DATABASE_URL.replace(parsed.password, "***")
+    except Exception:
+        pass
+        
+    from sqlalchemy import inspect
+    try:
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        status = "connected"
+    except Exception as e:
+        tables = []
+        status = f"error: {str(e)}"
+        
+    return jsonify({
+        "db_mode": ACTIVE_DB_MODE,
+        "database_url": masked_url,
+        "dialect": engine.dialect.name,
+        "status": status,
+        "tables": tables
+    }), 200
+
 import threading
 scanner_thread = threading.Thread(target=run_recovery_scanner, daemon=True)
 scanner_thread.start()
 
 if __name__ == '__main__':
+    import urllib.parse
+    masked_url = ACTIVE_DATABASE_URL
+    try:
+        parsed = urllib.parse.urlparse(ACTIVE_DATABASE_URL)
+        if parsed.password:
+            masked_url = ACTIVE_DATABASE_URL.replace(parsed.password, "***")
+    except Exception:
+        pass
+    
+    print("="*60, flush=True)
+    print(f"DATABASE CONFIGURATION:", flush=True)
+    print(f"  DB_MODE: {ACTIVE_DB_MODE}", flush=True)
+    print(f"  SQLAlchemy Dialect: {engine.dialect.name}", flush=True)
+    print(f"  DATABASE_URL: {masked_url}", flush=True)
+    print("="*60, flush=True)
+
     port = int(os.environ.get("API_PORT", 5000))
     app.run(debug=True, port=port, host='0.0.0.0')
