@@ -89,6 +89,35 @@ def log_event(db, task_id, event_type, message, worker_id=None):
         worker_id=worker_id
     )
     db.add(log)
+    
+    # Event sourcing validation and publishing
+    try:
+        from services.event_sourcing_service import publish_event
+        from models import Task
+        
+        task = db.query(Task).filter(Task.id == task_id).first()
+        pipeline_id = task.pipeline_id if task else None
+        
+        payload = {}
+        upper_event = canonical_type.upper()
+        if upper_event in ("TASK_RELEASED", "DEPENDENCY_RELEASED"):
+            payload = {"priority": task.priority if task else "medium"}
+        elif upper_event in ("TASK_BLOCKED", "DEPENDENCY_BLOCKED"):
+            payload = {"blocked_reason": message or "dependencies not met"}
+            
+        publish_event(
+            db=db,
+            event_type=canonical_type,
+            pipeline_id=pipeline_id,
+            task_id=task_id,
+            message=message,
+            worker_id=worker_id,
+            lease_token=task.lease_token if task else None,
+            payload=payload
+        )
+    except Exception as e:
+        print(f"EVENT SOURCING ERROR in dependency_resolver log_event: {e}", flush=True)
+        
     return log
 
 def enqueue_task(db, task):
@@ -128,6 +157,28 @@ def resolve_dependencies(db, completed_task):
  
     # completed_task.required_by holds tasks that depend on completed_task
     for child in completed_task.required_by:
+        # Idempotency Guard using event log
+        from models import OrchestrationEvent
+        try:
+            already_released = db.query(OrchestrationEvent).filter(
+                OrchestrationEvent.event_type == 'DEPENDENCY_RELEASED',
+                OrchestrationEvent.pipeline_id == pipeline_id
+            ).all()
+            is_duplicate = False
+            for evt in already_released:
+                try:
+                    p_json = json.loads(evt.payload_json) if isinstance(evt.payload_json, str) else evt.payload_json
+                    if p_json.get("parent_task_id") == completed_task.id and p_json.get("child_task_id") == child.id:
+                        is_duplicate = True
+                        break
+                except:
+                    pass
+            if is_duplicate:
+                print(f"[Idempotency] Child task #{child.id} was already released by parent completion #{completed_task.id}. Skipping duplicate release.", flush=True)
+                continue
+        except Exception as e:
+            print(f"Error checking duplicate releases: {e}", flush=True)
+
         if child.status not in ['pending', 'blocked']:
             continue
             
@@ -254,6 +305,19 @@ def update_pipeline_status(db, pipeline_id):
                 pipeline.error_message = f"Pipeline failed: {failed_count} task(s) failed."
             elif new_status == 'blocked':
                 pipeline.error_message = f"Pipeline blocked: {blocked_count} task(s) blocked due to dependency failure."
+        
+        # Publish pipeline status event sourcing
+        try:
+            from services.event_sourcing_service import publish_event
+            if new_status == 'completed':
+                duration = 0.0
+                if pipeline.completed_at and pipeline.started_at:
+                    duration = (pipeline.completed_at - pipeline.started_at).total_seconds()
+                publish_event(db, "PIPELINE_COMPLETED", pipeline_id=pipeline.id, payload={"duration_seconds": duration})
+            elif new_status in ('failed', 'cancelled', 'blocked'):
+                publish_event(db, "PIPELINE_FAILED", pipeline_id=pipeline.id, payload={"error_message": pipeline.error_message or f"Pipeline status changed to {new_status}"})
+        except Exception as e:
+            print(f"EVENT SOURCING ERROR in update_pipeline_status: {e}", flush=True)
 
     # Sync FileRecord status
     from models import FileRecord

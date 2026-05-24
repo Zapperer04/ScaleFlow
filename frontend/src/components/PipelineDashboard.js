@@ -11,7 +11,10 @@ import {
   searchVectors, fetchVectorStats, createRetrievalPipeline, fetchRetrievalPipelineAnswer,
   fetchPipelineDag, fetchPipelineTimeline,
   getSystemMetrics, getQueueMetrics, getWorkerMetrics,
-  getScalingMetrics, getPipelineMetrics, getBackpressureMetrics
+  getScalingMetrics, getPipelineMetrics, getBackpressureMetrics,
+  fetchEvents, fetchPipelineEvents, fetchWorkerEvents,
+  fetchSnapshots, fetchPipelineSnapshots, triggerPipelineSnapshot,
+  fetchReplayDetails, startReplay, pauseReplay, stepReplay, fetchReconstructedState
 } from '../services/api';
 
 import ReactFlow, { MiniMap, Controls, Background, Position, Handle } from 'reactflow';
@@ -302,6 +305,185 @@ const getLayoutedElements = (nodes, edges, direction = 'LR') => {
   return { nodes: positionedNodes, edges };
 };
 
+const reconstructStateClient = (events) => {
+  const state = {
+    pipeline: { status: 'created', started_at: null, completed_at: null, error_message: null },
+    tasks: {},
+    artifacts: [],
+    dependencies: {},
+    dependency_releases: {}
+  };
+
+  const taskQueuedTimes = {};
+
+  events.forEach((evt) => {
+    const type = evt.event_type.toUpperCase();
+    const payload = evt.payload_json || {};
+    const tid = evt.task_id ? String(evt.task_id) : null;
+    const evtTime = evt.created_at;
+
+    if (type === 'PIPELINE_CREATED') {
+      state.pipeline.status = 'created';
+      state.pipeline.created_at = evtTime;
+    } else if (type === 'PIPELINE_COMPLETED') {
+      state.pipeline.status = 'completed';
+      state.pipeline.completed_at = evtTime;
+    } else if (type === 'PIPELINE_FAILED') {
+      state.pipeline.status = 'failed';
+      state.pipeline.completed_at = evtTime;
+      state.pipeline.error_message = payload.error_message;
+    } else if (type === 'TASK_CREATED') {
+      if (tid) {
+        state.tasks[tid] = {
+          id: evt.task_id,
+          type: payload.task_type || '',
+          status: 'pending',
+          priority: payload.priority || 'medium',
+          retry_count: 0,
+          max_retries: 3,
+          error_message: null,
+          created_at: evtTime,
+          started_at: null,
+          completed_at: null,
+          assigned_worker_id: null,
+          lease_token: null,
+          lease_expires_at: null,
+          recovered_count: 0,
+          lease_renewal_count: 0,
+          input_artifact_ids: [],
+          output_artifact_ids: [],
+          blocked_reason: null,
+          deferred_at: null,
+          queue_wait_duration: 0.0,
+          execution_duration: 0.0
+        };
+        state.dependencies[tid] = payload.dependencies || [];
+      }
+    } else if (type === 'TASK_QUEUED') {
+      if (tid && state.tasks[tid]) {
+        state.tasks[tid].status = 'pending';
+        taskQueuedTimes[tid] = new Date(evtTime);
+      }
+    } else if (type === 'TASK_CLAIMED') {
+      if (tid && state.tasks[tid]) {
+        state.tasks[tid].status = 'running';
+        state.tasks[tid].assigned_worker_id = payload.worker_id;
+        state.tasks[tid].lease_token = payload.lease_token;
+        if (evtTime) {
+          const duration = payload.lease_duration || 30;
+          const expDate = new Date(new Date(evtTime).getTime() + duration * 1000);
+          state.tasks[tid].lease_expires_at = expDate.toISOString();
+        }
+      }
+    } else if (type === 'LEASE_RENEWED') {
+      if (tid && state.tasks[tid]) {
+        state.tasks[tid].lease_renewal_count += 1;
+        if (evtTime) {
+          const duration = payload.lease_duration || 30;
+          const expDate = new Date(new Date(evtTime).getTime() + duration * 1000);
+          state.tasks[tid].lease_expires_at = expDate.toISOString();
+        }
+      }
+    } else if (type === 'LEASE_EXPIRED') {
+      if (tid && state.tasks[tid]) {
+        state.tasks[tid].status = 'pending';
+        state.tasks[tid].lease_token = null;
+        state.tasks[tid].assigned_worker_id = null;
+      }
+    } else if (type === 'TASK_STARTED') {
+      if (tid && state.tasks[tid]) {
+        state.tasks[tid].status = 'running';
+        state.tasks[tid].started_at = evtTime;
+        state.tasks[tid].assigned_worker_id = payload.worker_id;
+        state.tasks[tid].lease_token = payload.lease_token;
+        if (!state.pipeline.started_at) {
+          state.pipeline.started_at = evtTime;
+          state.pipeline.status = 'running';
+        }
+        if (taskQueuedTimes[tid] && evtTime) {
+          state.tasks[tid].queue_wait_duration = Math.round(
+            ((new Date(evtTime) - taskQueuedTimes[tid]) / 1000) * 100
+          ) / 100;
+        }
+      }
+    } else if (type === 'TASK_COMPLETED') {
+      if (tid && state.tasks[tid]) {
+        state.tasks[tid].status = 'completed';
+        state.tasks[tid].completed_at = evtTime;
+        if (state.tasks[tid].started_at && evtTime) {
+          state.tasks[tid].execution_duration = Math.round(
+            ((new Date(evtTime) - new Date(state.tasks[tid].started_at)) / 1000) * 100
+          ) / 100;
+        }
+        state.tasks[tid].output_artifact_ids = payload.output_artifact_ids || [];
+      }
+    } else if (type === 'TASK_FAILED') {
+      if (tid && state.tasks[tid]) {
+        state.tasks[tid].status = 'failed';
+        state.tasks[tid].error_message = payload.error_message;
+        state.tasks[tid].retry_count += 1;
+      }
+    } else if (type === 'TASK_RECOVERED') {
+      if (tid && state.tasks[tid]) {
+        state.tasks[tid].status = 'pending';
+        state.tasks[tid].recovered_count = payload.recovered_count || (state.tasks[tid].recovered_count + 1);
+        state.tasks[tid].lease_token = null;
+        state.tasks[tid].assigned_worker_id = null;
+        if (state.pipeline.status === 'running') {
+          state.pipeline.status = 'recovering';
+        }
+      }
+    } else if (type === 'TASK_BLOCKED' || type === 'DEPENDENCY_BLOCKED') {
+      if (tid && state.tasks[tid]) {
+        state.tasks[tid].status = 'blocked';
+        state.tasks[tid].blocked_reason = payload.blocked_reason;
+      }
+    } else if (type === 'TASK_RELEASED' || type === 'DEPENDENCY_RELEASED') {
+      if (tid && state.tasks[tid]) {
+        state.tasks[tid].status = 'pending';
+        state.tasks[tid].blocked_reason = null;
+      }
+    } else if (type === 'BACKPRESSURE_DEFERRED') {
+      if (tid && state.tasks[tid]) {
+        state.tasks[tid].status = 'deferred';
+        state.tasks[tid].deferred_at = evtTime;
+      }
+    } else if (type === 'PRIORITY_ESCALATED') {
+      if (tid && state.tasks[tid]) {
+        state.tasks[tid].priority = payload.new_priority || 'medium';
+      }
+    } else if (type === 'ARTIFACT_CREATED') {
+      const art = {
+        id: payload.artifact_id,
+        pipeline_id: evt.pipeline_id,
+        task_id: evt.task_id,
+        artifact_type: payload.artifact_type,
+        storage_uri: payload.storage_uri,
+        created_at: evtTime
+      };
+      state.artifacts.push(art);
+      if (tid && state.tasks[tid]) {
+        const artId = payload.artifact_id;
+        if (!state.tasks[tid].output_artifact_ids.includes(artId)) {
+          state.tasks[tid].output_artifact_ids.push(artId);
+        }
+      }
+    } else if (type === 'DEPENDENCY_RELEASED') {
+      const p = String(payload.parent_task_id);
+      const c = String(payload.child_task_id);
+      if (!state.dependency_releases[c]) state.dependency_releases[c] = {};
+      state.dependency_releases[c][p] = true;
+    } else if (type === 'DEPENDENCY_BLOCKED') {
+      const p = String(payload.parent_task_id);
+      const c = String(payload.child_task_id);
+      if (!state.dependency_releases[c]) state.dependency_releases[c] = {};
+      state.dependency_releases[c][p] = false;
+    }
+  });
+
+  return state;
+};
+
 const PipelineDashboard = () => {
   const [pipelines, setPipelines] = useState([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState(null);
@@ -316,6 +498,20 @@ const PipelineDashboard = () => {
   const [systemMetricsData, setSystemMetricsData] = useState(null);
   const [scalingData, setScalingData] = useState(null);
   const [backpressureData, setBackpressureData] = useState(null);
+
+  // Event Sourcing & Replay States
+  const [globalEvents, setGlobalEvents] = useState([]);
+  const [globalEventCategory, setGlobalEventCategory] = useState('');
+  const [replayPipelineId, setReplayPipelineId] = useState(null);
+  const [replayEvents, setReplayEvents] = useState([]);
+  const [replaySnapshots, setReplaySnapshots] = useState([]);
+  const [replayScrubberVal, setReplayScrubberVal] = useState(0);
+  const [replayStatus, setReplayStatus] = useState('paused');
+  const [replaySpeed, setReplaySpeed] = useState(1.0);
+  const [replayNodes, setReplayNodes] = useState([]);
+  const [replayEdges, setReplayEdges] = useState([]);
+  const [originalReplayDag, setOriginalReplayDag] = useState(null);
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState(null);
 
   const loadPipelineMetrics = async (id) => {
     try {
@@ -606,6 +802,172 @@ const PipelineDashboard = () => {
       console.error('Failed to load vector stats:', err);
     }
   };
+
+  // Event Sourcing & Replay Handlers
+  const loadGlobalEvents = async () => {
+    try {
+      const data = await fetchEvents(globalEventCategory);
+      setGlobalEvents(data);
+    } catch (err) {
+      console.error('Failed to load global events:', err);
+    }
+  };
+
+  const loadPipelineReplayData = async (pipelineId) => {
+    if (!pipelineId) return;
+    try {
+      const [events, snapshots, dag] = await Promise.all([
+        fetchPipelineEvents(pipelineId),
+        fetchPipelineSnapshots(pipelineId),
+        fetchPipelineDag(pipelineId)
+      ]);
+      
+      setReplayEvents(events);
+      setReplaySnapshots(snapshots);
+      setOriginalReplayDag(dag);
+      setReplayScrubberVal(events.length);
+      
+      reconstructReplayStateAtStep(events, dag, events.length);
+    } catch (err) {
+      console.error('Failed to load pipeline replay data:', err);
+    }
+  };
+
+  const reconstructReplayStateAtStep = (events, dag, stepIndex) => {
+    if (!dag || !dag.nodes || !dag.edges) return;
+    
+    const activeEvents = events.slice(0, stepIndex);
+    const reconstructed = reconstructStateClient(activeEvents);
+    
+    const updatedNodes = dag.nodes.map(node => {
+      if (node.type === 'taskNode') {
+        const taskId = node.id.replace('task-', '');
+        const recTask = reconstructed.tasks[taskId];
+        if (recTask) {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              status: recTask.status,
+              retry_count: recTask.retry_count,
+              recovered_count: recTask.recovered_count,
+              lease_renewal_count: recTask.lease_renewal_count,
+              assigned_worker_id: recTask.assigned_worker_id,
+              queue_wait_duration: recTask.queue_wait_duration,
+              execution_duration: recTask.execution_duration,
+              blocked_reason: recTask.blocked_reason,
+            }
+          };
+        } else {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              status: 'pending',
+              retry_count: 0,
+              recovered_count: 0,
+              lease_renewal_count: 0,
+              assigned_worker_id: null,
+              queue_wait_duration: 0.0,
+              execution_duration: 0.0,
+              blocked_reason: null
+            }
+          };
+        }
+      } else if (node.type === 'artifactNode') {
+        const artId = node.data.id;
+        const exists = reconstructed.artifacts.some(a => a.id === artId);
+        return {
+          ...node,
+          style: {
+            ...node.style,
+            opacity: exists ? 1 : 0.3,
+            transition: 'opacity 0.3s ease'
+          }
+        };
+      }
+      return node;
+    });
+
+    const updatedEdges = dag.edges.map(edge => {
+      let isCompletedEdge = false;
+      if (edge.source.startsWith('task-')) {
+        const srcId = edge.source.replace('task-', '');
+        if (reconstructed.tasks[srcId] && reconstructed.tasks[srcId].status === 'completed') {
+          isCompletedEdge = true;
+        }
+      }
+      
+      return {
+        ...edge,
+        animated: isCompletedEdge,
+        style: {
+          ...edge.style,
+          stroke: isCompletedEdge ? '#10b981' : '#475569',
+          strokeWidth: isCompletedEdge ? 2.5 : 1.5
+        }
+      };
+    });
+
+    const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+      updatedNodes,
+      updatedEdges,
+      'LR'
+    );
+    setReplayNodes(layoutedNodes);
+    setReplayEdges(layoutedEdges);
+  };
+
+  // Replay Autoplay Effect
+  useEffect(() => {
+    if (replayStatus !== 'playing' || replayEvents.length === 0) return;
+    
+    const intervalTime = 1000 / replaySpeed;
+    const interval = setInterval(() => {
+      setReplayScrubberVal(prev => {
+        const next = prev + 1;
+        if (next >= replayEvents.length) {
+          setReplayStatus('paused');
+          clearInterval(interval);
+          return replayEvents.length;
+        }
+        return next;
+      });
+    }, intervalTime);
+    
+    return () => clearInterval(interval);
+  }, [replayStatus, replaySpeed, replayEvents]);
+
+  // Synchronize timeline scrubbing with graph updates
+  useEffect(() => {
+    if (replayEvents.length > 0 && originalReplayDag) {
+      reconstructReplayStateAtStep(replayEvents, originalReplayDag, replayScrubberVal);
+    }
+  }, [replayScrubberVal, originalReplayDag, replayEvents]);
+
+  // Periodically poll events for live pipeline replay updates and global feed
+  useEffect(() => {
+    if (dashboardTab === 'replay') {
+      loadGlobalEvents();
+      if (replayPipelineId) {
+        fetchPipelineEvents(replayPipelineId).then(events => {
+          setReplayEvents(events);
+          fetchPipelineSnapshots(replayPipelineId).then(snaps => setReplaySnapshots(snaps));
+        }).catch(err => console.error(err));
+      }
+    }
+    const interval = setInterval(() => {
+      if (dashboardTab === 'replay') {
+        loadGlobalEvents();
+        if (replayPipelineId && replayStatus === 'paused') {
+          fetchPipelineEvents(replayPipelineId).then(events => {
+            setReplayEvents(events);
+          });
+        }
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [dashboardTab, replayPipelineId, replayStatus, globalEventCategory]);
 
   useEffect(() => {
     loadPipelinesList();
@@ -905,9 +1267,28 @@ const PipelineDashboard = () => {
           <Activity size={18} />
           Systems Observability
         </button>
+        <button
+          onClick={() => setDashboardTab('replay')}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: dashboardTab === 'replay' ? '#8b5cf6' : '#94a3b8',
+            fontSize: '1rem',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            borderBottom: dashboardTab === 'replay' ? '2.5px solid #8b5cf6' : 'none',
+            paddingBottom: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <RefreshCw size={18} />
+          Event Stream & Replay
+        </button>
       </div>
 
-      {dashboardTab === 'orchestration' ? (
+      {dashboardTab === 'orchestration' && (
         <>
           <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
             <div>
@@ -2147,7 +2528,9 @@ const PipelineDashboard = () => {
         </div>
       )}
         </>
-      ) : (
+      )}
+
+      {dashboardTab === 'observability' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginTop: '10px' }}>
           {/* 1. Health Status Banner */}
           {systemMetricsData && (() => {
@@ -2457,6 +2840,345 @@ const PipelineDashboard = () => {
             </div>
           </div>
 
+        </div>
+      )}
+
+      {dashboardTab === 'replay' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '24px', marginTop: '10px' }}>
+          
+          {/* Left Column: Pipeline list & Snapshots */}
+          <div style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            
+            {/* Pipeline Selector Card */}
+            <div style={{ background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px' }}>
+              <h3 style={{ fontSize: '1.0rem', fontWeight: '700', marginBottom: '14px', color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <GitBranch size={16} style={{ color: '#8b5cf6' }} />
+                Select Pipeline for Replay
+              </h3>
+              <select 
+                value={replayPipelineId || ''} 
+                onChange={(e) => {
+                  const val = e.target.value ? parseInt(e.target.value) : null;
+                  setReplayPipelineId(val);
+                  if (val) loadPipelineReplayData(val);
+                }}
+                style={{ width: '100%', fontSize: '0.9rem', padding: '10px', background: 'rgba(15, 23, 42, 0.5)', color: '#fff', border: '1px solid rgba(148, 163, 184, 0.2)', borderRadius: '6px' }}
+              >
+                <option value="">-- Choose Pipeline --</option>
+                {pipelines.map(p => (
+                  <option key={p.id} value={p.id}>#{p.id} {p.name} ({p.status})</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Snapshot Watermarks Card */}
+            <div style={{ background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <h3 style={{ fontSize: '1.0rem', fontWeight: '700', color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <Database size={16} style={{ color: '#a78bfa' }} />
+                  Snapshots & Watermarks
+                </h3>
+                {replayPipelineId && (
+                  <button 
+                    onClick={async () => {
+                      try {
+                        await triggerPipelineSnapshot(replayPipelineId);
+                        const snaps = await fetchPipelineSnapshots(replayPipelineId);
+                        setReplaySnapshots(snaps);
+                        alert("Snapshot created successfully!");
+                      } catch (err) {
+                        alert("Failed to create snapshot: " + err.message);
+                      }
+                    }}
+                    style={{ background: 'rgba(139, 92, 246, 0.2)', border: '1px solid rgba(139, 92, 246, 0.4)', borderRadius: '4px', padding: '2px 8px', fontSize: '0.7rem', color: '#a78bfa', cursor: 'pointer' }}
+                  >
+                    Snapshot Now
+                  </button>
+                )}
+              </div>
+
+              {replaySnapshots.length === 0 ? (
+                <div style={{ fontSize: '0.8rem', color: '#64748b', textAlign: 'center', padding: '20px 0' }}>
+                  No snapshots created yet. Periodic snapshots are auto-created every 10 events.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+                  {replaySnapshots.map(snap => (
+                    <div 
+                      key={snap.id}
+                      style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center', 
+                        background: 'rgba(15, 23, 42, 0.4)', 
+                        padding: '8px 12px', 
+                        borderRadius: '6px', 
+                        border: '1px solid rgba(148, 163, 184, 0.05)',
+                        fontSize: '0.75rem'
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 'bold', color: '#e2e8f0' }}>Snapshot #{snap.id}</div>
+                        <span style={{ color: '#64748b', fontSize: '0.65rem' }}>Watermark Event ID: {snap.last_event_id}</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const idx = replayEvents.findIndex(e => e.id === snap.last_event_id);
+                          if (idx !== -1) {
+                            setReplayScrubberVal(idx + 1);
+                          } else {
+                            alert("Watermark event not found in memory stream.");
+                          }
+                        }}
+                        style={{ background: '#3b82f6', border: 'none', borderRadius: '4px', padding: '2px 8px', color: '#fff', cursor: 'pointer', fontSize: '0.7rem' }}
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Global Live Event Stream Banner */}
+            <div style={{ background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <h3 style={{ fontSize: '1.0rem', fontWeight: '700', color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <Activity size={16} style={{ color: '#10b981' }} />
+                  Global Event Stream
+                </h3>
+                <select 
+                  value={globalEventCategory} 
+                  onChange={(e) => setGlobalEventCategory(e.target.value)}
+                  style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(148, 163, 184, 0.2)', borderRadius: '4px', padding: '2px', color: '#fff', fontSize: '0.7rem' }}
+                >
+                  <option value="">All Categories</option>
+                  <option value="critical">Critical</option>
+                  <option value="operational">Operational</option>
+                  <option value="telemetry">Telemetry</option>
+                  <option value="debug">Debug</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, maxHeight: '350px' }}>
+                {globalEvents.map(evt => {
+                  let badgeBg = 'rgba(148, 163, 184, 0.1)';
+                  let badgeColor = '#94a3b8';
+                  if (evt.event_category === 'critical') { badgeBg = 'rgba(239, 68, 68, 0.1)'; badgeColor = '#fca5a5'; }
+                  else if (evt.event_category === 'operational') { badgeBg = 'rgba(59, 130, 246, 0.1)'; badgeColor = '#93c5fd'; }
+                  else if (evt.event_category === 'telemetry') { badgeBg = 'rgba(16, 185, 129, 0.1)'; badgeColor = '#86efac'; }
+                  
+                  return (
+                    <div 
+                      key={evt.id} 
+                      style={{ 
+                        fontSize: '0.75rem', 
+                        background: 'rgba(30, 41, 59, 0.3)', 
+                        border: '1px solid rgba(148, 163, 184, 0.05)', 
+                        borderRadius: '6px', 
+                        padding: '8px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <span style={{ fontWeight: 'bold', color: '#f1f5f9' }}>{evt.event_type}</span>
+                        <span style={{ background: badgeBg, color: badgeColor, padding: '1px 6px', borderRadius: '4px', fontSize: '0.65rem', textTransform: 'uppercase' }}>{evt.event_category}</span>
+                      </div>
+                      <div style={{ color: '#cbd5e1', fontSize: '0.7rem' }}>{evt.message || `Orchestration details for event ID ${evt.id}`}</div>
+                      <div style={{ color: '#64748b', fontSize: '0.65rem', display: 'flex', gap: '10px', marginTop: '4px' }}>
+                        <span>ID: #{evt.id}</span>
+                        {evt.pipeline_id && <span>Pipeline: #{evt.pipeline_id}</span>}
+                        {evt.worker_id && <span>Worker: {evt.worker_id}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+          </div>
+
+          {/* Right Column: Time-Travel Control & Replay Screen */}
+          <div style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            
+            {replayPipelineId && originalReplayDag ? (
+              <div style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                
+                {/* Header info */}
+                <div>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#fff', margin: 0 }}>
+                    Deterministic Time-Travel Replay
+                  </h3>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#94a3b8' }}>
+                    Inspect reconstructed orchestration state at exact logical event boundaries. Replay operates in a strict sandbox.
+                  </p>
+                </div>
+
+                {/* Timeline Scrubber Slider */}
+                <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: '16px 20px', borderRadius: '10px', border: '1px solid rgba(148, 163, 184, 0.05)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '8px' }}>
+                    <span>Replay scrubber step: <strong>{replayScrubberVal} / {replayEvents.length}</strong></span>
+                    <span style={{ color: '#a78bfa', fontWeight: 'bold' }}>
+                      {replayScrubberVal > 0 ? replayEvents[replayScrubberVal - 1]?.event_type : 'START OF PIPELINE'}
+                    </span>
+                  </div>
+                  
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max={replayEvents.length} 
+                    value={replayScrubberVal} 
+                    onChange={(e) => {
+                      setReplayStatus('paused');
+                      setReplayScrubberVal(parseInt(e.target.value));
+                    }}
+                    style={{ width: '100%', accentColor: '#8b5cf6', cursor: 'pointer', height: '6px', background: '#334155', borderRadius: '5px' }}
+                  />
+
+                  {/* Scrubber ticks description */}
+                  {replayScrubberVal > 0 && (
+                    <div style={{ marginTop: '8px', fontSize: '0.75rem', background: 'rgba(139, 92, 246, 0.1)', color: '#cbd5e1', padding: '8px', borderRadius: '6px', border: '1px solid rgba(139, 92, 246, 0.15)' }}>
+                      <strong>Latest Replayed Event (ID: #{replayEvents[replayScrubberVal - 1]?.id}):</strong>{' '}
+                      {replayEvents[replayScrubberVal - 1]?.message || 'No description message.'}
+                    </div>
+                  )}
+                </div>
+
+                {/* Replay control buttons */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', background: 'rgba(15, 23, 42, 0.3)', padding: '12px 20px', borderRadius: '10px' }}>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button 
+                      onClick={() => {
+                        setReplayStatus('paused');
+                        setReplayScrubberVal(0);
+                      }}
+                      style={{ background: '#334155', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
+                    >
+                      ⏮ Jump to Start
+                    </button>
+                    
+                    <button 
+                      onClick={() => setReplayStatus(prev => prev === 'playing' ? 'paused' : 'playing')}
+                      style={{ 
+                        background: replayStatus === 'playing' ? '#ef4444' : 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%)', 
+                        color: '#fff', 
+                        border: 'none', 
+                        borderRadius: '6px', 
+                        padding: '6px 16px', 
+                        fontSize: '0.8rem', 
+                        fontWeight: 'bold', 
+                        cursor: 'pointer',
+                        boxShadow: replayStatus === 'playing' ? 'none' : '0 2px 8px rgba(139, 92, 246, 0.3)'
+                      }}
+                    >
+                      {replayStatus === 'playing' ? '⏸ Pause' : '▶ Play'}
+                    </button>
+                    
+                    <button 
+                      onClick={() => {
+                        setReplayStatus('paused');
+                        setReplayScrubberVal(prev => Math.min(prev + 1, replayEvents.length));
+                      }}
+                      style={{ background: '#334155', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
+                    >
+                      ⏭ Step Forward
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Replay Speed:</span>
+                    <select 
+                      value={replaySpeed} 
+                      onChange={(e) => setReplaySpeed(parseFloat(e.target.value))}
+                      style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(148, 163, 184, 0.2)', borderRadius: '4px', padding: '4px', color: '#fff', fontSize: '0.8rem' }}
+                    >
+                      <option value="0.5">0.5x</option>
+                      <option value="1.0">1.0x (Normal)</option>
+                      <option value="2.0">2.0x</option>
+                      <option value="5.0">5.0x</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* React Flow Replay Visual Screen */}
+                <div 
+                  style={{ 
+                    height: '400px',
+                    background: '#090d16', 
+                    borderRadius: '12px', 
+                    border: '1px solid rgba(148, 163, 184, 0.1)',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    boxShadow: 'inset 0 0 20px rgba(0, 0, 0, 0.6)'
+                  }}
+                >
+                  <ReactFlow
+                    nodes={replayNodes}
+                    edges={replayEdges}
+                    nodeTypes={nodeTypes}
+                    fitView
+                    fitViewOptions={{ padding: 0.15 }}
+                    minZoom={0.05}
+                    maxZoom={1.5}
+                  >
+                    <Background color="#334155" gap={16} size={1} />
+                    <Controls showInteractive={false} />
+                  </ReactFlow>
+                </div>
+
+                {/* Chrono Event Stream for the selected pipeline */}
+                <div style={{ marginTop: '10px' }}>
+                  <h4 style={{ fontSize: '0.85rem', textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '0.5px', marginBottom: '10px', fontWeight: '700' }}>
+                    Replay Event Log (Click to jump to event step)
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto' }}>
+                    {replayEvents.map((evt, idx) => {
+                      const isActive = idx < replayScrubberVal;
+                      const isCurrent = idx === replayScrubberVal - 1;
+                      
+                      return (
+                        <div 
+                          key={evt.id}
+                          onClick={() => {
+                            setReplayStatus('paused');
+                            setReplayScrubberVal(idx + 1);
+                          }}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '6px 12px',
+                            background: isCurrent ? 'rgba(139, 92, 246, 0.2)' : (isActive ? 'rgba(30, 41, 59, 0.4)' : 'rgba(15, 23, 42, 0.15)'),
+                            border: isCurrent ? '1px solid rgba(139, 92, 246, 0.4)' : (isActive ? '1px solid rgba(148, 163, 184, 0.05)' : '1px solid transparent'),
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem',
+                            opacity: isActive ? 1 : 0.5,
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <span style={{ color: '#a78bfa', fontWeight: 'bold' }}>Step {idx + 1}</span>
+                            <span style={{ fontWeight: 'bold', color: '#f1f5f9' }}>{evt.event_type}</span>
+                            <span style={{ color: '#94a3b8', fontSize: '0.7rem' }}>— {evt.message}</span>
+                          </div>
+                          <span style={{ color: '#64748b', fontSize: '0.65rem' }}>{new Date(evt.created_at).toLocaleTimeString()}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, border: '2px dashed rgba(148, 163, 184, 0.1)', borderRadius: '16px', padding: '60px', color: '#64748b', minHeight: '400px' }}>
+                <GitBranch size={48} style={{ opacity: 0.2, marginBottom: '16px' }} />
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '700', color: '#94a3b8', marginBottom: '6px' }}>No Pipeline Selected</h3>
+                <p style={{ fontSize: '0.85rem', maxWidth: '380px', textAlign: 'center' }}>
+                  Select a pipeline instance from the dropdown in the left column to reconstruct and time-travel debug its DAG execution path.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -250,6 +250,54 @@ class FileRecord(Base):
             'error_message': self.error_message
         }
 
+class OrchestrationEvent(Base):
+    __tablename__ = 'orchestration_events'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True)
+    task_id = Column(Integer, ForeignKey('tasks.id'), nullable=True)
+    event_type = Column(String(50), nullable=False)
+    event_category = Column(String(20), nullable=False)  # critical, operational, telemetry, debug, transient
+    message = Column(Text, nullable=True)
+    worker_id = Column(String(100), nullable=True)
+    lease_token = Column(String(100), nullable=True)
+    correlation_id = Column(String(100), nullable=True)
+    payload_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'pipeline_id': self.pipeline_id,
+            'task_id': self.task_id,
+            'event_type': self.event_type,
+            'event_category': self.event_category,
+            'message': self.message,
+            'worker_id': self.worker_id,
+            'lease_token': self.lease_token,
+            'correlation_id': self.correlation_id,
+            'payload_json': json.loads(self.payload_json) if self.payload_json else {},
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+class OrchestrationSnapshot(Base):
+    __tablename__ = 'orchestration_snapshots'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True)
+    last_event_id = Column(Integer, nullable=False)
+    snapshot_data = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'pipeline_id': self.pipeline_id,
+            'last_event_id': self.last_event_id,
+            'snapshot_data': json.loads(self.snapshot_data) if self.snapshot_data else {},
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
 Base.metadata.create_all(engine)
 
 # Auto-migration for existing tables

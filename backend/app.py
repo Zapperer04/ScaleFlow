@@ -104,7 +104,7 @@ CANONICAL_EVENTS = {
     "stale_worker_update_rejected"
 }
 
-def create_task_log(db, task_id, event_type, message, worker_id=None):
+def create_task_log(db, task_id, event_type, message, worker_id=None, payload=None):
     mapping = {
         "task_timed_out": "lease_expired",
         "task_retried": "task_queued",
@@ -129,6 +129,111 @@ def create_task_log(db, task_id, event_type, message, worker_id=None):
         worker_id=worker_id
     )
     db.add(log)
+    
+    # Event sourcing validation and publishing
+    try:
+        from services.event_sourcing_service import publish_event
+        
+        task = db.query(Task).filter(Task.id == task_id).first()
+        pipeline_id = task.pipeline_id if task else None
+        
+        # Build strict payload if not provided
+        if payload is None:
+            payload = {}
+            upper_event = canonical_type.upper()
+            if upper_event == "TASK_CREATED":
+                payload = {
+                    "task_type": task.type if task else "unknown",
+                    "priority": task.priority if task else "medium"
+                }
+            elif upper_event == "TASK_QUEUED":
+                payload = {"queue_name": f"task_queue_{task.priority}" if task else "task_queue_medium"}
+            elif upper_event == "TASK_CLAIMED":
+                payload = {
+                    "worker_id": worker_id or (task.assigned_worker_id if task else "unknown"),
+                    "lease_token": (task.lease_token if task else None) or "unknown",
+                    "lease_duration": float(LEASE_DURATIONS.get(task.type if task else "", 30))
+                }
+            elif upper_event == "LEASE_RENEWED":
+                payload = {
+                    "worker_id": worker_id or (task.assigned_worker_id if task else "unknown"),
+                    "lease_token": (task.lease_token if task else None) or "unknown",
+                    "lease_duration": 30.0
+                }
+            elif upper_event == "LEASE_EXPIRED":
+                payload = {
+                    "worker_id": worker_id or (task.assigned_worker_id if task else "unknown"),
+                    "lease_token": (task.lease_token if task else None) or "unknown"
+                }
+            elif upper_event == "TASK_STARTED":
+                payload = {
+                    "worker_id": worker_id or (task.assigned_worker_id if task else "unknown"),
+                    "lease_token": (task.lease_token if task else None) or "unknown"
+                }
+            elif upper_event == "TASK_COMPLETED":
+                # Extract output artifact IDs
+                out_ids = []
+                if task and task.output_artifact_ids:
+                    try:
+                        out_ids = json.loads(task.output_artifact_ids)
+                    except:
+                        pass
+                payload = {
+                    "worker_id": worker_id or (task.assigned_worker_id if task else "unknown"),
+                    "lease_token": (task.lease_token if task else None) or "unknown",
+                    "output_artifact_ids": out_ids
+                }
+            elif upper_event == "TASK_FAILED":
+                payload = {
+                    "worker_id": worker_id or (task.assigned_worker_id if task else "unknown"),
+                    "lease_token": (task.lease_token if task else None) or "unknown",
+                    "error_message": message or (task.error_message if task else "unknown")
+                }
+            elif upper_event == "TASK_RECOVERED":
+                payload = {"recovered_count": int(task.recovered_count if task else 1)}
+            elif upper_event in ("TASK_BLOCKED", "DEPENDENCY_BLOCKED"):
+                payload = {"blocked_reason": message or "dependencies not met"}
+            elif upper_event in ("TASK_RELEASED", "DEPENDENCY_RELEASED"):
+                payload = {"priority": task.priority if task else "medium"}
+            elif upper_event == "BACKPRESSURE_DEFERRED":
+                payload = {
+                    "priority": task.priority if task else "medium",
+                    "deferred_at": datetime.now().isoformat()
+                }
+            elif upper_event == "ARTIFACT_CREATED":
+                from models import Artifact
+                art = db.query(Artifact).filter(Artifact.task_id == task_id).order_by(Artifact.id.desc()).first()
+                if art:
+                    payload = {
+                        "artifact_id": art.id,
+                        "artifact_type": art.artifact_type,
+                        "storage_uri": art.storage_uri
+                    }
+                else:
+                    payload = {
+                        "artifact_id": 0,
+                        "artifact_type": "unknown",
+                        "storage_uri": "unknown"
+                    }
+            elif upper_event == "STALE_WORKER_UPDATE_REJECTED":
+                payload = {
+                    "worker_id": worker_id or "unknown",
+                    "lease_token": (task.lease_token if task else None) or "unknown"
+                }
+                
+        publish_event(
+            db=db,
+            event_type=canonical_type,
+            pipeline_id=pipeline_id,
+            task_id=task_id,
+            message=message,
+            worker_id=worker_id,
+            lease_token=task.lease_token if task else None,
+            payload=payload
+        )
+    except Exception as e:
+        print(f"EVENT SOURCING ERROR in create_task_log: {e}", flush=True)
+        
     return log
 
 def reap_stuck_tasks(db):
@@ -992,6 +1097,21 @@ def create_pipeline():
         db.add(pipeline)
         db.flush()
         
+        # Publish PIPELINE_CREATED event sourcing
+        try:
+            from services.event_sourcing_service import publish_event
+            publish_event(
+                db=db,
+                event_type="PIPELINE_CREATED",
+                pipeline_id=pipeline.id,
+                payload={
+                    "pipeline_type": pipeline_type,
+                    "name": name
+                }
+            )
+        except Exception as e:
+            print(f"EVENT SOURCING ERROR during pipeline creation: {e}", flush=True)
+            
         node_to_task_map = {}
         for node in dag_definition["nodes"]:
             registry_info = TASK_REGISTRY.get(node["task_type"], {})
@@ -3545,6 +3665,280 @@ def get_backpressure_config_endpoint():
     finally:
         db.close()
 
+# =====================================================================
+# EVENT SOURCING & DETERMINISTIC REPLAY API ENDPOINTS
+# =====================================================================
+
+REPLAY_SESSIONS = {} # pipeline_id -> { "status": "paused", "current_step": 0, "speed": 1.0 }
+
+@app.route('/events', methods=['GET'])
+def get_events():
+    db = SessionLocal()
+    try:
+        from models import OrchestrationEvent
+        category = request.args.get('category')
+        pipeline_id = request.args.get('pipeline_id', type=int)
+        
+        query = db.query(OrchestrationEvent)
+        if category:
+            query = query.filter(OrchestrationEvent.event_category == category)
+        if pipeline_id:
+            query = query.filter(OrchestrationEvent.pipeline_id == pipeline_id)
+            
+        events = query.order_by(OrchestrationEvent.id.desc()).limit(100).all()
+        return jsonify([e.to_dict() for e in events]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/events/pipelines/<int:pipeline_id>', methods=['GET'])
+def get_pipeline_events(pipeline_id):
+    db = SessionLocal()
+    try:
+        from models import OrchestrationEvent
+        events = db.query(OrchestrationEvent).filter(OrchestrationEvent.pipeline_id == pipeline_id).order_by(OrchestrationEvent.id.asc()).all()
+        return jsonify([e.to_dict() for e in events]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/events/workers/<worker_id>', methods=['GET'])
+def get_worker_events(worker_id):
+    db = SessionLocal()
+    try:
+        from models import OrchestrationEvent
+        events = db.query(OrchestrationEvent).filter(OrchestrationEvent.worker_id == worker_id).order_by(OrchestrationEvent.id.desc()).limit(100).all()
+        return jsonify([e.to_dict() for e in events]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/snapshots', methods=['GET'])
+def get_snapshots():
+    db = SessionLocal()
+    try:
+        from models import OrchestrationSnapshot
+        pipeline_id = request.args.get('pipeline_id', type=int)
+        query = db.query(OrchestrationSnapshot)
+        if pipeline_id:
+            query = query.filter(OrchestrationSnapshot.pipeline_id == pipeline_id)
+        snapshots = query.order_by(OrchestrationSnapshot.id.desc()).limit(50).all()
+        return jsonify([s.to_dict() for s in snapshots]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/snapshots/pipelines/<int:pipeline_id>', methods=['GET'])
+def get_pipeline_snapshots(pipeline_id):
+    db = SessionLocal()
+    try:
+        from models import OrchestrationSnapshot
+        snapshots = db.query(OrchestrationSnapshot).filter(OrchestrationSnapshot.pipeline_id == pipeline_id).order_by(OrchestrationSnapshot.id.asc()).all()
+        return jsonify([s.to_dict() for s in snapshots]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/snapshots/pipelines/<int:pipeline_id>/create', methods=['POST'])
+def trigger_pipeline_snapshot(pipeline_id):
+    db = SessionLocal()
+    try:
+        from services.event_sourcing_service import create_pipeline_snapshot
+        snapshot = create_pipeline_snapshot(db, pipeline_id)
+        if not snapshot:
+            return jsonify({"error": "No events found to snapshot"}), 400
+        return jsonify(snapshot.to_dict()), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/replay/pipelines/<int:pipeline_id>', methods=['GET'])
+def get_replay_details(pipeline_id):
+    db = SessionLocal()
+    try:
+        from models import OrchestrationEvent, OrchestrationSnapshot
+        # Get all events for this pipeline
+        events = db.query(OrchestrationEvent).filter(OrchestrationEvent.pipeline_id == pipeline_id).order_by(OrchestrationEvent.id.asc()).all()
+        snapshots = db.query(OrchestrationSnapshot).filter(OrchestrationSnapshot.pipeline_id == pipeline_id).order_by(OrchestrationSnapshot.id.asc()).all()
+        
+        if pipeline_id not in REPLAY_SESSIONS:
+            REPLAY_SESSIONS[pipeline_id] = {
+                "status": "paused",
+                "current_step": len(events),
+                "speed": 1.0
+            }
+            
+        session = REPLAY_SESSIONS[pipeline_id]
+        
+        return jsonify({
+            "pipeline_id": pipeline_id,
+            "status": session["status"],
+            "current_step": session["current_step"],
+            "speed": session["speed"],
+            "events": [e.to_dict() for e in events],
+            "snapshots": [s.to_dict() for s in snapshots]
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/replay/pipelines/<int:pipeline_id>/start', methods=['POST'])
+def start_replay(pipeline_id):
+    if pipeline_id not in REPLAY_SESSIONS:
+        REPLAY_SESSIONS[pipeline_id] = {"status": "paused", "current_step": 0, "speed": 1.0}
+    REPLAY_SESSIONS[pipeline_id]["status"] = "playing"
+    return jsonify(REPLAY_SESSIONS[pipeline_id]), 200
+
+@app.route('/replay/pipelines/<int:pipeline_id>/pause', methods=['POST'])
+def pause_replay(pipeline_id):
+    if pipeline_id not in REPLAY_SESSIONS:
+        REPLAY_SESSIONS[pipeline_id] = {"status": "paused", "current_step": 0, "speed": 1.0}
+    REPLAY_SESSIONS[pipeline_id]["status"] = "paused"
+    return jsonify(REPLAY_SESSIONS[pipeline_id]), 200
+
+@app.route('/replay/pipelines/<int:pipeline_id>/step', methods=['POST'])
+def step_replay(pipeline_id):
+    db = SessionLocal()
+    try:
+        from models import OrchestrationEvent
+        events_count = db.query(OrchestrationEvent).filter(OrchestrationEvent.pipeline_id == pipeline_id).count()
+        if pipeline_id not in REPLAY_SESSIONS:
+            REPLAY_SESSIONS[pipeline_id] = {"status": "paused", "current_step": 0, "speed": 1.0}
+        
+        session = REPLAY_SESSIONS[pipeline_id]
+        if session["current_step"] < events_count:
+            session["current_step"] += 1
+            
+        return jsonify(session), 200
+    finally:
+        db.close()
+
+@app.route('/replay/pipelines/<int:pipeline_id>/state', methods=['GET'])
+def get_reconstructed_state(pipeline_id):
+    db = SessionLocal()
+    try:
+        from services.event_sourcing_service import reconstruct_pipeline_state
+        target_event_id = request.args.get('target_event_id', type=int)
+        target_time = request.args.get('target_time')
+        
+        state = reconstruct_pipeline_state(
+            db, 
+            pipeline_id, 
+            target_event_id=target_event_id, 
+            target_time=target_time
+        )
+        return jsonify(state), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+def reconcile_active_orchestrations(db):
+    """
+    Runs on orchestrator startup to reconcile active pipelines and tasks.
+    """
+    print("[Resilience] Reconciling active orchestrations...", flush=True)
+    try:
+        from services.event_sourcing_service import reconstruct_pipeline_state
+        from orchestrator.dependency_resolver import update_pipeline_status
+        
+        # Fetch all active pipelines
+        active_pipelines = db.query(Pipeline).filter(
+            Pipeline.status.in_(['created', 'running', 'recovering'])
+        ).all()
+        
+        for pipeline in active_pipelines:
+            # Replay events to reconstruct deterministic state
+            reconstructed = reconstruct_pipeline_state(db, pipeline.id, skip_snapshot=True)
+            
+            # Fetch all tasks in this pipeline from database
+            tasks = db.query(Task).filter(Task.pipeline_id == pipeline.id).all()
+            for task in tasks:
+                tid_str = str(task.id)
+                # Verify that the DB status matches the reconstructed event status (or force it if different)
+                if tid_str in reconstructed["tasks"]:
+                    rec_task = reconstructed["tasks"][tid_str]
+                    if task.status != rec_task["status"]:
+                        print(f"[Resilience] Status mismatch for task #{task.id}: DB={task.status}, Replay={rec_task['status']}. Realigning DB status.", flush=True)
+                        task.status = rec_task["status"]
+                
+                # A. Queue Reconciliation
+                if task.status == 'pending':
+                    # Determine which queue this task should be in
+                    is_test = False
+                    if pipeline.name.startswith("Test ") or "test" in pipeline.name.lower():
+                        is_test = True
+                    if not is_test and task.data:
+                        try:
+                            data = json.loads(task.data) if isinstance(task.data, str) else task.data
+                            if any(term in str(data) for term in ["test_normal", "test_hang", "test_max_retry", "simulate_hang_seconds"]):
+                                is_test = True
+                        except:
+                            pass
+                            
+                    queue_name = f"task_queue_test_{task.priority}" if is_test else PRIORITY_QUEUES.get(task.priority, 'task_queue_medium')
+                    
+                    queue_items = redis_client.lrange(queue_name, 0, -1)
+                    if str(task.id) not in queue_items:
+                        print(f"[Resilience] Task #{task.id} (pending) was missing from Redis queue '{queue_name}'. Re-enqueueing.", flush=True)
+                        redis_client.lpush(queue_name, task.id)
+                        create_task_log(db, task.id, "task_queued", f"[Resilience] Re-enqueued missing task to {queue_name}")
+                
+                # B. Orphan / Dead Worker Detection
+                elif task.status == 'running':
+                    worker_id = task.assigned_worker_id
+                    lease_expired = False
+                    if task.lease_expires_at and task.lease_expires_at < datetime.now():
+                        lease_expired = True
+                        
+                    worker_alive = False
+                    if worker_id:
+                        worker_alive = redis_client.exists(f"worker:{worker_id}")
+                        
+                    if lease_expired:
+                        print(f"[Resilience] Task #{task.id} lease expired during downtime. Recovering task.", flush=True)
+                        task.recovered_count = (task.recovered_count or 0) + 1
+                        task.lease_token = None
+                        task.assigned_worker_id = None
+                        task.lease_expires_at = None
+                        
+                        if task.retry_count < task.max_retries:
+                            task.status = 'pending'
+                            task.retry_count += 1
+                            add_task_to_queue(task.id, task.priority, db=db)
+                            create_task_log(
+                                db,
+                                task.id,
+                                "task_recovered",
+                                f"[Resilience] Recovery: lease expired during downtime. Re-enqueued (Attempt {task.retry_count}/{task.max_retries})"
+                            )
+                        else:
+                            task.status = 'failed'
+                            task.error_message = "Max retries exceeded after lease expiry during downtime"
+                            create_task_log(
+                                db,
+                                task.id,
+                                "task_failed",
+                                "[Resilience] Recovery failed: max retries reached."
+                            )
+                    elif worker_id and not worker_alive:
+                        print(f"[Resilience] Task #{task.id} assigned worker '{worker_id}' is dead, but lease is still active. Letting recovery loop handle it.", flush=True)
+                        
+            db.commit()
+            update_pipeline_status(db, pipeline.id)
+            db.commit()
+            
+    except Exception as e:
+        db.rollback()
+        print(f"[Resilience] Error during active orchestration reconciliation: {e}", flush=True)
+
 import threading
 scanner_thread = threading.Thread(target=run_recovery_scanner, daemon=True)
 scanner_thread.start()
@@ -3568,6 +3962,14 @@ if __name__ == '__main__':
     print(f"  SQLAlchemy Dialect: {engine.dialect.name}", flush=True)
     print(f"  DATABASE_URL: {masked_url}", flush=True)
     print("="*60, flush=True)
+
+    db = SessionLocal()
+    try:
+        reconcile_active_orchestrations(db)
+    except Exception as re_err:
+        print(f"Reconciliation error on startup: {re_err}", flush=True)
+    finally:
+        db.close()
 
     port = int(os.environ.get("API_PORT", 5000))
     app.run(debug=True, port=port, host='0.0.0.0')
