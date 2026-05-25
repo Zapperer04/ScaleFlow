@@ -15,6 +15,7 @@ EVENT_CATEGORIES = {
     "TASK_CREATED": "critical",
     "TASK_COMPLETED": "critical",
     "TASK_FAILED": "critical",
+    "PIPELINE_OWNERSHIP_TAKEN_OVER": "critical",
     
     # Operational: Execution state changes, lease management, and recoveries
     "TASK_QUEUED": "operational",
@@ -221,6 +222,15 @@ EVENT_SCHEMAS = {
             lambda p: len(p.get("lease_token", "")) > 0 or "lease_token cannot be empty"
         ],
         "replay_semantics": "No replay state change; recorded for worker audit purposes."
+    },
+    "PIPELINE_OWNERSHIP_TAKEN_OVER": {
+        "required": {"instance_id": str, "ownership_version": int},
+        "optional": {},
+        "validation_rules": [
+            lambda p: len(p.get("instance_id", "")) > 0 or "instance_id cannot be empty",
+            lambda p: p.get("ownership_version", 0) >= 0 or "ownership_version must be non-negative"
+        ],
+        "replay_semantics": "Change pipeline orchestrator owner instance and increment fencing token version."
     }
 }
 
@@ -264,12 +274,19 @@ def validate_event_payload(event_type, payload):
             elif not res:
                 raise ValueError(f"Event {event_type} payload validation failed")
 
-def publish_event(db, event_type, pipeline_id=None, task_id=None, message=None, worker_id=None, lease_token=None, correlation_id=None, payload=None):
+def publish_event(db, event_type, pipeline_id=None, task_id=None, message=None, worker_id=None, lease_token=None, correlation_id=None, payload=None, segment_index=0):
     """
     Validates, categorizes, and logs an orchestration event into the database.
     """
     event_type = event_type.upper()
     payload = payload or {}
+    
+    if pipeline_id and segment_index == 0:
+        latest_evt = db.query(OrchestrationEvent).filter(
+            OrchestrationEvent.pipeline_id == pipeline_id
+        ).order_by(OrchestrationEvent.id.desc()).first()
+        if latest_evt:
+            segment_index = latest_evt.segment_index or 0
     
     # Fallback mappings for old event names
     mapping = {
@@ -304,7 +321,8 @@ def publish_event(db, event_type, pipeline_id=None, task_id=None, message=None, 
         worker_id=worker_id,
         lease_token=lease_token,
         correlation_id=correlation_id,
-        payload_json=json.dumps(payload)
+        payload_json=json.dumps(payload),
+        segment_index=segment_index
     )
     db.add(evt)
     db.flush() # populate ID
@@ -355,6 +373,109 @@ def create_pipeline_snapshot(db, pipeline_id):
     db.commit()
     return snapshot
 
+def create_segmented_snapshot(db, pipeline_id, segment_index):
+    """
+    Creates a snapshot of the pipeline state up to the end of the given segment_index.
+    """
+    last_event = db.query(OrchestrationEvent).filter(
+        OrchestrationEvent.pipeline_id == pipeline_id,
+        OrchestrationEvent.segment_index == segment_index
+    ).order_by(OrchestrationEvent.id.desc()).first()
+    
+    if not last_event:
+        return None
+        
+    last_event_id = last_event.id
+    state = reconstruct_pipeline_state(db, pipeline_id, target_event_id=last_event_id, skip_snapshot=True)
+    
+    if "critical_path" in state:
+        state.pop("critical_path")
+        
+    snapshot_data = json.dumps(state)
+    
+    existing = db.query(OrchestrationSnapshot).filter(
+        OrchestrationSnapshot.pipeline_id == pipeline_id,
+        OrchestrationSnapshot.segment_index == segment_index
+    ).first()
+    
+    if existing:
+        existing.last_event_id = last_event_id
+        existing.snapshot_data = snapshot_data
+        snapshot = existing
+    else:
+        snapshot = OrchestrationSnapshot(
+            pipeline_id=pipeline_id,
+            last_event_id=last_event_id,
+            snapshot_data=snapshot_data,
+            segment_index=segment_index
+        )
+        db.add(snapshot)
+    
+    db.commit()
+    return snapshot
+
+def advance_pipeline_segment(db, pipeline_id):
+    """
+    Increments the current segment index of a pipeline by creating a snapshot of the current state,
+    and returns the new segment index.
+    """
+    current_segment = 0
+    latest_evt = db.query(OrchestrationEvent).filter(
+        OrchestrationEvent.pipeline_id == pipeline_id
+    ).order_by(OrchestrationEvent.id.desc()).first()
+    if latest_evt:
+        current_segment = latest_evt.segment_index or 0
+        
+    next_segment = current_segment + 1
+    
+    create_segmented_snapshot(db, pipeline_id, current_segment)
+    
+    publish_event(
+        db=db,
+        event_type="PIPELINE_OWNERSHIP_TAKEN_OVER",
+        pipeline_id=pipeline_id,
+        message=f"Advanced pipeline segment to {next_segment}",
+        payload={"instance_id": "system", "ownership_version": next_segment},
+        segment_index=next_segment
+    )
+    
+    return next_segment
+
+def compact_completed_pipeline_segments(db):
+    """
+    Finds completed segments of pipelines and compacts them by ensuring they have snapshots
+    and deleting raw telemetry/debug events.
+    """
+    pipelines = db.query(Pipeline).all()
+    for pipe in pipelines:
+        latest_evt = db.query(OrchestrationEvent).filter(
+            OrchestrationEvent.pipeline_id == pipe.id
+        ).order_by(OrchestrationEvent.id.desc()).first()
+        if not latest_evt:
+            continue
+        max_segment = latest_evt.segment_index or 0
+        
+        is_finished = pipe.status in ('completed', 'failed', 'blocked', 'cancelled')
+        completed_segments = list(range(max_segment + 1)) if is_finished else list(range(max_segment))
+        
+        for S in completed_segments:
+            snapshot = db.query(OrchestrationSnapshot).filter(
+                OrchestrationSnapshot.pipeline_id == pipe.id,
+                OrchestrationSnapshot.segment_index == S
+            ).first()
+            
+            if not snapshot:
+                snapshot = create_segmented_snapshot(db, pipe.id, S)
+                
+            if snapshot:
+                stmt = text(
+                    "DELETE FROM orchestration_events "
+                    "WHERE pipeline_id = :pid AND segment_index = :S "
+                    "AND event_category IN ('telemetry', 'debug', 'transient')"
+                )
+                db.execute(stmt, {"pid": pipe.id, "S": S})
+                db.commit()
+
 def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_time=None, skip_snapshot=False):
     """
     Deterministically reconstructs the state of a pipeline at target_event_id or target_time.
@@ -371,7 +492,9 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
             "created_at": None,
             "started_at": None,
             "completed_at": None,
-            "error_message": None
+            "error_message": None,
+            "owner_instance_id": None,
+            "ownership_version": 0
         },
         "tasks": {},
         "artifacts": [],
@@ -380,23 +503,48 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
     }
     
     start_event_id = 0
+    target_segment = 0
     
-    # 1. Query nearest snapshot if not skipped
+    # 1. Determine target segment
+    if target_event_id is not None:
+        target_evt = db.query(OrchestrationEvent).filter(OrchestrationEvent.id == target_event_id).first()
+        if target_evt:
+            target_segment = target_evt.segment_index or 0
+    else:
+        latest_evt = db.query(OrchestrationEvent).filter(
+            OrchestrationEvent.pipeline_id == pipeline_id
+        ).order_by(OrchestrationEvent.id.desc()).first()
+        if latest_evt:
+            target_segment = latest_evt.segment_index or 0
+
+    # 2. Query nearest snapshot if not skipped
     if not skip_snapshot:
         snapshot_query = db.query(OrchestrationSnapshot).filter(OrchestrationSnapshot.pipeline_id == pipeline_id)
         if target_event_id is not None:
-            snapshot_query = snapshot_query.filter(OrchestrationSnapshot.last_event_id < target_event_id)
-        snapshot = snapshot_query.order_by(OrchestrationSnapshot.last_event_id.desc()).first()
+            snapshot_query = snapshot_query.filter(OrchestrationSnapshot.last_event_id <= target_event_id)
+        
+        # We prefer a snapshot in the current or preceding segment index
+        snapshot = snapshot_query.filter(OrchestrationSnapshot.segment_index <= target_segment)\
+                                 .order_by(OrchestrationSnapshot.segment_index.desc(), OrchestrationSnapshot.last_event_id.desc())\
+                                 .first()
         
         if snapshot:
             state = json.loads(snapshot.snapshot_data)
             start_event_id = snapshot.last_event_id
             
-    # 2. Retrieve ordered events after the snapshot watermark
-    event_query = db.query(OrchestrationEvent).filter(
-        OrchestrationEvent.pipeline_id == pipeline_id,
-        OrchestrationEvent.id > start_event_id
-    )
+    # 3. Retrieve ordered events after the snapshot watermark
+    if start_event_id > 0:
+        event_query = db.query(OrchestrationEvent).filter(
+            OrchestrationEvent.pipeline_id == pipeline_id,
+            OrchestrationEvent.segment_index == target_segment,
+            OrchestrationEvent.id > start_event_id
+        )
+    else:
+        # Fallback to load everything up to target segment if no snapshot is available
+        event_query = db.query(OrchestrationEvent).filter(
+            OrchestrationEvent.pipeline_id == pipeline_id,
+            OrchestrationEvent.segment_index <= target_segment
+        )
     
     if target_event_id is not None:
         event_query = event_query.filter(OrchestrationEvent.id <= target_event_id)
@@ -438,6 +586,10 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
             state["pipeline"]["status"] = "failed"
             state["pipeline"]["completed_at"] = evt_created_str
             state["pipeline"]["error_message"] = payload.get("error_message")
+            
+        elif event_type == "PIPELINE_OWNERSHIP_TAKEN_OVER":
+            state["pipeline"]["owner_instance_id"] = payload.get("instance_id")
+            state["pipeline"]["ownership_version"] = payload.get("ownership_version")
             
         elif event_type == "TASK_CREATED":
             if tid:

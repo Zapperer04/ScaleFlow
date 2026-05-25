@@ -15,19 +15,30 @@ PRIORITY_QUEUES = {
 }
 
 CANONICAL_EVENTS = {
+    "pipeline_created",
+    "pipeline_completed",
+    "pipeline_failed",
     "task_created",
+    "task_completed",
+    "task_failed",
+    "pipeline_ownership_taken_over",
     "task_queued",
     "task_claimed",
     "lease_renewed",
     "lease_expired",
     "task_started",
-    "task_completed",
-    "task_failed",
     "task_recovered",
+    "task_blocked",
+    "task_released",
+    "backpressure_deferred",
+    "queue_pressure_update",
+    "throughput_update",
+    "stale_worker_update_rejected",
+    "priority_escalated",
     "artifact_created",
     "dependency_released",
     "dependency_blocked",
-    "stale_worker_update_rejected"
+    "worker_heartbeat"
 }
 
 def check_backpressure_admission(db, task):
@@ -72,7 +83,7 @@ def check_backpressure_admission(db, task):
         
     return 'admit'
 
-def log_event(db, task_id, event_type, message, worker_id=None):
+def log_event(db, task_id, event_type, message, worker_id=None, payload=None):
     mapping = {
         "child_task_released": "dependency_released",
         "child_task_blocked_due_to_dependency_failure": "dependency_blocked",
@@ -98,12 +109,31 @@ def log_event(db, task_id, event_type, message, worker_id=None):
         task = db.query(Task).filter(Task.id == task_id).first()
         pipeline_id = task.pipeline_id if task else None
         
-        payload = {}
+        event_payload = payload or {}
         upper_event = canonical_type.upper()
         if upper_event in ("TASK_RELEASED", "DEPENDENCY_RELEASED"):
-            payload = {"priority": task.priority if task else "medium"}
+            if "priority" not in event_payload:
+                event_payload["priority"] = task.priority if task else "medium"
         elif upper_event in ("TASK_BLOCKED", "DEPENDENCY_BLOCKED"):
-            payload = {"blocked_reason": message or "dependencies not met"}
+            if "blocked_reason" not in event_payload:
+                event_payload["blocked_reason"] = message or "dependencies not met"
+        elif upper_event == "TASK_QUEUED":
+            if "queue_name" not in event_payload:
+                queue_name = None
+                if message and "queue: " in message:
+                    try:
+                        queue_name = message.split("queue: ")[1].split(")")[0].strip()
+                    except:
+                        pass
+                if not queue_name:
+                    from task_registry import get_queue_name
+                    is_test = False
+                    if pipeline_id:
+                        pipeline = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
+                        if pipeline and (pipeline.name.startswith("Test ") or "test" in pipeline.name.lower()):
+                            is_test = True
+                    queue_name = get_queue_name(task.type, task.priority, is_test) if task else "task_queue_medium"
+                event_payload["queue_name"] = queue_name
             
         publish_event(
             db=db,
@@ -113,7 +143,7 @@ def log_event(db, task_id, event_type, message, worker_id=None):
             message=message,
             worker_id=worker_id,
             lease_token=task.lease_token if task else None,
-            payload=payload
+            payload=event_payload
         )
     except Exception as e:
         print(f"EVENT SOURCING ERROR in dependency_resolver log_event: {e}", flush=True)
@@ -121,6 +151,14 @@ def log_event(db, task_id, event_type, message, worker_id=None):
     return log
 
 def enqueue_task(db, task):
+    if task.pipeline_id:
+        from services.ha_coordinator_service import verify_fencing_token
+        try:
+            verify_fencing_token(db, task.pipeline_id)
+        except ValueError as e:
+            print(f"[Fencing Conflict] Aborting task enqueue: {e}", flush=True)
+            return
+
     is_test = False
     if task.pipeline_id:
         pipeline = db.query(Pipeline).filter(Pipeline.id == task.pipeline_id).first()
@@ -134,10 +172,8 @@ def enqueue_task(db, task):
         except:
             pass
             
-    if is_test:
-        queue_name = f"task_queue_test_{task.priority}"
-    else:
-        queue_name = PRIORITY_QUEUES.get(task.priority, 'task_queue_medium')
+    from task_registry import get_queue_name
+    queue_name = get_queue_name(task.type, task.priority, is_test)
         
     redis_client.lpush(queue_name, task.id)
     log_event(db, task.id, "task_queued", f"Pushed to {task.priority} priority queue (queue: {queue_name})")
@@ -153,6 +189,13 @@ def resolve_dependencies(db, completed_task):
         
     pipeline = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
     if not pipeline or pipeline.status == 'cancelled':
+        return
+
+    from services.ha_coordinator_service import verify_fencing_token
+    try:
+        verify_fencing_token(db, pipeline_id)
+    except ValueError as e:
+        print(f"[Fencing Conflict] Aborting dependency resolution: {e}", flush=True)
         return
  
     # completed_task.required_by holds tasks that depend on completed_task
@@ -184,6 +227,7 @@ def resolve_dependencies(db, completed_task):
             
         all_completed = True
         parent_failed_or_cancelled = False
+        failed_parent = None
         failed_parent_info = ""
         
         for parent in child.dependent_on:
@@ -191,6 +235,7 @@ def resolve_dependencies(db, completed_task):
                 all_completed = False
                 if parent.status in ['failed', 'cancelled', 'blocked']:
                     parent_failed_or_cancelled = True
+                    failed_parent = parent
                     failed_parent_info = f"Parent Task #{parent.id} ({parent.type}) is {parent.status}"
                     break
                     
@@ -208,25 +253,76 @@ def resolve_dependencies(db, completed_task):
             
             child.input_artifact_ids = json.dumps(input_artifact_ids)
             
-            # Check backpressure admission
-            admission = check_backpressure_admission(db, child)
-            if admission == 'defer':
+            # Check if pipeline is critical
+            is_critical = False
+            if pipeline_id:
+                pipe = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
+                if pipe and pipe.is_critical:
+                    is_critical = True
+ 
+            # Check downstream capability-specific queue congestion
+            is_congested = False
+            cap = "default"
+            if not is_critical:
+                from task_registry import get_task_capability
+                cap = get_task_capability(child.type)
+                is_test = False
+                if child.pipeline_id:
+                    pipeline_obj = db.query(Pipeline).filter(Pipeline.id == child.pipeline_id).first()
+                    if pipeline_obj and (pipeline_obj.name.startswith("Test ") or "test" in pipeline_obj.name.lower()):
+                        is_test = True
+                
+                # Check length of the queues for this capability
+                q_len = 0
+                for prio in ['high', 'medium', 'low']:
+                    q_name = f"task_queue_test_{cap}_{prio}" if is_test else f"task_queue_{cap}_{prio}"
+                    q_len += redis_client.llen(q_name) or 0
+                
+                if q_len > 10:
+                    is_congested = True
+ 
+            if is_congested:
                 child.status = 'blocked'
-                child.blocked_reason = "System overload backpressure: deferred"
+                child.blocked_reason = "Upstream congestion: throttled"
                 child.deferred_at = datetime.now()
                 db.flush()
-                log_event(db, child.id, "dependency_blocked", "System overload backpressure: deferred")
+                log_event(db, child.id, "task_blocked", "Upstream congestion: throttled")
             else:
-                child.status = 'pending'
-                log_event(db, child.id, "dependency_released", f"All dependencies completed. Released into {child.priority} queue.")
-                enqueue_task(db, child)
+                # Check backpressure admission
+                admission = check_backpressure_admission(db, child)
+                if admission == 'defer':
+                    child.status = 'blocked'
+                    child.blocked_reason = "System overload backpressure: deferred"
+                    child.deferred_at = datetime.now()
+                    db.flush()
+                    log_event(db, child.id, "task_blocked", "System overload backpressure: deferred")
+                else:
+                    child.status = 'pending'
+                    log_event(db, child.id, "dependency_released", f"All dependencies completed. Released into {child.priority} queue.", payload={"parent_task_id": completed_task.id, "child_task_id": child.id})
+                    enqueue_task(db, child)
             
         elif parent_failed_or_cancelled:
             child.status = 'blocked'
             child.blocked_reason = failed_parent_info
-            log_event(db, child.id, "dependency_blocked", f"Blocked: {failed_parent_info}")
+            log_event(db, child.id, "dependency_blocked", f"Blocked: {failed_parent_info}", payload={"parent_task_id": failed_parent.id, "child_task_id": child.id})
             # Propagate blocking to downstream tasks recursively
             propagate_failure(db, child)
+
+    # After the loop over child tasks, check if the parallel batch has completed
+    running_or_pending = db.query(Task).filter(
+        Task.pipeline_id == pipeline_id,
+        Task.status.in_(['running', 'pending']),
+        Task.id != completed_task.id
+    ).count()
+    
+    if running_or_pending == 0:
+        # All concurrent tasks are complete!
+        # Advance the segment index
+        from services.event_sourcing_service import advance_pipeline_segment
+        try:
+            advance_pipeline_segment(db, pipeline_id)
+        except Exception as e:
+            print(f"[Event Sourcing] Error advancing pipeline segment for pipeline #{pipeline_id}: {e}", flush=True)
 
 def propagate_failure(db, blocked_task):
     """

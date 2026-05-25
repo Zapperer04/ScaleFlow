@@ -135,6 +135,171 @@ TEMPLATES = {
                 "payload": {}
             }
         ]
+    },
+    "recovery_demo": {
+        "name": "Lease Recovery Demo",
+        "nodes": [
+            {
+                "id": "hang_task",
+                "task_type": "send_email",
+                "display_name": "Simulated Hanging Task",
+                "depends_on": [],
+                "priority": "medium",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "summary",
+                "payload": {
+                    "to": "recovery@scaleflow.io",
+                    "subject": "System Warning",
+                    "body": "This task is simulated to hang to trigger lease expiration.",
+                    "simulate_hang_seconds": 45
+                }
+            }
+        ]
+    },
+    "replay_demo": {
+        "name": "Deterministic Replay Demo",
+        "nodes": [
+            {
+                "id": "parse_doc",
+                "task_type": "parse_document",
+                "display_name": "Parse Replay Document",
+                "depends_on": [],
+                "priority": "high",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "parsed_text",
+                "payload": {
+                    "source_text": "ScaleFlow Replay Log: Step 1 initialized."
+                }
+            },
+            {
+                "id": "chunk_doc",
+                "task_type": "chunk_text",
+                "display_name": "Chunk Replay Text",
+                "depends_on": ["parse_doc"],
+                "priority": "medium",
+                "expected_input_artifacts": ["parsed_text"],
+                "output_artifact_type": "text_chunks",
+                "payload": {}
+            }
+        ]
+    },
+    "high_load_demo": {
+        "name": "High Load Backpressure Demo",
+        "nodes": [
+            {
+                "id": "start_trigger",
+                "task_type": "parse_document",
+                "display_name": "Load Trigger Start",
+                "depends_on": [],
+                "priority": "high",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "parsed_text",
+                "payload": {
+                    "source_text": "High load burst initialized."
+                }
+            },
+            # 10 parallel tasks enqueued as soon as start_trigger finishes
+            {
+                "id": "burst_task_1",
+                "task_type": "send_email",
+                "display_name": "Burst Email Task 1",
+                "depends_on": ["start_trigger"],
+                "priority": "medium",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "summary",
+                "payload": {"to": "burst1@example.com", "subject": "Burst 1", "body": "High load burst task"}
+            },
+            {
+                "id": "burst_task_2",
+                "task_type": "send_email",
+                "display_name": "Burst Email Task 2",
+                "depends_on": ["start_trigger"],
+                "priority": "medium",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "summary",
+                "payload": {"to": "burst2@example.com", "subject": "Burst 2", "body": "High load burst task"}
+            },
+            {
+                "id": "burst_task_3",
+                "task_type": "send_email",
+                "display_name": "Burst Email Task 3",
+                "depends_on": ["start_trigger"],
+                "priority": "medium",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "summary",
+                "payload": {"to": "burst3@example.com", "subject": "Burst 3", "body": "High load burst task"}
+            },
+            {
+                "id": "burst_task_4",
+                "task_type": "send_email",
+                "display_name": "Burst Email Task 4",
+                "depends_on": ["start_trigger"],
+                "priority": "medium",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "summary",
+                "payload": {"to": "burst4@example.com", "subject": "Burst 4", "body": "High load burst task"}
+            },
+            {
+                "id": "burst_task_5",
+                "task_type": "send_email",
+                "display_name": "Burst Email Task 5",
+                "depends_on": ["start_trigger"],
+                "priority": "medium",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "summary",
+                "payload": {"to": "burst5@example.com", "subject": "Burst 5", "body": "High load burst task"}
+            },
+            {
+                "id": "burst_task_6",
+                "task_type": "send_email",
+                "display_name": "Burst Email Task 6",
+                "depends_on": ["start_trigger"],
+                "priority": "medium",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "summary",
+                "payload": {"to": "burst6@example.com", "subject": "Burst 6", "body": "High load burst task"}
+            },
+            {
+                "id": "burst_task_7",
+                "task_type": "send_email",
+                "display_name": "Burst Email Task 7",
+                "depends_on": ["start_trigger"],
+                "priority": "medium",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "summary",
+                "payload": {"to": "burst7@example.com", "subject": "Burst 7", "body": "High load burst task"}
+            },
+            {
+                "id": "burst_task_8",
+                "task_type": "send_email",
+                "display_name": "Burst Email Task 8",
+                "depends_on": ["start_trigger"],
+                "priority": "medium",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "summary",
+                "payload": {"to": "burst8@example.com", "subject": "Burst 8", "body": "High load burst task"}
+            },
+            {
+                "id": "burst_task_9",
+                "task_type": "send_email",
+                "display_name": "Burst Email Task 9",
+                "depends_on": ["start_trigger"],
+                "priority": "medium",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "summary",
+                "payload": {"to": "burst9@example.com", "subject": "Burst 9", "body": "High load burst task"}
+            },
+            {
+                "id": "burst_task_10",
+                "task_type": "send_email",
+                "display_name": "Burst Email Task 10",
+                "depends_on": ["start_trigger"],
+                "priority": "medium",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "summary",
+                "payload": {"to": "burst10@example.com", "subject": "Burst 10", "body": "High load burst task"}
+            }
+        ]
     }
 }
 

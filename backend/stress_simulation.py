@@ -45,6 +45,9 @@ def clear_system():
     print("Cleaning database and Redis queues...")
     db = SessionLocal()
     try:
+        from models import OrchestrationEvent, OrchestrationSnapshot
+        db.query(OrchestrationSnapshot).delete()
+        db.query(OrchestrationEvent).delete()
         db.query(FileRecord).delete()
         db.query(TaskDependency).delete()
         db.query(Artifact).delete()
@@ -274,7 +277,7 @@ def test_scenario_c():
         if res:
             queue_name, val = res
             # Extract priority from queue name
-            priority = queue_name.replace("task_queue_", "")
+            priority = queue_name.split("_")[-1]
             popped_priorities.append(priority)
             
     print(f"Priorities popped in 10-step cycle: {popped_priorities}")

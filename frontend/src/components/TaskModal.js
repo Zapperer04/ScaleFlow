@@ -24,6 +24,7 @@ const TaskModal = ({ taskId, onClose, onActionComplete }) => {
     if (taskId) {
       fetchDetails();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
   if (!taskId) return null;

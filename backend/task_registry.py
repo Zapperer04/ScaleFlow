@@ -209,3 +209,29 @@ def validate_task_payload(task_type, payload):
                     return False, f"Invalid email field: {field_name}"
                     
     return True, None
+
+CAPABILITY_MAPPINGS = {
+    "send_email": "io_heavy",
+    "process_video": "cpu_heavy",
+    "generate_report": "cpu_heavy",
+    "parse_document": "cpu_heavy",
+    "chunk_text": "cpu_heavy",
+    "generate_embeddings": "embedding_gpu",
+    "summarize_document": "summarization_llm",
+    "parse_logs": "cpu_heavy",
+    "detect_error_patterns": "cpu_heavy",
+    "summarize_logs": "summarization_llm",
+    "final_report": "cpu_heavy",
+    "embed_query": "embedding_gpu",
+    "retrieve_context": "retrieval_optimized",
+    "generate_answer_report": "summarization_llm"
+}
+
+def get_task_capability(task_type):
+    return CAPABILITY_MAPPINGS.get(task_type, "default")
+
+def get_queue_name(task_type, priority, is_test=False):
+    cap = get_task_capability(task_type)
+    if is_test:
+        return f"task_queue_test_{cap}_{priority}"
+    return f"task_queue_{cap}_{priority}"

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, ForeignKey, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -69,6 +69,12 @@ class Pipeline(Base):
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
+    
+    # Phase 8 Active/Active locks & fencing tokens
+    owner_instance_id = Column(String(100), nullable=True)
+    owner_lease_expires_at = Column(DateTime, nullable=True)
+    ownership_version = Column(Integer, default=0)
+    is_critical = Column(Boolean, default=False)
 
     def to_dict(self):
         return {
@@ -79,7 +85,11 @@ class Pipeline(Base):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'started_at': self.started_at.isoformat() if self.started_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
-            'error_message': self.error_message
+            'error_message': self.error_message,
+            'owner_instance_id': self.owner_instance_id,
+            'owner_lease_expires_at': self.owner_lease_expires_at.isoformat() if self.owner_lease_expires_at else None,
+            'ownership_version': self.ownership_version,
+            'is_critical': self.is_critical
         }
 
 class Artifact(Base):
@@ -264,6 +274,7 @@ class OrchestrationEvent(Base):
     correlation_id = Column(String(100), nullable=True)
     payload_json = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
+    segment_index = Column(Integer, default=0)
 
     def to_dict(self):
         return {
@@ -277,7 +288,8 @@ class OrchestrationEvent(Base):
             'lease_token': self.lease_token,
             'correlation_id': self.correlation_id,
             'payload_json': json.loads(self.payload_json) if self.payload_json else {},
-            'created_at': self.created_at.isoformat() if self.created_at else None
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'segment_index': self.segment_index
         }
 
 class OrchestrationSnapshot(Base):
@@ -288,6 +300,7 @@ class OrchestrationSnapshot(Base):
     last_event_id = Column(Integer, nullable=False)
     snapshot_data = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
+    segment_index = Column(Integer, default=0)
 
     def to_dict(self):
         return {
@@ -295,23 +308,78 @@ class OrchestrationSnapshot(Base):
             'pipeline_id': self.pipeline_id,
             'last_event_id': self.last_event_id,
             'snapshot_data': json.loads(self.snapshot_data) if self.snapshot_data else {},
-            'created_at': self.created_at.isoformat() if self.created_at else None
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'segment_index': self.segment_index
+        }
+
+class OrchestratorInstance(Base):
+    __tablename__ = 'orchestrator_instances'
+    instance_id = Column(String(100), primary_key=True)
+    is_leader = Column(Boolean, default=False)
+    last_heartbeat = Column(DateTime, default=datetime.now)
+    status = Column(String(20), default='active')
+
+    def to_dict(self):
+        return {
+            'instance_id': self.instance_id,
+            'is_leader': self.is_leader,
+            'last_heartbeat': self.last_heartbeat.isoformat() if self.last_heartbeat else None,
+            'status': self.status
+        }
+
+class WorkerRegistry(Base):
+    __tablename__ = 'worker_registry'
+    worker_id = Column(String(100), primary_key=True)
+    capabilities = Column(Text, nullable=False)  # JSON array
+    resource_limits = Column(Text, nullable=True)  # JSON object
+    last_seen = Column(DateTime, default=datetime.now)
+    status = Column(String(20), default='active')
+
+    def to_dict(self):
+        try:
+            caps = json.loads(self.capabilities) if self.capabilities else []
+        except:
+            caps = []
+        try:
+            res_lim = json.loads(self.resource_limits) if self.resource_limits else {}
+        except:
+            res_lim = {}
+        return {
+            'worker_id': self.worker_id,
+            'capabilities': caps,
+            'resource_limits': res_lim,
+            'last_seen': self.last_seen.isoformat() if self.last_seen else None,
+            'status': self.status
         }
 
 Base.metadata.create_all(engine)
 
-# Auto-migration for existing tables
-if engine.dialect.name == "postgresql":
-    from sqlalchemy import text
-    with engine.begin() as conn:
-        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_worker_id VARCHAR(100);"))
-        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_token VARCHAR(100);"))
-        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMP;"))
-        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recovered_count INTEGER DEFAULT 0;"))
-        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lease_renewal_count INTEGER DEFAULT 0;"))
-        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pipeline_id INTEGER;"))
-        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS input_artifact_ids TEXT;"))
-        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS output_artifact_ids TEXT;"))
-        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS blocked_reason TEXT;"))
-        conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deferred_at TIMESTAMP;"))
+# Auto-migration for existing tables (dialect-safe try/except blocks in separate transactions)
+from sqlalchemy import text
+
+for table, col, ctype in [
+    ("tasks", "assigned_worker_id", "VARCHAR(100)"),
+    ("tasks", "lease_token", "VARCHAR(100)"),
+    ("tasks", "lease_expires_at", "TIMESTAMP"),
+    ("tasks", "recovered_count", "INTEGER DEFAULT 0"),
+    ("tasks", "lease_renewal_count", "INTEGER DEFAULT 0"),
+    ("tasks", "pipeline_id", "INTEGER"),
+    ("tasks", "input_artifact_ids", "TEXT"),
+    ("tasks", "output_artifact_ids", "TEXT"),
+    ("tasks", "blocked_reason", "TEXT"),
+    ("tasks", "deferred_at", "TIMESTAMP"),
+    
+    ("pipelines", "owner_instance_id", "VARCHAR(100)"),
+    ("pipelines", "owner_lease_expires_at", "TIMESTAMP"),
+    ("pipelines", "ownership_version", "INTEGER DEFAULT 0"),
+    ("pipelines", "is_critical", "BOOLEAN DEFAULT FALSE"),
+    
+    ("orchestration_events", "segment_index", "INTEGER DEFAULT 0"),
+    ("orchestration_snapshots", "segment_index", "INTEGER DEFAULT 0")
+]:
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ctype}"))
+    except Exception:
+        pass
 

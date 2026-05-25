@@ -179,8 +179,14 @@ def test_scenario_b():
     
     db = SessionLocal()
     try:
+        from services.ha_coordinator_service import coordinator
         # Create pipeline
-        pipeline = Pipeline(name="Test Crash Pipeline", pipeline_type="document_processing_demo", status="running")
+        pipeline = Pipeline(
+            name="Test Crash Pipeline", 
+            pipeline_type="document_processing_demo", 
+            status="running",
+            owner_instance_id=coordinator.instance_id
+        )
         db.add(pipeline)
         db.flush()
         
@@ -212,9 +218,13 @@ def test_scenario_b():
         
         print(f"Created simulated crash tasks: Pending Task #{task_pending.id}, Expired Task #{task_expired.id}")
         
+        from task_registry import get_queue_name
+        pending_q = get_queue_name(task_pending.type, task_pending.priority, is_test=True)
+        expired_q = get_queue_name(task_expired.type, task_expired.priority, is_test=True)
+        
         # Clear Redis queues to ensure they are empty
-        r.delete("task_queue_test_medium")
-        r.delete("task_queue_test_high")
+        r.delete(pending_q)
+        r.delete(expired_q)
         
         # Run reconciliation
         reconcile_active_orchestrations(db)
@@ -224,10 +234,10 @@ def test_scenario_b():
         reconciled_pending = db.query(Task).filter(Task.id == task_pending.id).first()
         reconciled_expired = db.query(Task).filter(Task.id == task_expired.id).first()
         
-        # 1. Assert Task 1 was kept as pending and re-enqueued to test medium queue
-        medium_queue = r.lrange("task_queue_test_medium", 0, -1)
+        # 1. Assert Task 1 was kept as pending and re-enqueued to correct capability queue
+        medium_queue = r.lrange(pending_q, 0, -1)
         print(f"Redis test medium queue items: {medium_queue}")
-        assert str(task_pending.id) in medium_queue, "Pending task ID missing from Redis queue!"
+        assert str(task_pending.id) in medium_queue, f"Pending task ID missing from Redis queue '{pending_q}'!"
         
         # 2. Assert Task 2 was recovered (marked pending, retries incremented, queue re-enqueued)
         print(f"Expired task status: {reconciled_expired.status}, retries: {reconciled_expired.retry_count}, recovered: {reconciled_expired.recovered_count}")
@@ -235,9 +245,9 @@ def test_scenario_b():
         assert reconciled_expired.retry_count == 1, "Retry count should be incremented!"
         assert reconciled_expired.recovered_count == 1, "Recovered count should be incremented!"
         
-        high_queue = r.lrange("task_queue_test_high", 0, -1)
+        high_queue = r.lrange(expired_q, 0, -1)
         print(f"Redis test high queue items: {high_queue}")
-        assert str(task_expired.id) in high_queue, "Expired task ID missing from high priority Redis queue!"
+        assert str(task_expired.id) in high_queue, f"Expired task ID missing from high priority Redis queue '{expired_q}'!"
         
         print("SUCCESS: Orchestrator crash recovery and queue reconciliation verified successfully!")
         return True
@@ -284,10 +294,13 @@ def test_scenario_c():
         t_b_first = db.query(Task).filter(Task.id == task_b.id).first()
         assert t_b_first.status == 'pending'
         
-        test_queue_medium = r.lrange("task_queue_test_medium", 0, -1)
+        from task_registry import get_queue_name
+        child_q = get_queue_name(task_b.type, task_b.priority, is_test=True)
+        
+        test_queue_medium = r.lrange(child_q, 0, -1)
         initial_q_len = len(test_queue_medium)
         print(f"Initial queue length for released child: {initial_q_len}")
-        assert str(task_b.id) in test_queue_medium, "Child task B should be enqueued in Redis!"
+        assert str(task_b.id) in test_queue_medium, f"Child task B should be enqueued in Redis queue '{child_q}'!"
         
         # Simulate duplicate parent completion call
         print("Sending duplicate completion call for parent task A...")
@@ -298,7 +311,7 @@ def test_scenario_c():
         )
         
         # Verify child task B is NOT released twice (queue size does not change and child isn't duplicate enqueued)
-        test_queue_medium_dup = r.lrange("task_queue_test_medium", 0, -1)
+        test_queue_medium_dup = r.lrange(child_q, 0, -1)
         final_q_len = len(test_queue_medium_dup)
         print(f"Duplicate queue length: {final_q_len}")
         

@@ -1,20 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  GitBranch, Play, X, RefreshCw, FileText, CheckCircle2, 
-  XCircle, AlertTriangle, Clock, ChevronRight, Activity, Trash2, Upload,
-  Search, Database, Sparkles, Cpu, BookOpen, Filter, Eye, Gauge, Zap
+  GitBranch, Play, X, RefreshCw, FileText, 
+  AlertTriangle, Clock, Activity, Upload,
+  Search, Database, Sparkles, Cpu, BookOpen, Gauge, Zap, Server
 } from 'lucide-react';
 import { 
   fetchPipelines, fetchPipelineDetails, createPipeline, 
   cancelPipeline, runPipelineTests, fetchArtifactContent,
-  uploadFile, fetchUploadedFiles, fetchUploadedFileDetail,
+  uploadFile, fetchUploadedFiles,
   searchVectors, fetchVectorStats, createRetrievalPipeline, fetchRetrievalPipelineAnswer,
   fetchPipelineDag, fetchPipelineTimeline,
-  getSystemMetrics, getQueueMetrics, getWorkerMetrics,
-  getScalingMetrics, getPipelineMetrics, getBackpressureMetrics,
-  fetchEvents, fetchPipelineEvents, fetchWorkerEvents,
-  fetchSnapshots, fetchPipelineSnapshots, triggerPipelineSnapshot,
-  fetchReplayDetails, startReplay, pauseReplay, stepReplay, fetchReconstructedState
+  getSystemMetrics, getScalingMetrics, getPipelineMetrics, getBackpressureMetrics,
+  fetchEvents, fetchPipelineEvents,
+  fetchPipelineSnapshots, triggerPipelineSnapshot,
+  getClusterStatus, getWorkersRegistry, getClusterFailovers
 } from '../services/api';
 
 import ReactFlow, { MiniMap, Controls, Background, Position, Handle } from 'reactflow';
@@ -36,7 +35,6 @@ const CustomTaskNode = ({ data }) => {
     id,
     type,
     status,
-    priority,
     assigned_worker_id,
     retry_count,
     recovered_count,
@@ -87,9 +85,9 @@ const CustomTaskNode = ({ data }) => {
     <div 
       className={`task-node-card ${pulseClass}`}
       style={{
-        background: '#1e293b',
+        background: 'var(--bg-panel)',
         border: `2px solid ${borderColor}`,
-        borderRadius: '8px',
+        borderRadius: '4px',
         padding: '12px',
         color: '#f8fafc',
         width: '240px',
@@ -113,7 +111,7 @@ const CustomTaskNode = ({ data }) => {
           fontSize: '0.55rem',
           fontWeight: 'bold',
           border: '1px solid #f8fafc',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+          boxShadow: 'none',
           letterSpacing: '0.5px'
         }}>
           ⚠ BOTTLENECK
@@ -131,7 +129,7 @@ const CustomTaskNode = ({ data }) => {
           fontSize: '0.55rem',
           fontWeight: 'bold',
           border: '1px solid #f8fafc',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+          boxShadow: 'none',
           letterSpacing: '0.5px'
         }}>
           CRITICAL PATH
@@ -172,7 +170,7 @@ const CustomTaskNode = ({ data }) => {
 
         {data.weightDetails && (
           <div style={{ 
-            borderTop: '1px dashed rgba(148, 163, 184, 0.15)', 
+            borderTop: '1px dashed var(--border-subtle)', 
             paddingTop: '4px', 
             marginTop: '4px', 
             fontSize: '0.65rem', 
@@ -209,7 +207,7 @@ const CustomTaskNode = ({ data }) => {
         </div>
 
         {((input_artifact_ids && input_artifact_ids.length > 0) || (output_artifact_ids && output_artifact_ids.length > 0)) && (
-          <div style={{ borderTop: '1px solid rgba(148, 163, 184, 0.1)', paddingTop: '4px', marginTop: '4px', fontSize: '0.65rem', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '4px', marginTop: '4px', fontSize: '0.65rem', display: 'flex', flexDirection: 'column', gap: '2px' }}>
             {input_artifact_ids && input_artifact_ids.length > 0 && (
               <div><strong>Inputs:</strong> {input_artifact_ids.map(aid => `#${aid}`).join(', ')}</div>
             )}
@@ -236,7 +234,7 @@ const CustomArtifactNode = ({ data }) => {
   return (
     <div 
       style={{
-        background: '#0f172a',
+        background: 'var(--bg-primary)',
         border: '1.5px solid #10b981',
         borderRadius: '20px',
         padding: '6px 12px',
@@ -488,6 +486,10 @@ const PipelineDashboard = () => {
   const [pipelines, setPipelines] = useState([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState(null);
   const [selectedPipelineData, setSelectedPipelineData] = useState(null);
+  const selectedPipelineDataRef = React.useRef(null);
+  useEffect(() => {
+    selectedPipelineDataRef.current = selectedPipelineData;
+  }, [selectedPipelineData]);
   const [pipelineType, setPipelineType] = useState('document_processing_demo');
   const [pipelineName, setPipelineName] = useState('Demo Document Pipeline');
   const [payloadText, setPayloadText] = useState(JSON.stringify(DEFAULT_PAYLOADS.document_processing_demo, null, 2));
@@ -498,6 +500,11 @@ const PipelineDashboard = () => {
   const [systemMetricsData, setSystemMetricsData] = useState(null);
   const [scalingData, setScalingData] = useState(null);
   const [backpressureData, setBackpressureData] = useState(null);
+
+  // Phase 8 HA Observability States
+  const [clusterStatus, setClusterStatus] = useState(null);
+  const [workersRegistry, setWorkersRegistry] = useState([]);
+  const [clusterFailovers, setClusterFailovers] = useState([]);
 
   // Event Sourcing & Replay States
   const [globalEvents, setGlobalEvents] = useState([]);
@@ -511,27 +518,23 @@ const PipelineDashboard = () => {
   const [replayNodes, setReplayNodes] = useState([]);
   const [replayEdges, setReplayEdges] = useState([]);
   const [originalReplayDag, setOriginalReplayDag] = useState(null);
-  const [selectedSnapshotId, setSelectedSnapshotId] = useState(null);
-
-  const loadPipelineMetrics = async (id) => {
-    try {
-      const data = await getPipelineMetrics(id);
-      setPipelineMetrics(data);
-    } catch (err) {
-      console.error('Failed to load pipeline metrics:', err);
-    }
-  };
 
   const loadSystemObservabilityData = async () => {
     try {
-      const [sys, scale, bp] = await Promise.all([
+      const [sys, scale, bp, cluster, registry, failovers] = await Promise.all([
         getSystemMetrics(),
         getScalingMetrics(),
-        getBackpressureMetrics()
+        getBackpressureMetrics(),
+        getClusterStatus(),
+        getWorkersRegistry(),
+        getClusterFailovers()
       ]);
       setSystemMetricsData(sys);
       setScalingData(scale);
       setBackpressureData(bp);
+      setClusterStatus(cluster);
+      setWorkersRegistry(registry || []);
+      setClusterFailovers(failovers || []);
     } catch (err) {
       console.error('Failed to load system observability metrics:', err);
     }
@@ -713,16 +716,29 @@ const PipelineDashboard = () => {
           };
         });
 
-        // Highlight critical path edges
+        // Highlight critical path edges and congested edges
         const updatedEdges = data.edges.map(edge => {
+          // Check if target is throttled due to upstream congestion
+          const targetNode = data.nodes.find(n => n.id === edge.target);
+          const isTargetThrottled = targetNode && targetNode.type === 'taskNode' && 
+            targetNode.data?.status === 'blocked' && 
+            targetNode.data?.blocked_reason === 'Upstream congestion: throttled';
+          
+          if (isTargetThrottled) {
+            return {
+              ...edge,
+              animated: true,
+              style: {
+                stroke: '#f87171', // Dotted light-red
+                strokeDasharray: '5,5',
+                strokeWidth: 2.5
+              }
+            };
+          }
+
           let isCriticalEdge = false;
           
           if (metrics && metrics.critical_path) {
-            const isSourceCritical = criticalNodeIds.includes(edge.source) || 
-              (edge.source.startsWith('artifact-') && data.nodes.some(n => n.id === edge.source && criticalNodeIds.includes(`task-${n.data.task_id}`)));
-              
-            const isTargetCritical = criticalNodeIds.includes(edge.target) ||
-              (edge.target.startsWith('artifact-') && data.nodes.some(n => n.id === edge.target && criticalNodeIds.includes(`task-${n.data.task_id}`)));
 
             if (edge.source.startsWith('task-') && edge.target.startsWith('task-')) {
               const srcId = parseInt(edge.source.replace('task-', ''));
@@ -890,6 +906,25 @@ const PipelineDashboard = () => {
     });
 
     const updatedEdges = dag.edges.map(edge => {
+      // Check if target is throttled due to upstream congestion in reconstructed state
+      const tgtNode = dag.nodes.find(n => n.id === edge.target);
+      const tgtTaskId = tgtNode && tgtNode.type === 'taskNode' ? tgtNode.id.replace('task-', '') : null;
+      const isTgtThrottled = tgtTaskId && reconstructed.tasks[tgtTaskId] && 
+        reconstructed.tasks[tgtTaskId].status === 'blocked' && 
+        reconstructed.tasks[tgtTaskId].blocked_reason === 'Upstream congestion: throttled';
+      
+      if (isTgtThrottled) {
+        return {
+          ...edge,
+          animated: true,
+          style: {
+            stroke: '#f87171', // Dotted light-red
+            strokeDasharray: '5,5',
+            strokeWidth: 2.5
+          }
+        };
+      }
+
       let isCompletedEdge = false;
       if (edge.source.startsWith('task-')) {
         const srcId = edge.source.replace('task-', '');
@@ -967,6 +1002,7 @@ const PipelineDashboard = () => {
       }
     }, 2000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dashboardTab, replayPipelineId, replayStatus, globalEventCategory]);
 
   useEffect(() => {
@@ -984,13 +1020,19 @@ const PipelineDashboard = () => {
       loadUploadedFilesList();
       loadVectorStatsData();
       if (selectedPipelineId) {
-        loadPipelineDetails(selectedPipelineId);
+        const currentData = selectedPipelineDataRef.current;
+        const isTerminal = currentData && currentData.pipeline && 
+          ['completed', 'failed', 'cancelled'].includes(currentData.pipeline.status);
+        if (!isTerminal) {
+          loadPipelineDetails(selectedPipelineId);
+        }
       }
       if (dashboardTab === 'observability') {
         loadSystemObservabilityData();
       }
     }, 2000); // 2-second polling refresh
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPipelineId, dashboardTab]);
 
 
@@ -1138,97 +1180,13 @@ const PipelineDashboard = () => {
     }
   };
 
-  // Compute DAG stage level for visualization layout
-  const getDagStages = () => {
-    if (!selectedPipelineData || !selectedPipelineData.tasks) return [];
-    const tasks = selectedPipelineData.tasks;
-    
-    // Map tasks by id
-    const taskMap = {};
-    tasks.forEach(t => {
-      taskMap[t.id] = { ...t, children: [], parents: [] };
-    });
 
-    // Populate relations
-    tasks.forEach(t => {
-      const deps = t.dependencies || [];
-      deps.forEach(parentId => {
-        if (taskMap[parentId]) {
-          taskMap[t.id].parents.push(parentId);
-          taskMap[parentId].children.push(t.id);
-        }
-      });
-    });
-
-    // Compute stage ranks using topological progression
-    const rankMap = {};
-    let changed = true;
-    
-    // Initialize roots
-    tasks.forEach(t => {
-      if ((t.dependencies || []).length === 0) {
-        rankMap[t.id] = 0;
-      }
-    });
-
-    while (changed) {
-      changed = false;
-      tasks.forEach(t => {
-        if (rankMap[t.id] === undefined) {
-          const parentRanks = t.dependencies
-            .map(pId => rankMap[pId])
-            .filter(r => r !== undefined);
-            
-          // If all parents have computed ranks
-          if (parentRanks.length === t.dependencies.length) {
-            const maxParentRank = Math.max(...parentRanks);
-            rankMap[t.id] = maxParentRank + 1;
-            changed = true;
-          }
-        }
-      });
-    }
-
-    // Group tasks by their calculated stage
-    const stages = [];
-    tasks.forEach(t => {
-      const rank = rankMap[t.id] !== undefined ? rankMap[t.id] : 0;
-      if (!stages[rank]) stages[rank] = [];
-      stages[rank].push(taskMap[t.id]);
-    });
-
-    return stages.filter(Boolean);
-  };
-
-  const stages = getDagStages();
-
-  const getStatusBadgeClass = (status) => {
-    switch (status) {
-      case 'completed': return 'badge-completed';
-      case 'running': return 'badge-running';
-      case 'failed': return 'badge-failed';
-      case 'blocked': return 'badge-blocked';
-      case 'cancelled': return 'badge-cancelled';
-      default: return 'badge-pending';
-    }
-  };
-
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'completed': return <CheckCircle2 size={14} className="text-green" />;
-      case 'running': return <Activity size={14} className="text-blue animate-pulse-slow" />;
-      case 'failed': return <XCircle size={14} className="text-red" />;
-      case 'blocked': return <AlertTriangle size={14} className="text-amber" />;
-      case 'cancelled': return <XCircle size={14} className="text-gray" />;
-      default: return <Clock size={14} className="text-slate" />;
-    }
-  };
 
   return (
     <div className="panel execution-log" style={{ gridColumn: 'span 12', marginTop: '24px' }}>
       
       {/* Dashboard Top Tabs */}
-      <div style={{ display: 'flex', gap: '16px', borderBottom: '1px solid rgba(148, 163, 184, 0.1)', paddingBottom: '10px', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', gap: '16px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px', marginBottom: '20px' }}>
         <button
           onClick={() => setDashboardTab('orchestration')}
           style={{
@@ -1284,7 +1242,7 @@ const PipelineDashboard = () => {
           }}
         >
           <RefreshCw size={18} />
-          Event Stream & Replay
+          Replay Engine
         </button>
       </div>
 
@@ -1303,15 +1261,15 @@ const PipelineDashboard = () => {
               onClick={handleRunPipelineTests}
               disabled={testing}
               style={{
-                background: 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%)',
+                background: 'var(--color-accent)',
                 color: '#ffffff',
                 border: 'none',
-                borderRadius: '8px',
+                borderRadius: '4px',
                 padding: '8px 18px',
                 fontSize: '0.85rem',
                 fontWeight: '600',
                 cursor: testing ? 'not-allowed' : 'pointer',
-                boxShadow: '0 4px 14px rgba(139, 92, 246, 0.25)',
+                boxShadow: 'none',
                 transition: 'all 0.2s ease',
                 display: 'flex',
                 alignItems: 'center',
@@ -1328,7 +1286,7 @@ const PipelineDashboard = () => {
         <div style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
           {/* File Ingestion Card */}
-          <div style={{ background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px' }}>
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '20px' }}>
             <h3 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '16px', color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Upload size={18} className="text-pink" style={{ color: '#ec4899' }} />
               File Ingestion (Phase 3)
@@ -1344,8 +1302,8 @@ const PipelineDashboard = () => {
                   style={{ 
                     fontSize: '0.85rem', 
                     padding: '8px', 
-                    background: 'rgba(15, 23, 42, 0.5)', 
-                    border: '1px dashed rgba(148, 163, 184, 0.2)',
+                    background: 'rgba(0, 0, 0, 0.2)', 
+                    border: '1px dashed var(--border-subtle)',
                     borderRadius: '6px',
                     color: '#e2e8f0',
                     cursor: 'pointer'
@@ -1373,12 +1331,12 @@ const PipelineDashboard = () => {
                 style={{ 
                   padding: '10px 16px', 
                   fontSize: '0.9rem', 
-                  background: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
+                  background: 'var(--color-accent)',
                   cursor: uploading || !selectedFile ? 'not-allowed' : 'pointer',
                   opacity: uploading || !selectedFile ? 0.6 : 1,
                   fontWeight: '600',
                   border: 'none',
-                  borderRadius: '8px',
+                  borderRadius: '4px',
                   color: '#fff',
                   display: 'flex',
                   alignItems: 'center',
@@ -1407,7 +1365,7 @@ const PipelineDashboard = () => {
 
             {/* List of uploaded files status */}
             {uploadedFiles.length > 0 && (
-              <div style={{ marginTop: '16px', borderTop: '1px solid rgba(148, 163, 184, 0.1)', paddingTop: '12px' }}>
+              <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-subtle)', paddingTop: '12px' }}>
                 <h4 style={{ fontSize: '0.8rem', fontWeight: '600', color: '#94a3b8', marginBottom: '8px' }}>Recent Ingested Files:</h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '160px', overflowY: 'auto' }}>
                   {uploadedFiles.map((f) => (
@@ -1415,8 +1373,8 @@ const PipelineDashboard = () => {
                       key={f.id} 
                       style={{ 
                         fontSize: '0.75rem', 
-                        background: 'rgba(15, 23, 42, 0.4)', 
-                        border: '1px solid rgba(148, 163, 184, 0.05)',
+                        background: 'var(--bg-panel)', 
+                        border: '1px solid var(--border-subtle)',
                         borderRadius: '6px',
                         padding: '8px',
                         display: 'flex',
@@ -1451,7 +1409,7 @@ const PipelineDashboard = () => {
           </div>
 
           {/* Create Pipeline Card */}
-          <div style={{ background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px' }}>
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '20px' }}>
             <h3 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '16px', color: '#f1f5f9' }}>Launch New Pipeline</h3>
             <form onSubmit={handleCreatePipeline} className="create-form" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div className="form-field">
@@ -1486,9 +1444,9 @@ const PipelineDashboard = () => {
                   style={{ 
                     fontFamily: 'monospace', 
                     fontSize: '0.8rem', 
-                    background: 'rgba(15, 23, 42, 0.7)', 
-                    border: '1px solid rgba(148, 163, 184, 0.2)',
-                    borderRadius: '8px',
+                    background: 'rgba(0, 0, 0, 0.3)', 
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '4px',
                     padding: '8px 10px',
                     color: '#94a3b8',
                     resize: 'vertical'
@@ -1502,7 +1460,7 @@ const PipelineDashboard = () => {
                 style={{ 
                   padding: '10px 16px', 
                   fontSize: '0.9rem', 
-                  background: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)',
+                  background: 'var(--color-accent)',
                   cursor: 'pointer',
                   fontWeight: '600'
                 }}
@@ -1513,13 +1471,14 @@ const PipelineDashboard = () => {
           </div>
 
           {/* Pipelines Instances List */}
-          <div style={{ background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px', flex: 1, minHeight: '300px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '20px', flex: 1, minHeight: '300px', display: 'flex', flexDirection: 'column' }}>
             <h3 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '16px', color: '#f1f5f9' }}>Recent Pipelines</h3>
             
             {pipelines.length === 0 ? (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 0', color: '#64748b' }}>
-                <GitBranch size={32} style={{ opacity: 0.3, marginBottom: '8px' }} />
-                <span style={{ fontSize: '0.85rem' }}>No pipelines created yet.</span>
+              <div className="empty-state-container" style={{ flex: 1, minHeight: '200px' }}>
+                <GitBranch size={36} className="empty-state-icon" />
+                <div className="empty-state-title">No pipelines created yet</div>
+                <div className="empty-state-text">Start a workflow instance from the configuration panel to track it.</div>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', maxHeight: '400px', paddingRight: '4px' }}>
@@ -1533,9 +1492,9 @@ const PipelineDashboard = () => {
                       key={p.id}
                       onClick={() => setSelectedPipelineId(p.id)}
                       style={{
-                        background: isSelected ? 'rgba(139, 92, 246, 0.1)' : 'rgba(30, 41, 59, 0.4)',
-                        border: isSelected ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid rgba(148, 163, 184, 0.1)',
-                        borderRadius: '10px',
+                        background: isSelected ? 'rgba(139, 92, 246, 0.1)' : 'var(--bg-panel)',
+                        border: isSelected ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid var(--border-subtle)',
+                        borderRadius: '4px',
                         padding: '12px 14px',
                         cursor: 'pointer',
                         transition: 'all 0.2s ease',
@@ -1587,7 +1546,7 @@ const PipelineDashboard = () => {
                           <span>Tasks Progress</span>
                           <span>{progress.completed}/{progress.total}</span>
                         </div>
-                        <div style={{ width: '100%', height: '5px', background: '#334155', borderRadius: '10px', overflow: 'hidden' }}>
+                        <div style={{ width: '100%', height: '5px', background: '#334155', borderRadius: '4px', overflow: 'hidden' }}>
                           <div 
                             style={{ 
                               width: `${percent}%`, 
@@ -1613,8 +1572,8 @@ const PipelineDashboard = () => {
           {selectedPipelineId && selectedPipelineData ? (
             <>
               {/* Pipeline Details Inspector Card */}
-              <div style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '16px', padding: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(148, 163, 184, 0.1)', paddingBottom: '16px', marginBottom: '20px' }}>
+              <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px', marginBottom: '20px' }}>
                   <div>
                     <h2 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       Pipeline Instance #{selectedPipelineData.pipeline.id}: {selectedPipelineData.pipeline.name}
@@ -1636,13 +1595,13 @@ const PipelineDashboard = () => {
                 </div>
 
                 {selectedPipelineData.pipeline.error_message && (
-                  <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#fca5a5', padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', fontSize: '0.85rem' }}>
+                  <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#fca5a5', padding: '12px 16px', borderRadius: '4px', marginBottom: '20px', fontSize: '0.85rem' }}>
                     <strong>Pipeline Error:</strong> {selectedPipelineData.pipeline.error_message}
                   </div>
                 )}
 
                 {pipelineMetrics && (
-                  <div style={{ background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.15)', borderRadius: '8px', padding: '14px', marginBottom: '20px', fontSize: '0.8rem' }}>
+                  <div style={{ background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.15)', borderRadius: '4px', padding: '14px', marginBottom: '20px', fontSize: '0.8rem' }}>
                     <h4 style={{ margin: 0, color: '#f43f5e', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
                       <AlertTriangle size={14} /> Orchestration Bottleneck Analysis
                     </h4>
@@ -1664,12 +1623,12 @@ const PipelineDashboard = () => {
                   style={{ 
                     height: '420px',
                     background: '#090d16', 
-                    borderRadius: '12px', 
-                    border: '1px solid rgba(148, 163, 184, 0.1)',
+                    borderRadius: '4px', 
+                    border: '1px solid var(--border-subtle)',
                     position: 'relative',
                     overflow: 'hidden',
                     marginBottom: '20px',
-                    boxShadow: 'inset 0 0 20px rgba(0, 0, 0, 0.6)'
+                    boxShadow: 'none'
                   }}
                 >
                   <ReactFlow
@@ -1694,10 +1653,10 @@ const PipelineDashboard = () => {
                         if (status === 'recovering') return '#8b5cf6';
                         return '#64748b';
                       }}
-                      maskColor="rgba(15, 23, 42, 0.6)"
+                      maskColor='rgba(0, 0, 0, 0.25)'
                       style={{
                         background: '#1e293b',
-                        border: '1px solid rgba(148, 163, 184, 0.1)',
+                        border: '1px solid var(--border-subtle)',
                         borderRadius: '6px'
                       }}
                     />
@@ -1705,7 +1664,7 @@ const PipelineDashboard = () => {
                 </div>
 
                 {/* Tab buttons */}
-                <div style={{ display: 'flex', gap: '16px', borderBottom: '1px solid rgba(148, 163, 184, 0.1)', paddingBottom: '10px', marginTop: '24px', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', gap: '16px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px', marginTop: '24px', marginBottom: '16px' }}>
                   <button
                     onClick={() => setActiveTab('artifacts')}
                     style={{
@@ -1757,7 +1716,7 @@ const PipelineDashboard = () => {
                       </h4>
                       
                       {selectedPipelineData.artifacts.length === 0 ? (
-                        <div style={{ background: '#0f172a', borderRadius: '8px', padding: '24px', textAlign: 'center', border: '1px solid rgba(148, 163, 184, 0.05)', color: '#64748b', fontSize: '0.8rem' }}>
+                        <div style={{ background: '#0f172a', borderRadius: '4px', padding: '24px', textAlign: 'center', border: '1px solid var(--border-subtle)', color: '#64748b', fontSize: '0.8rem' }}>
                           No artifacts registered yet for this pipeline.
                         </div>
                       ) : (
@@ -1768,8 +1727,8 @@ const PipelineDashboard = () => {
                               onClick={() => handleViewArtifact(a)}
                               style={{
                                 background: '#0f172a',
-                                border: '1px solid rgba(148, 163, 184, 0.1)',
-                                borderRadius: '8px',
+                                border: '1px solid var(--border-subtle)',
+                                borderRadius: '4px',
                                 padding: '10px 12px',
                                 cursor: 'pointer',
                                 display: 'flex',
@@ -1779,7 +1738,7 @@ const PipelineDashboard = () => {
                                 transition: 'all 0.2s',
                               }}
                               onMouseEnter={(e) => e.currentTarget.style.borderColor = '#8b5cf6'}
-                              onMouseLeave={(e) => e.currentTarget.style.borderColor = 'rgba(148, 163, 184, 0.1)'}
+                              onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-subtle)'}
                             >
                               <div>
                                 <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#f1f5f9' }}>
@@ -1817,10 +1776,10 @@ const PipelineDashboard = () => {
 
                       <div 
                         style={{ 
-                          background: '#0f172a', 
-                          borderRadius: '8px', 
+                          background: 'var(--bg-primary)', 
+                          borderRadius: '4px', 
                           padding: '16px', 
-                          border: '1px solid rgba(148, 163, 184, 0.05)',
+                          border: '1px solid var(--border-subtle)',
                           minHeight: '200px',
                           maxHeight: '250px',
                           overflowY: 'auto',
@@ -1836,8 +1795,36 @@ const PipelineDashboard = () => {
                           </div>
                         ) : activeArtifact ? (
                           <div>
-                            <div style={{ borderBottom: '1px solid rgba(148, 163, 184, 0.1)', paddingBottom: '6px', marginBottom: '8px', color: '#8b5cf6', fontWeight: 'bold' }}>
-                              Type: {activeArtifact.artifact_type} (ID: {activeArtifact.id})
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '6px', marginBottom: '8px' }}>
+                              <span style={{ color: 'var(--color-accent)', fontWeight: 'bold' }}>
+                                Type: {activeArtifact.artifact_type} (ID: {activeArtifact.id})
+                              </span>
+                              <button 
+                                onClick={() => {
+                                  navigator.clipboard.writeText(JSON.stringify(activeArtifact.content, null, 2));
+                                  alert('Copied artifact JSON to clipboard!');
+                                }}
+                                style={{
+                                  background: 'var(--border-subtle)',
+                                  border: '1px solid var(--border-subtle)',
+                                  color: '#cbd5e1',
+                                  fontSize: '0.65rem',
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.target.style.background = 'var(--border-subtle)';
+                                  e.target.style.color = '#fff';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.target.style.background = 'var(--border-subtle)';
+                                  e.target.style.color = '#cbd5e1';
+                                }}
+                              >
+                                Copy JSON
+                              </button>
                             </div>
                             <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                               {JSON.stringify(activeArtifact.content, null, 2)}
@@ -1855,9 +1842,9 @@ const PipelineDashboard = () => {
                 )}
 
                 {activeTab === 'timeline' && (
-                  <div style={{ background: '#0f172a', borderRadius: '12px', padding: '20px', border: '1px solid rgba(148, 163, 184, 0.05)' }}>
+                  <div style={{ background: '#0f172a', borderRadius: '4px', padding: '20px', border: '1px solid var(--border-subtle)' }}>
                     {/* Filter and Search controls */}
-                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px', borderBottom: '1px dashed rgba(148, 163, 184, 0.1)', paddingBottom: '12px' }}>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px', borderBottom: '1px dashed var(--border-subtle)', paddingBottom: '12px' }}>
                       <div style={{ flex: 1, minWidth: '200px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <label style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Filter Search</label>
                         <input 
@@ -1868,8 +1855,8 @@ const PipelineDashboard = () => {
                           style={{
                             padding: '8px 12px',
                             fontSize: '0.8rem',
-                            background: 'rgba(15, 23, 42, 0.6)',
-                            border: '1px solid rgba(148, 163, 184, 0.15)',
+                            background: 'rgba(0, 0, 0, 0.25)',
+                            border: '1px solid var(--border-subtle)',
                             borderRadius: '6px',
                             color: '#cbd5e1'
                           }}
@@ -1884,8 +1871,8 @@ const PipelineDashboard = () => {
                           style={{
                             padding: '8px',
                             fontSize: '0.8rem',
-                            background: 'rgba(15, 23, 42, 0.6)',
-                            border: '1px solid rgba(148, 163, 184, 0.15)',
+                            background: 'rgba(0, 0, 0, 0.25)',
+                            border: '1px solid var(--border-subtle)',
                             borderRadius: '6px',
                             color: '#cbd5e1'
                           }}
@@ -1960,9 +1947,9 @@ const PipelineDashboard = () => {
                               <div 
                                 key={log.id} 
                                 style={{
-                                  background: 'rgba(15, 23, 42, 0.4)',
+                                  background: 'var(--bg-panel)',
                                   borderLeft: `4px solid ${badgeColor}`,
-                                  border: '1px solid rgba(148, 163, 184, 0.08)',
+                                  border: '1px solid var(--border-subtle)',
                                   borderRadius: '6px',
                                   padding: '10px 14px',
                                   display: 'flex',
@@ -2014,24 +2001,24 @@ const PipelineDashboard = () => {
               </div>
             </>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, border: '2px dashed rgba(148, 163, 184, 0.1)', borderRadius: '16px', padding: '60px', color: '#64748b', minHeight: '400px' }}>
-              <GitBranch size={48} style={{ opacity: 0.2, marginBottom: '16px' }} />
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', color: '#94a3b8', marginBottom: '6px' }}>No Pipeline Selected</h3>
-              <p style={{ fontSize: '0.85rem', maxWidth: '380px', textAlign: 'center' }}>
+            <div className="empty-state-container" style={{ flex: 1, minHeight: '400px', padding: '60px' }}>
+              <GitBranch size={48} className="empty-state-icon" />
+              <h3 className="empty-state-title" style={{ fontSize: '1.1rem' }}>No Pipeline Selected</h3>
+              <p className="empty-state-text" style={{ maxWidth: '380px' }}>
                 Launch a demo pipeline on the left or select an existing instance to visualize its DAG nodes, execution states, and filesystem artifacts.
               </p>
             </div>
           )}
 
           {/* Semantic Search Panel (Phase 4) */}
-          <div style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '16px', padding: '24px' }}>
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '24px' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
               <Database size={20} className="text-purple" style={{ color: '#8b5cf6' }} />
               Semantic Search (Phase 4)
             </h3>
 
             {/* Qdrant Status Banner */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', background: 'rgba(15, 23, 42, 0.3)', padding: '12px', borderRadius: '8px', marginBottom: '20px', fontSize: '0.8rem', border: '1px solid rgba(148, 163, 184, 0.05)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', background: 'var(--bg-panel)', padding: '12px', borderRadius: '4px', marginBottom: '20px', fontSize: '0.8rem', border: '1px solid var(--border-subtle)' }}>
               <div>
                 <span style={{ color: '#64748b', display: 'block' }}>Qdrant Collection</span>
                 <span style={{ fontWeight: '600', color: '#e2e8f0' }}>{vectorStats?.collection || 'scaleflow_chunks'}</span>
@@ -2065,9 +2052,9 @@ const PipelineDashboard = () => {
                     style={{
                       padding: '10px',
                       fontSize: '0.85rem',
-                      background: 'rgba(15, 23, 42, 0.5)',
-                      border: '1px solid rgba(148, 163, 184, 0.2)',
-                      borderRadius: '8px',
+                      background: 'rgba(0, 0, 0, 0.2)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '4px',
                       color: '#f1f5f9'
                     }}
                   />
@@ -2081,9 +2068,9 @@ const PipelineDashboard = () => {
                     style={{
                       padding: '10px',
                       fontSize: '0.85rem',
-                      background: 'rgba(15, 23, 42, 0.5)',
-                      border: '1px solid rgba(148, 163, 184, 0.2)',
-                      borderRadius: '8px',
+                      background: 'rgba(0, 0, 0, 0.2)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '4px',
                       color: '#f1f5f9'
                     }}
                   >
@@ -2098,10 +2085,10 @@ const PipelineDashboard = () => {
                     type="submit"
                     disabled={searching || !searchQuery}
                     style={{
-                      background: 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%)',
+                      background: 'var(--color-accent)',
                       color: '#ffffff',
                       border: 'none',
-                      borderRadius: '8px',
+                      borderRadius: '4px',
                       padding: '10px 20px',
                       fontSize: '0.85rem',
                       fontWeight: '600',
@@ -2120,7 +2107,7 @@ const PipelineDashboard = () => {
               </div>
 
               {/* Filter */}
-              <div style={{ display: 'flex', gap: '16px', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '16px', borderTop: '1px dashed rgba(148, 163, 184, 0.1)', paddingTop: '10px' }}>
+              <div style={{ display: 'flex', gap: '16px', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '16px', borderTop: '1px dashed var(--border-subtle)', paddingTop: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <input 
                     type="checkbox" 
@@ -2134,7 +2121,7 @@ const PipelineDashboard = () => {
             </form>
 
             {/* Search Results list */}
-            <div style={{ borderTop: '1px solid rgba(148, 163, 184, 0.1)', paddingTop: '16px' }}>
+            <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
               <h4 style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '12px', fontWeight: '600' }}>Results:</h4>
               
               {searchResults.length === 0 ? (
@@ -2144,7 +2131,7 @@ const PipelineDashboard = () => {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '300px', overflowY: 'auto' }}>
                   {searchResults.map((r, idx) => (
-                    <div key={idx} style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '8px', padding: '12px' }}>
+                    <div key={idx} style={{ background: 'rgba(0, 0, 0, 0.2)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '12px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '0.75rem' }}>
                         <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
                           Score: {r.score}
@@ -2164,7 +2151,7 @@ const PipelineDashboard = () => {
           </div>
 
           {/* Retrieval Pipeline Panel (Phase 5) */}
-          <div style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '16px', padding: '24px', marginTop: '20px' }}>
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '24px', marginTop: '20px' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
               <Sparkles size={20} className="text-indigo" style={{ color: '#818cf8' }} />
               Retrieval Pipeline (Phase 5)
@@ -2183,9 +2170,9 @@ const PipelineDashboard = () => {
                     style={{
                       padding: '12px',
                       fontSize: '0.85rem',
-                      background: 'rgba(15, 23, 42, 0.5)',
-                      border: '1px solid rgba(148, 163, 184, 0.2)',
-                      borderRadius: '8px',
+                      background: 'rgba(0, 0, 0, 0.2)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '4px',
                       color: '#f1f5f9',
                       width: '100%',
                       boxSizing: 'border-box'
@@ -2202,9 +2189,9 @@ const PipelineDashboard = () => {
                       style={{
                         padding: '10px',
                         fontSize: '0.85rem',
-                        background: 'rgba(15, 23, 42, 0.5)',
-                        border: '1px solid rgba(148, 163, 184, 0.2)',
-                        borderRadius: '8px',
+                        background: 'rgba(0, 0, 0, 0.2)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: '4px',
                         color: '#f1f5f9',
                         width: '100%'
                       }}
@@ -2223,9 +2210,9 @@ const PipelineDashboard = () => {
                       style={{
                         padding: '10px',
                         fontSize: '0.85rem',
-                        background: 'rgba(15, 23, 42, 0.5)',
-                        border: '1px solid rgba(148, 163, 184, 0.2)',
-                        borderRadius: '8px',
+                        background: 'rgba(0, 0, 0, 0.2)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: '4px',
                         color: '#f1f5f9',
                         width: '100%',
                         outline: 'none'
@@ -2246,9 +2233,9 @@ const PipelineDashboard = () => {
                       style={{
                         padding: '10px',
                         fontSize: '0.85rem',
-                        background: 'rgba(15, 23, 42, 0.5)',
-                        border: '1px solid rgba(148, 163, 184, 0.2)',
-                        borderRadius: '8px',
+                        background: 'rgba(0, 0, 0, 0.2)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: '4px',
                         color: '#f1f5f9',
                         width: '100%',
                         outline: 'none'
@@ -2270,7 +2257,7 @@ const PipelineDashboard = () => {
                       background: 'linear-gradient(135deg, #818cf8 0%, #6366f1 100%)',
                       color: '#ffffff',
                       border: 'none',
-                      borderRadius: '8px',
+                      borderRadius: '4px',
                       padding: '12px 24px',
                       fontSize: '0.875rem',
                       fontWeight: '600',
@@ -2280,7 +2267,7 @@ const PipelineDashboard = () => {
                       alignItems: 'center',
                       gap: '8px',
                       transition: 'all 0.2s',
-                      boxShadow: '0 4px 12px rgba(99, 102, 241, 0.2)'
+                      boxShadow: 'none'
                     }}
                   >
                     {retrievalRunning ? <RefreshCw className="animate-spin" size={16} /> : <Play size={16} />}
@@ -2292,8 +2279,8 @@ const PipelineDashboard = () => {
 
             {/* Pipeline Execution Progress / Output */}
             {createdQueryPipelineId && (
-              <div style={{ borderTop: '1px solid rgba(148, 163, 184, 0.1)', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(15, 23, 42, 0.3)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(148, 163, 184, 0.05)' }}>
+              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-panel)', padding: '12px 16px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
                   <div>
                     <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>Pipeline instance</span>
                     <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#cbd5e1' }}>
@@ -2319,7 +2306,7 @@ const PipelineDashboard = () => {
                     </div>
                     <div style={{ display: 'flex', gap: '6px', width: '100%' }}>
                       {retrievalPipelineProgress.tasks.map((task, idx) => {
-                        let color = 'rgba(148, 163, 184, 0.15)';
+                        let color = 'var(--border-subtle)';
                         if (task.status === 'completed') color = '#10b981';
                         else if (task.status === 'failed') color = '#ef4444';
                         else if (task.status === 'running') color = '#3b82f6';
@@ -2340,7 +2327,7 @@ const PipelineDashboard = () => {
 
                 {/* Final Answer Display */}
                 {retrievalAnswer && retrievalAnswer.final_answer ? (
-                  <div style={{ background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.2)', borderRadius: '12px', padding: '20px', marginTop: '10px' }}>
+                  <div style={{ background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.2)', borderRadius: '4px', padding: '20px', marginTop: '10px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <h4 style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#818cf8', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <Cpu size={16} /> Synthesized Answer
@@ -2361,7 +2348,7 @@ const PipelineDashboard = () => {
                       </div>
                     </div>
 
-                    <div style={{ fontSize: '0.875rem', color: '#e2e8f0', lineHeight: '1.6', whiteSpace: 'pre-wrap', marginBottom: '20px', background: 'rgba(15, 23, 42, 0.4)', padding: '16px', borderRadius: '8px', border: '1px solid rgba(148, 163, 184, 0.05)' }}>
+                    <div style={{ fontSize: '0.875rem', color: '#e2e8f0', lineHeight: '1.6', whiteSpace: 'pre-wrap', marginBottom: '20px', background: 'var(--bg-panel)', padding: '16px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
                       {retrievalAnswer.final_answer.answer}
                     </div>
 
@@ -2373,7 +2360,7 @@ const PipelineDashboard = () => {
                         </h5>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           {retrievalAnswer.final_answer.citations.map((c, cidx) => (
-                            <div key={cidx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(15, 23, 42, 0.3)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.75rem', border: '1px solid rgba(148, 163, 184, 0.05)' }}>
+                            <div key={cidx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.75rem', border: '1px solid var(--border-subtle)' }}>
                               <span style={{ color: '#cbd5e1' }}>
                                 [{cidx + 1}] File: <strong style={{ color: '#cbd5e1' }}>{c.original_filename}</strong> (Chunk {c.chunk_index})
                               </span>
@@ -2410,7 +2397,7 @@ const PipelineDashboard = () => {
           right: 0,
           bottom: 0,
           background: 'rgba(15, 23, 42, 0.85)',
-          backdropFilter: 'blur(8px)',
+          backdropFilter: 'none',
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
@@ -2419,13 +2406,13 @@ const PipelineDashboard = () => {
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{
             background: '#1e293b',
             border: '1px solid #334155',
-            borderRadius: '16px',
+            borderRadius: '4px',
             width: '90%',
             maxWidth: '700px',
             maxHeight: '85vh',
             display: 'flex',
             flexDirection: 'column',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+            boxShadow: 'none',
             color: '#f8fafc'
           }}>
             <div className="modal-header" style={{
@@ -2493,7 +2480,7 @@ const PipelineDashboard = () => {
                   })}
                   
                   {testResults?.error && (
-                    <div style={{ color: '#ef4444', marginTop: '12px', padding: '12px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                    <div style={{ color: '#ef4444', marginTop: '12px', padding: '12px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
                       <strong>Execution Error:</strong> {JSON.stringify(testResults.error, null, 2)}
                     </div>
                   )}
@@ -2514,7 +2501,7 @@ const PipelineDashboard = () => {
                   background: '#334155',
                   color: '#ffffff',
                   border: 'none',
-                  borderRadius: '8px',
+                  borderRadius: '4px',
                   padding: '8px 20px',
                   fontSize: '0.85rem',
                   fontWeight: '600',
@@ -2563,7 +2550,7 @@ const PipelineDashboard = () => {
                 gap: '20px',
                 background: healthBg,
                 border: `1px solid ${healthBorder}`,
-                borderRadius: '12px',
+                borderRadius: '4px',
                 padding: '20px'
               }}>
                 <div style={{ gridColumn: 'span 7', display: 'flex', gap: '16px', alignItems: 'center' }}>
@@ -2584,7 +2571,7 @@ const PipelineDashboard = () => {
                   </div>
                 </div>
 
-                <div style={{ gridColumn: 'span 5', borderLeft: '1px solid rgba(148, 163, 184, 0.1)', paddingLeft: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div style={{ gridColumn: 'span 5', borderLeft: '1px solid var(--border-subtle)', paddingLeft: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '4px' }}>
                     <span style={{ color: '#94a3b8' }}>Backpressure Protection:</span>
                     <span style={{ fontWeight: 'bold', color: isBpActive ? '#ef4444' : '#10b981' }}>
@@ -2606,14 +2593,14 @@ const PipelineDashboard = () => {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '20px' }}>
             
             {/* Queue Pressures & Forecasts Card */}
-            <div style={{ gridColumn: 'span 4', background: 'rgba(30, 41, 59, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px' }}>
+            <div style={{ gridColumn: 'span 4', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '20px' }}>
               <h3 style={{ fontSize: '1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
                 <Gauge size={16} className="text-purple" style={{ color: '#a78bfa' }} />
                 Queue Saturation & Drain
               </h3>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div style={{ background: 'rgba(15, 23, 42, 0.4)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(148, 163, 184, 0.05)' }}>
+                <div style={{ background: 'var(--bg-panel)', padding: '12px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
                   <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>Total Queue Backlog</span>
                   <span style={{ fontSize: '1.8rem', fontWeight: '800', color: '#ffffff' }}>
                     {systemMetricsData?.metrics?.backlog_size || 0}
@@ -2623,17 +2610,17 @@ const PipelineDashboard = () => {
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(148, 163, 184, 0.05)', paddingBottom: '8px', fontSize: '0.8rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px', fontSize: '0.8rem' }}>
                   <span style={{ color: '#94a3b8' }}>Est. Saturation Time:</span>
                   <span style={{ fontWeight: 'bold', color: scalingData?.estimated_saturation_time_seconds ? '#ef4444' : '#10b981' }}>
-                    {scalingData?.estimated_saturation_time_seconds !== null ? `${scalingData.estimated_saturation_time_seconds}s` : 'Stable / Normal'}
+                    {scalingData && scalingData.estimated_saturation_time_seconds !== null && scalingData.estimated_saturation_time_seconds !== undefined ? `${scalingData.estimated_saturation_time_seconds}s` : 'Stable / Normal'}
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(148, 163, 184, 0.05)', paddingBottom: '8px', fontSize: '0.8rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px', fontSize: '0.8rem' }}>
                   <span style={{ color: '#94a3b8' }}>Est. Recovery Time (to safe limit):</span>
                   <span style={{ fontWeight: 'bold', color: '#fbbf24' }}>
-                    {scalingData?.projected_recovery_time_seconds !== 9999 && scalingData?.projected_recovery_time_seconds > 0 
+                    {scalingData && scalingData.projected_recovery_time_seconds !== null && scalingData.projected_recovery_time_seconds !== undefined && scalingData.projected_recovery_time_seconds !== 9999 && scalingData.projected_recovery_time_seconds > 0 
                       ? `${scalingData.projected_recovery_time_seconds}s` 
                       : scalingData?.projected_recovery_time_seconds === 9999 || scalingData?.projected_recovery_time_seconds === 'Infinite (Saturated)'
                         ? 'Infinite (Saturated)' 
@@ -2646,7 +2633,7 @@ const PipelineDashboard = () => {
                   <span style={{ fontWeight: 'bold', color: '#cbd5e1' }}>
                     {scalingData?.current_estimated_drain_time_seconds === 'Infinite (Saturated)'
                       ? 'Infinite (Saturated)'
-                      : scalingData?.current_estimated_drain_time_seconds > 0
+                      : scalingData && scalingData.current_estimated_drain_time_seconds > 0
                         ? `${scalingData.current_estimated_drain_time_seconds}s`
                         : 'No Backlog'}
                   </span>
@@ -2655,7 +2642,7 @@ const PipelineDashboard = () => {
             </div>
 
             {/* Smoothed Rates Card */}
-            <div style={{ gridColumn: 'span 4', background: 'rgba(30, 41, 59, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px' }}>
+            <div style={{ gridColumn: 'span 4', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '20px' }}>
               <h3 style={{ fontSize: '1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
                 <Activity size={16} className="text-blue" style={{ color: '#60a5fa' }} />
                 Smoothed Throughput Rates
@@ -2663,7 +2650,7 @@ const PipelineDashboard = () => {
 
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem', color: '#cbd5e1' }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid rgba(148, 163, 184, 0.1)', color: '#94a3b8', textAlign: 'left' }}>
+                  <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: '#94a3b8', textAlign: 'left' }}>
                     <th style={{ padding: '6px 0' }}>Window</th>
                     <th style={{ padding: '6px 0' }}>Enqueue Rate</th>
                     <th style={{ padding: '6px 0' }}>Dequeue Rate</th>
@@ -2671,13 +2658,13 @@ const PipelineDashboard = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr style={{ borderBottom: '1px solid rgba(148, 163, 184, 0.05)' }}>
+                  <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                     <td style={{ padding: '8px 0', fontWeight: 'bold' }}>10s rolling</td>
                     <td style={{ padding: '8px 0' }}>{systemMetricsData?.metrics?.enqueue_rate?.['10s'] || 0}/s</td>
                     <td style={{ padding: '8px 0' }}>{systemMetricsData?.metrics?.dequeue_rate?.['10s'] || 0}/s</td>
                     <td style={{ padding: '8px 0' }}>{systemMetricsData?.metrics?.completed_count?.['10s'] || 0}</td>
                   </tr>
-                  <tr style={{ borderBottom: '1px solid rgba(148, 163, 184, 0.05)' }}>
+                  <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                     <td style={{ padding: '8px 0', fontWeight: 'bold' }}>30s rolling</td>
                     <td style={{ padding: '8px 0' }}>{systemMetricsData?.metrics?.enqueue_rate?.['30s'] || 0}/s</td>
                     <td style={{ padding: '8px 0' }}>{systemMetricsData?.metrics?.dequeue_rate?.['30s'] || 0}/s</td>
@@ -2692,7 +2679,7 @@ const PipelineDashboard = () => {
                 </tbody>
               </table>
 
-              <div style={{ borderTop: '1px dashed rgba(148, 163, 184, 0.1)', marginTop: '12px', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+              <div style={{ borderTop: '1px dashed var(--border-subtle)', marginTop: '12px', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
                 <div>
                   <span style={{ color: '#64748b', display: 'block' }}>Avg. Wait Duration</span>
                   <span style={{ fontWeight: 'bold', color: '#ffffff' }}>{systemMetricsData?.metrics?.average_queue_wait_time_seconds || 0}s</span>
@@ -2705,7 +2692,7 @@ const PipelineDashboard = () => {
             </div>
 
             {/* Autoscaling Simulation Panel */}
-            <div style={{ gridColumn: 'span 4', background: 'rgba(30, 41, 59, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px' }}>
+            <div style={{ gridColumn: 'span 4', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '20px' }}>
               <h3 style={{ fontSize: '1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
                 <Zap size={16} className="text-pink" style={{ color: '#f472b6' }} />
                 Autoscaling Intelligence
@@ -2713,13 +2700,13 @@ const PipelineDashboard = () => {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div style={{ background: 'rgba(15, 23, 42, 0.4)', padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
+                  <div style={{ background: 'var(--bg-panel)', padding: '10px', borderRadius: '4px', textAlign: 'center' }}>
                     <span style={{ fontSize: '0.65rem', color: '#64748b', display: 'block' }}>Current Workers</span>
                     <span style={{ fontSize: '1.4rem', fontWeight: '800', color: '#ffffff' }}>
                       {scalingData?.current_workers || 0}
                     </span>
                   </div>
-                  <div style={{ background: 'rgba(15, 23, 42, 0.4)', padding: '10px', borderRadius: '8px', textAlign: 'center', border: '1px solid rgba(139, 92, 246, 0.15)' }}>
+                  <div style={{ background: 'var(--bg-panel)', padding: '10px', borderRadius: '4px', textAlign: 'center', border: '1px solid rgba(139, 92, 246, 0.15)' }}>
                     <span style={{ fontSize: '0.65rem', color: '#64748b', display: 'block' }}>Recommended</span>
                     <span style={{ fontSize: '1.4rem', fontWeight: '800', color: '#a78bfa' }}>
                       {scalingData?.recommended_workers || 0}
@@ -2727,7 +2714,7 @@ const PipelineDashboard = () => {
                   </div>
                 </div>
 
-                <div style={{ background: 'rgba(139, 92, 246, 0.05)', padding: '12px', borderRadius: '8px', border: '1px dashed rgba(139, 92, 246, 0.2)', textAlign: 'center' }}>
+                <div style={{ background: 'rgba(139, 92, 246, 0.05)', padding: '12px', borderRadius: '4px', border: '1px dashed rgba(139, 92, 246, 0.2)', textAlign: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Autoscaling Simulation Action:</span>
                   <span style={{ fontSize: '0.95rem', fontWeight: '800', color: '#ffffff', display: 'block', marginTop: '4px' }}>
                     {scalingData?.scale_up_recommendation > 0 && `Scale UP by +${scalingData.scale_up_recommendation} workers`}
@@ -2750,7 +2737,7 @@ const PipelineDashboard = () => {
           </div>
 
           {/* 3. Workers Pool Table & Reliability Scores */}
-          <div style={{ background: 'rgba(30, 41, 59, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '24px' }}>
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                 <Server size={18} className="text-emerald" style={{ color: '#34d399' }} />
@@ -2766,7 +2753,7 @@ const PipelineDashboard = () => {
 
             {/* Storm Warning */}
             {systemMetricsData?.metrics?.recovery_storm_active && (
-              <div className="animate-pulse" style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', color: '#fca5a5', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="animate-pulse" style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', color: '#fca5a5', padding: '12px 16px', borderRadius: '4px', marginBottom: '16px', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <AlertTriangle size={18} style={{ color: '#ef4444' }} />
                 CRITICAL WARNING: ACTIVE RECOVERY STORM DETECTED (Multiple worker recovery cycles triggered recently).
               </div>
@@ -2774,7 +2761,7 @@ const PipelineDashboard = () => {
 
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', color: '#cbd5e1' }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid rgba(148, 163, 184, 0.15)', color: '#94a3b8', textAlign: 'left' }}>
+                <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: '#94a3b8', textAlign: 'left' }}>
                   <th style={{ padding: '10px' }}>Worker ID</th>
                   <th style={{ padding: '10px' }}>Completions (24h)</th>
                   <th style={{ padding: '10px' }}>Failures (24h)</th>
@@ -2798,7 +2785,7 @@ const PipelineDashboard = () => {
                     else if (score < 85) barColor = '#fbbf24';
                     
                     return (
-                      <tr key={wid} style={{ borderBottom: '1px solid rgba(148, 163, 184, 0.05)' }}>
+                      <tr key={wid} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                         <td style={{ padding: '12px 10px', fontWeight: 'bold', color: '#ffffff' }}>{wid}</td>
                         <td style={{ padding: '12px 10px' }}>{stats.completions}</td>
                         <td style={{ padding: '12px 10px', color: stats.failures > 0 ? '#fca5a5' : '#cbd5e1' }}>{stats.failures}</td>
@@ -2820,8 +2807,246 @@ const PipelineDashboard = () => {
             </table>
           </div>
 
+          {/* Orchestration Ownership Graph */}
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '24px' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+              <Cpu size={18} className="text-purple" style={{ color: '#a78bfa' }} />
+              Distributed Orchestrator HA Ownership Graph
+            </h3>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '20px' }}>
+              {/* List of Orchestrator Instances */}
+              <div style={{ gridColumn: 'span 6', background: 'var(--bg-panel)', borderRadius: '4px', padding: '16px', border: '1px solid var(--border-subtle)' }}>
+                <h4 style={{ margin: '0 0 14px 0', fontSize: '0.85rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Coordinators Heartbeats</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {!clusterStatus?.orchestrators || clusterStatus.orchestrators.length === 0 ? (
+                    <div style={{ color: '#64748b', fontSize: '0.8rem', padding: '12px', textAlign: 'center' }}>
+                      No active orchestrator heartbeats detected.
+                    </div>
+                  ) : (
+                    clusterStatus.orchestrators.map((inst) => {
+                      const isLeader = inst.instance_id === clusterStatus?.leader_instance_id;
+                      return (
+                        <div key={inst.instance_id} style={{
+                          background: isLeader ? 'rgba(139, 92, 246, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                          border: isLeader ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid var(--border-subtle)',
+                          borderRadius: '4px',
+                          padding: '12px 16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{
+                              width: '10px',
+                              height: '10px',
+                              borderRadius: '50%',
+                              background: inst.status === 'active' ? '#10b981' : '#ef4444',
+                              boxShadow: inst.status === 'active' ? '0 0 8px #10b981' : 'none'
+                            }} />
+                            <div>
+                              <span style={{ fontWeight: 'bold', color: '#ffffff', fontSize: '0.9rem' }}>{inst.instance_id}</span>
+                              <span style={{ display: 'block', fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>
+                                Heartbeat: {inst.last_heartbeat ? new Date(inst.last_heartbeat).toLocaleTimeString() : 'N/A'}
+                              </span>
+                            </div>
+                          </div>
+                          {isLeader && (
+                            <span style={{
+                              background: 'linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%)',
+                              color: '#ffffff',
+                              fontSize: '0.65rem',
+                              fontWeight: 'bold',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
+                              boxShadow: 'none'
+                            }}>
+                              Active Leader
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Leased Pipelines & Ownership Links */}
+              <div style={{ gridColumn: 'span 6', background: 'var(--bg-panel)', borderRadius: '4px', padding: '16px', border: '1px solid var(--border-subtle)' }}>
+                <h4 style={{ margin: '0 0 14px 0', fontSize: '0.85rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Pipeline Lease Assignments</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {!clusterStatus?.pipeline_leases || clusterStatus.pipeline_leases.length === 0 ? (
+                    <div style={{ color: '#64748b', fontSize: '0.8rem', padding: '12px', textAlign: 'center' }}>
+                      No active pipelines are leased at the moment.
+                    </div>
+                  ) : (
+                    clusterStatus.pipeline_leases.map((lease) => (
+                      <div key={lease.pipeline_id} style={{
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: '4px',
+                        padding: '12px 16px'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <span style={{ fontWeight: 'bold', color: '#ffffff', fontSize: '0.85rem' }}>
+                            Pipeline #{lease.pipeline_id}: {lease.name}
+                          </span>
+                          <span className={`badge ${lease.status}`} style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px' }}>
+                            {lease.status}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <div>Owner: <span style={{ color: '#a78bfa', fontWeight: 'bold' }}>{lease.owner_instance_id || 'unassigned'}</span></div>
+                          <div>Fencing Token (version): <span style={{ color: '#60a5fa' }}>{lease.ownership_version}</span></div>
+                          {lease.owner_lease_expires_at && (
+                            <div>Lease Expires: <span style={{ color: '#cbd5e1' }}>{new Date(lease.owner_lease_expires_at).toLocaleTimeString()}</span></div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Worker Capability Heatmap */}
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '24px' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+              <Activity size={18} className="text-emerald" style={{ color: '#34d399' }} />
+              Worker Capability Registry & Load Heatmap
+            </h3>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+              {workersRegistry.length === 0 ? (
+                <div style={{ color: '#64748b', fontSize: '0.8rem', padding: '16px', gridColumn: '1 / -1', textAlign: 'center' }}>
+                  No registered workers found in cluster registry.
+                </div>
+              ) : (
+                workersRegistry.map((w) => {
+                  const lastSeenDate = new Date(w.last_seen);
+                  const isAlive = (new Date() - lastSeenDate) < 15000 && w.status === 'active'; // 15s timeout
+                  
+                  return (
+                    <div key={w.worker_id} style={{
+                      background: 'var(--bg-panel)',
+                      border: isAlive ? '1px solid rgba(52, 211, 153, 0.25)' : '1px solid var(--border-subtle)',
+                      borderRadius: '4px',
+                      padding: '16px',
+                      position: 'relative'
+                    }}>
+                      {/* Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <span style={{ fontWeight: 'bold', color: '#ffffff', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
+                          {w.worker_id}
+                        </span>
+                        <span style={{
+                          background: isAlive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                          color: isAlive ? '#34d399' : '#f87171',
+                          fontSize: '0.65rem',
+                          fontWeight: 'bold',
+                          padding: '2px 6px',
+                          borderRadius: '4px'
+                        }}>
+                          {isAlive ? 'ONLINE' : 'DEAD'}
+                        </span>
+                      </div>
+                      
+                      {/* Capabilities */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+                        {w.capabilities?.map((cap) => {
+                          let capColor = '#94a3b8';
+                          let capBg = 'var(--border-subtle)';
+                          if (cap === 'embedding_gpu') {
+                            capColor = '#60a5fa'; // Blue
+                            capBg = 'rgba(96, 165, 250, 0.15)';
+                          } else if (cap === 'summarization_llm') {
+                            capColor = '#c084fc'; // Purple
+                            capBg = 'rgba(192, 132, 252, 0.15)';
+                          } else if (cap === 'cpu_heavy') {
+                            capColor = '#34d399'; // Green
+                            capBg = 'rgba(52, 211, 153, 0.15)';
+                          } else if (cap === 'retrieval_optimized') {
+                            capColor = '#fb923c'; // Orange
+                            capBg = 'rgba(251, 146, 60, 0.15)';
+                          }
+                          return (
+                            <span key={cap} style={{
+                              color: capColor,
+                              background: capBg,
+                              fontSize: '0.65rem',
+                              fontWeight: '600',
+                              padding: '2px 6px',
+                              borderRadius: '4px'
+                            }}>
+                              {cap}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      
+                      {/* Details */}
+                      <div style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <div>Last Seen: {lastSeenDate.toLocaleTimeString()}</div>
+                        {w.resource_limits && Object.keys(w.resource_limits).length > 0 && (
+                          <div style={{ display: 'flex', gap: '10px', marginTop: '4px', borderTop: '1px solid var(--border-subtle)', paddingTop: '4px' }}>
+                            <span>CPU: {w.resource_limits.cpu_cores || 'N/A'} cores</span>
+                            <span>GPU: {w.resource_limits.gpu_memory || 'N/A'}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Failover & Takeover Timeline */}
+          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '24px' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+              <Clock size={18} className="text-pink" style={{ color: '#f472b6' }} />
+              Cluster Failover & Takeover History
+            </h3>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '300px', overflowY: 'auto' }}>
+              {clusterFailovers.length === 0 ? (
+                <div style={{ color: '#64748b', fontSize: '0.8rem', padding: '16px', textAlign: 'center' }}>
+                  No cluster failovers or ownership takeover incidents recorded yet. System is stable.
+                </div>
+              ) : (
+                clusterFailovers.map((fail, idx) => (
+                  <div key={fail.id || idx} style={{
+                    background: 'rgba(239, 68, 68, 0.05)',
+                    borderLeft: '4px solid #ef4444',
+                    borderRadius: '0 8px 8px 0',
+                    padding: '12px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: 'bold', color: '#ffffff', fontSize: '0.85rem' }}>
+                        Pipeline #{fail.pipeline_id} Taken Over
+                      </div>
+                      <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#cbd5e1' }}>
+                        {fail.message} (Version Token: {fail.ownership_version})
+                      </p>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', textAlign: 'right' }}>
+                      <div>{new Date(fail.timestamp).toLocaleDateString()}</div>
+                      <div>{new Date(fail.timestamp).toLocaleTimeString()}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
           {/* 4. Active Backpressure Config Details */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', background: 'rgba(30, 41, 59, 0.15)', border: '1px solid rgba(148, 163, 184, 0.05)', borderRadius: '12px', padding: '20px', fontSize: '0.8rem', color: '#94a3b8' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '20px', fontSize: '0.8rem', color: '#94a3b8' }}>
             <div>
               <span style={{ fontWeight: 'bold', color: '#e2e8f0', display: 'block', marginBottom: '8px' }}>Active Backpressure Policies</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -2850,7 +3075,7 @@ const PipelineDashboard = () => {
           <div style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', gap: '20px' }}>
             
             {/* Pipeline Selector Card */}
-            <div style={{ background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px' }}>
+            <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '20px' }}>
               <h3 style={{ fontSize: '1.0rem', fontWeight: '700', marginBottom: '14px', color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <GitBranch size={16} style={{ color: '#8b5cf6' }} />
                 Select Pipeline for Replay
@@ -2862,7 +3087,7 @@ const PipelineDashboard = () => {
                   setReplayPipelineId(val);
                   if (val) loadPipelineReplayData(val);
                 }}
-                style={{ width: '100%', fontSize: '0.9rem', padding: '10px', background: 'rgba(15, 23, 42, 0.5)', color: '#fff', border: '1px solid rgba(148, 163, 184, 0.2)', borderRadius: '6px' }}
+                style={{ width: '100%', fontSize: '0.9rem', padding: '10px', background: 'rgba(0, 0, 0, 0.2)', color: '#fff', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
               >
                 <option value="">-- Choose Pipeline --</option>
                 {pipelines.map(p => (
@@ -2872,7 +3097,7 @@ const PipelineDashboard = () => {
             </div>
 
             {/* Snapshot Watermarks Card */}
-            <div style={{ background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px' }}>
+            <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                 <h3 style={{ fontSize: '1.0rem', fontWeight: '700', color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                   <Database size={16} style={{ color: '#a78bfa' }} />
@@ -2910,10 +3135,10 @@ const PipelineDashboard = () => {
                         display: 'flex', 
                         justifyContent: 'space-between', 
                         alignItems: 'center', 
-                        background: 'rgba(15, 23, 42, 0.4)', 
+                        background: 'var(--bg-panel)', 
                         padding: '8px 12px', 
                         borderRadius: '6px', 
-                        border: '1px solid rgba(148, 163, 184, 0.05)',
+                        border: '1px solid var(--border-subtle)',
                         fontSize: '0.75rem'
                       }}
                     >
@@ -2941,7 +3166,7 @@ const PipelineDashboard = () => {
             </div>
 
             {/* Global Live Event Stream Banner */}
-            <div style={{ background: 'rgba(15, 23, 42, 0.3)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '12px', padding: '20px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '20px', flex: 1, display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                 <h3 style={{ fontSize: '1.0rem', fontWeight: '700', color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                   <Activity size={16} style={{ color: '#10b981' }} />
@@ -2950,7 +3175,7 @@ const PipelineDashboard = () => {
                 <select 
                   value={globalEventCategory} 
                   onChange={(e) => setGlobalEventCategory(e.target.value)}
-                  style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(148, 163, 184, 0.2)', borderRadius: '4px', padding: '2px', color: '#fff', fontSize: '0.7rem' }}
+                  style={{ background: 'rgba(0, 0, 0, 0.25)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '2px', color: '#fff', fontSize: '0.7rem' }}
                 >
                   <option value="">All Categories</option>
                   <option value="critical">Critical</option>
@@ -2962,7 +3187,7 @@ const PipelineDashboard = () => {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, maxHeight: '350px' }}>
                 {globalEvents.map(evt => {
-                  let badgeBg = 'rgba(148, 163, 184, 0.1)';
+                  let badgeBg = 'var(--border-subtle)';
                   let badgeColor = '#94a3b8';
                   if (evt.event_category === 'critical') { badgeBg = 'rgba(239, 68, 68, 0.1)'; badgeColor = '#fca5a5'; }
                   else if (evt.event_category === 'operational') { badgeBg = 'rgba(59, 130, 246, 0.1)'; badgeColor = '#93c5fd'; }
@@ -2973,8 +3198,8 @@ const PipelineDashboard = () => {
                       key={evt.id} 
                       style={{ 
                         fontSize: '0.75rem', 
-                        background: 'rgba(30, 41, 59, 0.3)', 
-                        border: '1px solid rgba(148, 163, 184, 0.05)', 
+                        background: 'var(--bg-panel)', 
+                        border: '1px solid var(--border-subtle)', 
                         borderRadius: '6px', 
                         padding: '8px'
                       }}
@@ -3001,20 +3226,20 @@ const PipelineDashboard = () => {
           <div style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column', gap: '20px' }}>
             
             {replayPipelineId && originalReplayDag ? (
-              <div style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(148, 163, 184, 0.1)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 
                 {/* Header info */}
                 <div>
                   <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#fff', margin: 0 }}>
-                    Deterministic Time-Travel Replay
+                    Workflow Replay Sandbox
                   </h3>
                   <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#94a3b8' }}>
-                    Inspect reconstructed orchestration state at exact logical event boundaries. Replay operates in a strict sandbox.
+                    Inspect reconstructed workflow states at exact logical event boundaries. Replay operates in a strict sandbox.
                   </p>
                 </div>
 
                 {/* Timeline Scrubber Slider */}
-                <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: '16px 20px', borderRadius: '10px', border: '1px solid rgba(148, 163, 184, 0.05)' }}>
+                <div style={{ background: 'rgba(0, 0, 0, 0.2)', padding: '16px 20px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '8px' }}>
                     <span>Replay scrubber step: <strong>{replayScrubberVal} / {replayEvents.length}</strong></span>
                     <span style={{ color: '#a78bfa', fontWeight: 'bold' }}>
@@ -3044,7 +3269,7 @@ const PipelineDashboard = () => {
                 </div>
 
                 {/* Replay control buttons */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', background: 'rgba(15, 23, 42, 0.3)', padding: '12px 20px', borderRadius: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', background: 'var(--bg-panel)', padding: '12px 20px', borderRadius: '4px' }}>
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <button 
                       onClick={() => {
@@ -3059,7 +3284,7 @@ const PipelineDashboard = () => {
                     <button 
                       onClick={() => setReplayStatus(prev => prev === 'playing' ? 'paused' : 'playing')}
                       style={{ 
-                        background: replayStatus === 'playing' ? '#ef4444' : 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%)', 
+                        background: replayStatus === 'playing' ? '#ef4444' : 'var(--color-accent)', 
                         color: '#fff', 
                         border: 'none', 
                         borderRadius: '6px', 
@@ -3089,7 +3314,7 @@ const PipelineDashboard = () => {
                     <select 
                       value={replaySpeed} 
                       onChange={(e) => setReplaySpeed(parseFloat(e.target.value))}
-                      style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(148, 163, 184, 0.2)', borderRadius: '4px', padding: '4px', color: '#fff', fontSize: '0.8rem' }}
+                      style={{ background: 'rgba(0, 0, 0, 0.25)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '4px', color: '#fff', fontSize: '0.8rem' }}
                     >
                       <option value="0.5">0.5x</option>
                       <option value="1.0">1.0x (Normal)</option>
@@ -3104,11 +3329,11 @@ const PipelineDashboard = () => {
                   style={{ 
                     height: '400px',
                     background: '#090d16', 
-                    borderRadius: '12px', 
-                    border: '1px solid rgba(148, 163, 184, 0.1)',
+                    borderRadius: '4px', 
+                    border: '1px solid var(--border-subtle)',
                     position: 'relative',
                     overflow: 'hidden',
-                    boxShadow: 'inset 0 0 20px rgba(0, 0, 0, 0.6)'
+                    boxShadow: 'none'
                   }}
                 >
                   <ReactFlow
@@ -3147,8 +3372,8 @@ const PipelineDashboard = () => {
                             justifyContent: 'space-between',
                             alignItems: 'center',
                             padding: '6px 12px',
-                            background: isCurrent ? 'rgba(139, 92, 246, 0.2)' : (isActive ? 'rgba(30, 41, 59, 0.4)' : 'rgba(15, 23, 42, 0.15)'),
-                            border: isCurrent ? '1px solid rgba(139, 92, 246, 0.4)' : (isActive ? '1px solid rgba(148, 163, 184, 0.05)' : '1px solid transparent'),
+                            background: isCurrent ? 'rgba(139, 92, 246, 0.2)' : (isActive ? 'var(--bg-panel)' : 'rgba(255, 255, 255, 0.02)'),
+                            border: isCurrent ? '1px solid rgba(139, 92, 246, 0.4)' : (isActive ? '1px solid var(--border-subtle)' : '1px solid transparent'),
                             borderRadius: '6px',
                             cursor: 'pointer',
                             fontSize: '0.75rem',
@@ -3170,10 +3395,10 @@ const PipelineDashboard = () => {
 
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, border: '2px dashed rgba(148, 163, 184, 0.1)', borderRadius: '16px', padding: '60px', color: '#64748b', minHeight: '400px' }}>
-                <GitBranch size={48} style={{ opacity: 0.2, marginBottom: '16px' }} />
-                <h3 style={{ fontSize: '1.1rem', fontWeight: '700', color: '#94a3b8', marginBottom: '6px' }}>No Pipeline Selected</h3>
-                <p style={{ fontSize: '0.85rem', maxWidth: '380px', textAlign: 'center' }}>
+              <div className="empty-state-container" style={{ flex: 1, minHeight: '400px', padding: '60px' }}>
+                <GitBranch size={48} className="empty-state-icon" />
+                <h3 className="empty-state-title" style={{ fontSize: '1.1rem' }}>No Pipeline Selected</h3>
+                <p className="empty-state-text" style={{ maxWidth: '380px' }}>
                   Select a pipeline instance from the dropdown in the left column to reconstruct and time-travel debug its DAG execution path.
                 </p>
               </div>

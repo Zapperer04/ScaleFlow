@@ -104,7 +104,7 @@ const TaskLog = ({ tasks, workers, onTaskClick, page, totalPages, onPageChange }
                       gap: '6px',
                       background: 'rgba(59, 130, 246, 0.05)',
                       border: '1px dashed rgba(59, 130, 246, 0.2)',
-                      borderRadius: '8px',
+                      borderRadius: '4px',
                       padding: '10px 14px',
                       marginTop: '8px'
                     }}>

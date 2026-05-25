@@ -1,220 +1,107 @@
-<div align="center">
+# ScaleFlow
 
-# ⚡ ScaleFlow
-### Distributed Task Execution Engine
+## Distributed Workflow Orchestration & State Recovery Runtime
 
-A production-grade distributed task orchestration system built for horizontal scalability, automatic load balancing, and fault tolerance.
-
-
-![Python](https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python&logoColor=white)
-![React](https://img.shields.io/badge/React-18-61dafb?style=for-the-badge&logo=react&logoColor=black)
-![Docker](https://img.shields.io/badge/Docker-Enabled-2496ed?style=for-the-badge&logo=docker&logoColor=white)
-
-
-
-</div>
-
----
-
-## 📖 About The Project
-
-**ScaleFlow** is a robust engine designed to handle heavy background processing loads. Unlike simple cron jobs, ScaleFlow distributes tasks across multiple containerized worker nodes, ensuring that your application remains responsive even under heavy load. It features a real-time React dashboard for monitoring queue depths, worker health, and task throughput.
-
-### 🌟 Key Enhancements in V2
-- **Environment Configuration**: Secure `.env` files for production readiness.
-- **API Key Security**: Endpoints protected via headers to prevent unauthorized task injection.
-- **Relational Dependencies**: Tasks dependencies are stored in a relational `task_dependencies` SQL table rather than JSON strings.
-- **Pagination**: The API now paginates task history to prevent out-of-memory errors on large databases.
-- **Stuck Task Recovery**: The backend automatically detects worker crashes and reaps/requeues tasks stuck in the `running` state.
-- **Componentized UI**: React dashboard refactored into modular components.
-- **Operational Dashboard**: New features including detailed task modal, real-time queue depth charts, rich worker states, manual retry, and cancellation controls.
-- **Audit Logging**: Comprehensive chronological event logging per task for debugging.
-
-## ✨ Key Features
-
-* **🌐 Distributed Architecture** — Seamlessly scale horizontally by adding more worker nodes.
-* **📨 FIFO Priority Queues** — Reliable Redis-based queuing guarantees task ordering by high, medium, and low priority.
-* **💾 Persistent State & Logging** — PostgreSQL ensures no task data is lost, along with a full chronological audit trail of all task events.
-* **📊 Real-time Monitoring** — Live dashboard with interactive modals, queue stats, and active worker telemetry.
-* **🛡️ Fault Tolerance & Control** — Automatic stuck-task recovery plus API endpoints for manual task retry and cancellation.
-* **🐳 Container Native** — Fully orchestrated with Docker Compose.
+ScaleFlow is a production-grade, highly available, distributed workflow orchestration runtime built to execute complex directed acyclic graphs (DAGs) of tasks with absolute fault tolerance. Built to align architecturally with industry platforms like **Temporal** and **Netflix Conductor**, ScaleFlow manages queue scheduling, stuck task leases, split-brain coordination, and vector ingestion pipelines with zero single-points-of-failure.
 
 ---
 
 ## 🏗️ System Architecture
 
-The system utilizes a producer-consumer model where the API produces tasks and multiple worker nodes consume them concurrently.
+ScaleFlow utilizes a decoupled, event-driven producer-consumer topology:
 
 ```text
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   Client    │─────▶│  Flask API   │─────▶│ PostgreSQL  │
-│ UI (React)  │      │  (Producer)  │      │ (Persistence)│
-└─────────────┘      └──────┬───────┘      └─────────────┘
-                            │
-                            ▼
-                     ┌──────────────┐
-                     │ Redis Queue  │
-                     │  (Broker)    │
-                     └──────┬───────┘
-                            │
-             ┌──────────────┼─────────────┐
-             ▼              ▼             ▼
-        ┌─────────┐    ┌─────────┐    ┌─────────┐
-        │ Worker 1│    │ Worker 2│    │ Worker 3│
-        └─────────┘    └─────────┘    └─────────┘
+                  +-----------------------------------+
+                  |          React Client Dashboard   |
+                  +-----------------+-----------------+
+                                    | HTTP
+                                    ▼
+                  +-----------------+-----------------+
+                  |     Orchestrator Runtime (Flask)  |
+                  +-----+-----------+-----------+-----+
+                        |           |           |
+       Persistent State |           | Leases &  | Broker Queues
+        & Event Ledger  |           | Fencing   | & Heartbeats
+                        ▼           ▼           ▼
+                 +------+---+   +---+------+   ++---------+
+                 | Postgres |   | Postgres |   |  Redis   |
+                 | (Ledger) |   | (Fencing)|   | (Broker) |
+                 +----------+   +----------+   +----+-----+
+                                                    |
+                                       WRR Polling  |
+                                       & Heartbeats |
+                                                    ▼
+                                               +----+-----+
+                                               | Workers  |
+                                               +----+-----+
+                                                    |
+                                      Vector Upsert |
+                                                    ▼
+                                               +----+-----+
+                                               | Qdrant DB|
+                                               +----------+
 ```
+
+### Key Architectural Layers:
+1. **Dashboard UI (React)**: Real-time console featuring interactive DAG graphs, a live audit timeline, worker heatmaps, congestion flows, and a sandboxed time-travel replay scrubber.
+2. **Orchestrator Runtime (Flask)**: Stateless Active/Active coordinators. Orchestrators claim pipeline ownership leases, evaluate task dependencies, trigger queue admissions, and monitor heartbeats.
+3. **Message Broker (Redis)**: volatile queue broker routing tasks via capability-specific queues (e.g. `task_queue_embedding_gpu_high`) using priority allocations.
+4. **Worker Pool (Python Daemons)**: Concurrently pop and lease tasks from Redis using Weighted Round-Robin (WRR) queue selections, maintaining renewable leases.
+5. **Durable Ledger (PostgreSQL)**: Transactional storage for task states and an append-only event sourcing history database.
+6. **Vector Database (Qdrant)**: Stores document chunk embeddings and services metadata-filtered semantic search queries.
 
 ---
 
-## 🚀 Setup & Installation
+## 🚀 Quick Setup & Run
 
 ### 1. Prerequisites
 - Python 3.11+
 - Node.js 18+
 - PostgreSQL
-- Docker Desktop (for Redis and Workers)
+- Docker Desktop (for Qdrant & Redis)
 
-### 2. Database Configuration
-Create a database in PostgreSQL named `task_schedular`.
-```sql
-CREATE DATABASE task_schedular;
-```
+### 2. Configure Environment
+Create `.env` files in both `backend` and `frontend` directories using the provided `.env.example` configurations.
 
-### 3. Environment Variables
-Copy the `.env.example` files in both the `frontend` and `backend` directories and rename them to `.env`.
-
-**Backend `.env`:**
-```ini
-API_PORT=5000
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/task_schedular
-REDIS_HOST=localhost
-REDIS_PORT=6379
-ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-API_KEY=dev_secret_api_key
-TASK_RUNNING_TIMEOUT_SECONDS=300
-```
-
-**Frontend `.env`:**
-```ini
-REACT_APP_API_URL=http://localhost:5000
-REACT_APP_POLL_INTERVAL_MS=3000
-REACT_APP_API_KEY=dev_secret_api_key
-```
-
-### 4. Running the Application
-The easiest way to start everything on Windows is to run the provided orchestrator script:
+### 3. Launch Services
+Start the entire cluster (Redis, PostgreSQL, Qdrant, Workers, Flask API, React UI) on Windows using:
 ```powershell
 ./start-services.bat
 ```
-Select **Option 4** to launch the Docker Workers, Flask Backend, and React Frontend in separate windows.
+Select **Option 4** to spin up all processes in separate CLI terminals.
 
 ---
 
-## 🧠 Interview Guide
+## 🎬 5-Minute Showcase Demo Walkthrough
 
-If you are presenting this project, here is how you can explain it:
+Walk through this structured storytelling narrative to demo ScaleFlow's capabilities:
 
-**Simple Explanation:** "I built a system that handles heavy background jobs. Instead of a server trying to do everything at once and crashing, my system puts tasks in a line (queue) and has multiple background 'workers' that take turns doing the jobs. I built a live dashboard to watch them work."
-
-**Technical Explanation:** "ScaleFlow is a distributed task orchestration engine. I built a Flask REST API that acts as a producer, storing task states in PostgreSQL and pushing jobs into Redis priority queues. Containerized worker nodes consume these queues concurrently, execute the payload, and update the database. The React frontend provides real-time telemetry on system throughput."
-
-**Possible Questions & Answers:**
-* *Q: Why use Redis instead of just reading from the PostgreSQL database?*
-  * **A:** Databases use row-locks and are slow for highly concurrent queue operations. Redis operates in memory and handles atomic pop operations (`brpop`), preventing two workers from grabbing the same task.
-* *Q: What happens if a worker crashes while processing a task?*
-  * **A:** The Flask backend has a stuck-task reaping mechanism. During periodic polling, the API checks for tasks that have been in the `running` state longer than the configured timeout (e.g., 300 seconds). It automatically marks them as failed and re-queues them if retries are available. All of this is documented via the `task_logs` table for full observability.
-* *Q: How does the dependency system work?*
-  * **A:** Tasks can have relationships stored in the `task_dependencies` table. When a task completes, the worker triggers an API endpoint that checks if any pending tasks were waiting on the completed task. If all dependencies are met, the pending task is pushed into Redis.
-* *Q: How do you handle operational control when things go wrong?*
-  * **A:** We have dedicated endpoints (`POST /tasks/<id>/retry` and `POST /tasks/<id>/cancel`). If a system failure happens, operators can use the frontend Task Detail Modal to force-retry a task, which clears its error state and places it back in the appropriate priority queue. If a pending task is no longer needed, it can be cancelled, and workers will automatically skip it when fetching from the broker.
-* *Q: How do you monitor worker utilization?*
-  * **A:** Workers run a daemon thread that sends a richer heartbeat every 10 seconds containing their current execution state (`busy` or `idle`), the ID of the task they are working on, and their lifetime success/failure counts. The dashboard combines this with the `/queues/stats` endpoint to provide a complete picture of cluster health and bottleneck locations.
-
-## 📡 API Reference (New in V3)
-* `GET /tasks/<id>/details` - Returns full task payload including a chronological timeline of `TaskLog` events.
-* `POST /tasks/<id>/retry` - Requires API key. Resets a failed task and requeues it. Accepts `{"force": true}`.
-* `POST /tasks/<id>/cancel` - Requires API key. Cancels a pending/running task.
-* `GET /queues/stats` - Returns atomic LLEN counts of all Redis queues.
-* `GET /task-types` - Returns a JSON list of supported task types and their respective field schemas.
+1. **Ingest Document**: In the dashboard, upload a PDF/text file and trigger `document_processing_demo`.
+2. **Watch Live DAG**: The React Flow canvas visualizes the DAG, dynamically animating active running paths.
+3. **Execute & Store Embeddings**: Worker nodes process tasks (`parse_document` $\rightarrow$ `chunk_text`), lazy-load Sentence Transformers, generate embeddings, and upsert them to Qdrant.
+4. **Perform RAG Search**: In the Search panel, execute a semantic query. The system embeds the query, searches Qdrant, filters by file ID, and synthesizes an answer with citations.
+5. **Simulate Worker Crash**: Claim a task and terminate the worker container.
+6. **Automatic Lease Recovery**: The background recovery thread detects the expired lease in 10s, requeues the task in Redis, and increments the recovery counter.
+7. **Fencing Block**: Start the crashed worker and attempt to complete the task with its old token. The database fencing token checks reject the stale write with a `409 Conflict`.
+8. **Time-Travel Debug**: Open the Replay Sandbox, select the pipeline, and slide the scrubber. Watch the DAG state reconstruct deterministically from append-only Postgres logs.
 
 ---
 
-## 📋 Task Type Registry & Validation
+## 🎯 System Design Interview Talking Points
 
-ScaleFlow implements a schema-driven **Task Type Registry** that centralizes metadata, frontend forms representation, retry policies, and backend handler mapping.
+Be ready to explain these design tradeoffs and choices:
 
-### 1. Supported Task Types
-The following task types are registered out of the box in [task_registry.py](file:///d:/Projects/task-schedular/backend/task_registry.py):
-- **Email Delivery (`send_email`)**: Simulates sending an email notification.
-  - *Required*: `to` (email), `subject` (text), `body` (textarea)
-  - *Optional*: `cc` (email)
-- **Video Processing (`process_video`)**: Transcodes video to requested format/resolution.
-  - *Required*: `file` (text/file path)
-  - *Optional*: `format` (text), `resolution` (text)
-- **Generate Report (`generate_report`)**: Compiles statistical report data.
-  - *Required*: `report_type` (text)
-  - *Optional*: `format` (text)
+### 1. Why use a Redis + PostgreSQL Hybrid Broker?
+*Databases use row locks and index scans that degrade under concurrent queuing. Redis operates in memory with atomic popping (`rpop`, `brpop`), preventing double-claim execution. PostgreSQL guarantees ACID compliance for state ledgers, allowing safe recovery sweeps if the Redis memory broker crashes.*
 
-### 2. Payload Validation Rules
-Before a task is persisted in the database or enqueued in Redis:
-- The backend validates that the requested `type` exists in the registry.
-- Checks that all `required_fields` are provided in the payload.
-- Validates field contents:
-  - **Email fields** must contain the `@` character.
-  - **Text, textarea, and file fields** must be non-empty and contain non-whitespace text.
-- If validation fails, the API returns an `HTTP 400 Bad Request` containing a JSON error response:
-  ```json
-  {
-    "error": "Missing required field: subject"
-  }
-  ```
+### 2. How does the system handle stuck task lease recoveries?
+*Workers claim tasks by acquiring a lease token and duration (30s) stored in PostgreSQL. A worker daemon runs a background thread to call `/renew-lease` every 15s. If a worker crashes, the lease expires. The Orchestrator leader scans PostgreSQL, detects the expired lease, resets the task status to `'pending'`, increments the retry counter, and re-queues it in Redis.*
 
-### 3. Dynamic Frontend Forms
-The React `TaskForm` component automatically adjusts based on the schemas fetched from `GET /task-types`:
-- Displays a dynamic dropdown of supported task types.
-- Renders input fields (`input type="text"`, `input type="email"`, `textarea`) dynamically.
-- Automatically marks required fields with a red asterisk and configures native HTML5 validation.
-- Collects inputs and constructs the JSON payload dynamically before submission to the API.
+### 3. How does the system prevent split-brain issues?
+*Each pipeline maintains a monotonic `ownership_version` column serving as a fencing token. When a surviving orchestrator takes over an expired pipeline lease, it increments the database counter. If the partitioned orchestrator recovers and attempts a write, its lower version token is rejected by the database with a `409 Version Conflict` write gate.*
 
-### 4. How to Add a New Task Type
-To add a new background task type to the system:
-1. **Define Schema**: Add a new key-value pair to `TASK_REGISTRY` in `backend/task_registry.py`:
-   ```python
-   "my_new_task": {
-       "label": "My New Task",
-       "description": "Performs custom tasks.",
-       "required_fields": ["param_name"],
-       "optional_fields": [],
-       "frontend_fields": [
-           {"name": "param_name", "label": "Parameter Name", "type": "text", "placeholder": "Enter text"}
-       ],
-       "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
-       "estimated_runtime_seconds": 3,
-       "handler_name": "handle_my_new_task"
-   }
-   ```
-2. **Implement Worker Handler**: In `backend/worker.py`, define the handler function:
-   ```python
-   def handle_my_new_task(payload):
-       print(f"[{WORKER_ID}] Processing param: {payload.get('param_name')}", flush=True)
-       time.sleep(3)
-   ```
-3. **Register Worker Handler**: Add the mapping to `HANDLER_MAP` in `backend/worker.py`:
-   ```python
-   HANDLER_MAP = {
-       ...
-       "my_new_task": handle_my_my_task
-   }
-   ```
-4. **Restart Services**: Restart the backend server and rebuild/restart the workers (`rebuild-docker.bat`) to apply the changes.
+### 4. What is Replay Sandboxing?
+*Reconstructs in-memory pipeline state by playing append-only PostgreSQL event logs. Replays execute solely in memory, ensuring that time-travel debugging never registers duplicate enqueues, vector updates, or email dispatches. Periodic snapshots at event watermarks keep replay reconstruction cost bound to $O(1)$.*
 
----
-
-## 🛠️ Troubleshooting
-
-- **Docker Engine Not Running:** Ensure Docker Desktop is open and active. Run `docker ps` to verify that the Redis broker and worker cluster containers (`task-schedular-worker1-1`, etc.) are up and running.
-- **Worker Logs Empty:** If `docker logs` returns blank output, check that `PYTHONUNBUFFERED: "1"` is specified under the worker environment parameters in `docker-compose.yml` and that the container runs the script with python's `-u` flag (`python -u worker.py`).
-- **Redis Network Routing Mismatch:** The backend runs on the host network and resolves Redis at `localhost:6379`, whereas the containerized workers communicate over the internal Docker network and must resolve the broker at `redis:6379`. Verify these match in your configurations.
-- **Stale Pending Tasks Not In Redis:** If tasks show status `pending` in the UI but `Queued in Redis` is `No`, the tasks were saved to Postgres in a previous execution cycle but are missing from the current Redis broker memory. Open the Task Details Modal for the stale task and click **"Requeue Task"** to re-inject it into the broker, or **"Cancel Task"** to safely update its DB status.
-- **PostgreSQL Connection Errors:** Verify your local username and password match the `DATABASE_URL` in `backend/.env`.
-- **CORS Errors:** Ensure your frontend URL (e.g., `http://localhost:3000`) is listed in the `ALLOWED_ORIGINS` of the `backend/.env` file.
+### 5. How does Pipeline Backpressure work?
+*If downstream queues grow past 10 tasks, the capability is marked congested. The orchestrator blocks child task releases, marking them `'blocked'` with reason `'Upstream congestion: throttled'` and setting `deferred_at = now`. When queue depth drops, the unblock scanner releases them. Throttled tasks waiting > 60s undergo priority aging: they escalate to `'high'` and bypass backpressure bounds.*

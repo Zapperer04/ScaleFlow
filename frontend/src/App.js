@@ -1,30 +1,54 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Activity, Cpu, Database, Zap, TrendingUp, Layers, Server, Clock } from 'lucide-react';
-import { fetchTasks, fetchWorkers, getQueueStats, runIntegrationTests } from './services/api';
-import MetricCard from './components/MetricCard';
-import TaskForm from './components/TaskForm';
-import TaskLog from './components/TaskLog';
-import WorkerStatus from './components/WorkerStatus';
-import QueueStats from './components/QueueStats';
-import TaskModal from './components/TaskModal';
-import { ThroughputChart, WorkerLoadChart } from './components/Charts';
+import { 
+  Layers, Server, Activity, Cpu, RefreshCw, 
+  Play, Film, Search, BookOpen, ShieldAlert, Shield
+} from 'lucide-react';
+import { 
+  fetchTasks, fetchWorkers, getQueueStats, runIntegrationTests, fetchPipelines,
+  getDatabaseStatus, fetchVectorStats, getClusterStatus, uploadFile
+} from './services/api';
+import OverviewPage from './components/OverviewPage';
 import PipelineDashboard from './components/PipelineDashboard';
+import WorkersPage from './components/WorkersPage';
+import VectorSearchPage from './components/VectorSearchPage';
+import ReplayPage from './components/ReplayPage';
+import ArchitectureOverview from './components/ArchitectureOverview';
+import InterviewGuide from './components/InterviewGuide';
+import TaskModal from './components/TaskModal';
+import ValidationLab from './components/ValidationLab';
 import './App.css';
 
 const POLL_INTERVAL = parseInt(process.env.REACT_APP_POLL_INTERVAL_MS || "3000");
 
 function App() {
-  const [tasks, setTasks] = useState([]);
+  // Navigation & Views
+  const [activeView, setActiveView] = useState('overview');
+  const [selectedPipelineId, setSelectedPipelineId] = useState(null);
+  
+  // Data States
   const [workers, setWorkers] = useState([]);
+  const [pipelines, setPipelines] = useState([]);
   const [queueStats, setQueueStats] = useState({});
   const [stats, setStats] = useState({ total: 0, pending: 0, running: 0, completed: 0 });
-  const [throughput, setThroughput] = useState([]);
-  const [workerDistribution, setWorkerDistribution] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
+
+  // Cluster Status States
+  const [redisStatus, setRedisStatus] = useState('checking');
+  const [dbStatus, setDbStatus] = useState('checking');
+  const [qdrantStatus, setQdrantStatus] = useState('checking');
+  const [leaderId, setLeaderId] = useState('Checking...');
+  const [orchestratorCount, setOrchestratorCount] = useState(0);
+
+  // Stuck queue warning
   const queueStuckSinceRef = useRef(null);
   const [showStuckWarning, setShowStuckWarning] = useState(false);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+
+  // Ingestion upload states
+  const [fileType, setFileType] = useState('document_processing_demo');
+  const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState('');
+
+  // Test Runner States
   const [testing, setTesting] = useState(false);
   const [showTestModal, setShowTestModal] = useState(false);
   const [testResults, setTestResults] = useState(null);
@@ -37,7 +61,7 @@ function App() {
       const data = await runIntegrationTests();
       setTestResults(data);
       setShowTestModal(true);
-      loadData();
+      loadFastData();
     } catch (err) {
       setTestResults({
         status: 'failed',
@@ -50,28 +74,42 @@ function App() {
     }
   };
 
-  const loadData = useCallback(async () => {
+  const handleUploadFile = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    setUploadStatus('Ingesting file to ScaleFlow...');
     try {
-      const page1Data = await fetchTasks(1, 50);
-      const page1Tasks = page1Data.tasks || [];
-      const metadata = page1Data.metadata || { total_tasks: 0, total_pages: 1 };
-      
-      let logTasks = page1Tasks;
-      let logTotalPages = metadata.total_pages || 1;
-      
-      if (page > 1) {
-        const currentPageData = await fetchTasks(page, 50);
-        logTasks = currentPageData.tasks || [];
-        logTotalPages = currentPageData.metadata?.total_pages || 1;
-      }
-      
-      setTasks(logTasks);
-      setTotalPages(logTotalPages);
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('pipeline_type', fileType);
 
-      if (page > logTotalPages && logTotalPages > 0) {
-        setPage(logTotalPages);
-      }
+      const res = await uploadFile(formData);
+      setUploadStatus(`Upload success! Started pipeline #${res.pipeline_id}`);
+      setSelectedPipelineId(res.pipeline_id);
+      
+      // Refresh fast data
+      loadFastData();
+    } catch (err) {
+      console.error('File upload failed:', err);
+      setUploadStatus('Upload failed: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setUploading(false);
+    }
+  };
 
+  // Fast Polling: Workers, queueStats, Tasks, Pipelines (every 3s)
+  const loadFastData = useCallback(async () => {
+    try {
+      // 1. Fetch Tasks
+      const tasksData = await fetchTasks(1, 50);
+      const tasksList = tasksData.tasks || [];
+      const metadata = tasksData.metadata || { total_tasks: 0 };
+      
+      // 2. Fetch Pipelines
+      const pipelinesData = await fetchPipelines();
+      setPipelines(pipelinesData);
+
+      // 3. Fetch Workers
       const workersData = await fetchWorkers();
       const defaultWorkerIds = ['worker-1', 'worker-2', 'worker-3'];
       const mergedWorkers = defaultWorkerIds.map(id => {
@@ -100,10 +138,11 @@ function App() {
       });
       setWorkers(mergedWorkers);
 
+      // 4. Fetch Queue Stats & check stuck state
       const qs = await getQueueStats();
       setQueueStats(qs);
+      setRedisStatus('online');
 
-      // Check if queue is stuck
       const totalQueued = qs.total || 0;
       const allWorkersIdle = mergedWorkers.length > 0 && mergedWorkers.every(w => w.status === 'idle' || w.status === 'offline');
       
@@ -120,145 +159,318 @@ function App() {
 
       setStats({
         total: metadata.total_tasks,
-        pending: page1Tasks.filter(t => t.status === 'pending').length,
-        running: page1Tasks.filter(t => t.status === 'running').length,
-        completed: page1Tasks.filter(t => t.status === 'completed').length
+        pending: tasksList.filter(t => t.status === 'pending').length,
+        running: tasksList.filter(t => t.status === 'running').length,
+        completed: tasksList.filter(t => t.status === 'completed').length
       });
 
-      const throughputData = page1Tasks.slice(0, 20).reverse().reduce((acc, task, idx) => {
-        const bucket = Math.floor(idx / 4);
-        if (!acc[bucket]) acc[bucket] = { name: `T${bucket}`, count: 0 };
-        if (task.status === 'completed') acc[bucket].count++;
-        return acc;
-      }, []).filter(Boolean);
-      setThroughput(throughputData);
-
-      setWorkerDistribution([
-        { name: 'Worker 1', value: page1Tasks.filter((t, i) => i % 3 === 0 && t.status === 'completed').length },
-        { name: 'Worker 2', value: page1Tasks.filter((t, i) => i % 3 === 1 && t.status === 'completed').length },
-        { name: 'Worker 3', value: page1Tasks.filter((t, i) => i % 3 === 2 && t.status === 'completed').length },
-      ]);
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('Error loading fast telemetry:', error);
+      setRedisStatus('offline');
     }
-  }, [page]);
+  }, []);
+
+  // Slow Polling: Infrastructure health checks (every 10s)
+  const loadSlowData = useCallback(async () => {
+    // 1. Check Database connection
+    try {
+      const db = await getDatabaseStatus();
+      setDbStatus(db.status === 'connected' ? 'online' : 'offline');
+    } catch {
+      setDbStatus('offline');
+    }
+
+    // 2. Check Qdrant connection
+    try {
+      const qdrant = await fetchVectorStats();
+      setQdrantStatus(qdrant.status === 'ok' ? 'online' : 'offline');
+    } catch {
+      setQdrantStatus('offline');
+    }
+
+    // 3. Check Cluster status
+    try {
+      const cluster = await getClusterStatus();
+      setLeaderId(cluster.leader_instance_id || 'None');
+      setOrchestratorCount(cluster.orchestrators?.length || 0);
+    } catch {
+      setLeaderId('Unknown');
+      setOrchestratorCount(0);
+    }
+  }, []);
 
   useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, POLL_INTERVAL);
-    return () => clearInterval(interval);
-  }, [loadData]);
+    loadFastData();
+    loadSlowData();
 
-  const getActivityText = () => {
-    if (showStuckWarning) {
-      return "Queue has tasks but no worker has picked them";
-    }
-    const busyWorker = workers.find(w => w.status === 'busy');
-    if (busyWorker) {
-      return `${busyWorker.worker_id} processing task #${busyWorker.current_task_id}`;
-    }
-    if (workers.some(w => w.status === 'idle')) {
-      return "Workers are waiting for tasks";
-    }
-    return "All workers are offline";
+    const fastInterval = setInterval(loadFastData, POLL_INTERVAL);
+    const slowInterval = setInterval(loadSlowData, 10000);
+
+    return () => {
+      clearInterval(fastInterval);
+      clearInterval(slowInterval);
+    };
+  }, [loadFastData, loadSlowData]);
+
+  // Navigate to a view and clear pipeline state if necessary
+  const handleNavigateToView = (viewName) => {
+    setActiveView(viewName);
   };
 
-  return (
-    <div className="app">
-      <nav className="navbar">
-        <div className="nav-content">
-          <div className="nav-brand">
-            <div className="brand-icon">
-              <Layers size={28} strokeWidth={2.5} />
-            </div>
-            <div className="brand-text">
-              <span className="brand-name">ScaleFlow</span>
-              <span className="brand-tagline">Distributed Task Execution Engine</span>
-            </div>
-          </div>
-          <div className="nav-stats">
-            <div className="nav-stat">
-              <Server size={16} />
-              <span>{workers.filter(w => w.status !== 'offline').length} Workers Active</span>
-            </div>
-            <div className="nav-stat">
-              <Database size={16} />
-              <span>PostgreSQL</span>
-            </div>
-            <div className="nav-stat">
-              <Zap size={16} />
-              <span>Redis Queue</span>
-            </div>
-          </div>
-          <button 
-            onClick={handleRunTests}
-            disabled={testing}
-            style={{
-              background: testing ? 'rgba(59, 130, 246, 0.2)' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: '8px',
-              padding: '8px 16px',
-              fontSize: '0.85rem',
-              fontWeight: '600',
-              cursor: testing ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)',
-              transition: 'all 0.2s ease',
-              marginLeft: '16px'
-            }}
-          >
-            {testing ? 'Running Tests...' : 'Run System Tests'}
-          </button>
-        </div>
-      </nav>
+  const handleSelectPipeline = (pipelineId) => {
+    setSelectedPipelineId(pipelineId);
+    setActiveView('pipelines');
+  };
 
-      <div className="container">
+  const getQueuePressure = () => {
+    const totalQueued = queueStats.total || 0;
+    const maxBacklog = 50;
+    return Math.min(100, Math.round((totalQueued / maxBacklog) * 100));
+  };
+
+  const queuePressure = getQueuePressure();
+
+  return (
+    <div className="app-container">
+      
+      {/* 1. LEFT SIDEBAR */}
+      <aside className="sidebar">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+          <div className="sidebar-branding">
+            <div className="sidebar-logo">
+              <Layers size={22} />
+              <span>ScaleFlow</span>
+            </div>
+            <span className="sidebar-subtitle">Distributed Platform</span>
+          </div>
+
+          <nav className="sidebar-nav">
+            <button 
+              className={`sidebar-nav-item ${activeView === 'overview' ? 'active' : ''}`}
+              onClick={() => handleNavigateToView('overview')}
+            >
+              <Activity size={18} />
+              Overview
+            </button>
+            <button 
+              className={`sidebar-nav-item ${activeView === 'pipelines' ? 'active' : ''}`}
+              onClick={() => handleNavigateToView('pipelines')}
+            >
+              <Play size={18} />
+              Active Pipelines
+            </button>
+            <button 
+              className={`sidebar-nav-item ${activeView === 'validation-lab' ? 'active' : ''}`}
+              onClick={() => handleNavigateToView('validation-lab')}
+            >
+              <Shield size={18} />
+              Validation & Chaos Lab
+            </button>
+            <button 
+              className={`sidebar-nav-item ${activeView === 'workers' ? 'active' : ''}`}
+              onClick={() => handleNavigateToView('workers')}
+            >
+              <Server size={18} />
+              Workers Registry
+            </button>
+            <button 
+              className={`sidebar-nav-item ${activeView === 'vectors' ? 'active' : ''}`}
+              onClick={() => handleNavigateToView('vectors')}
+            >
+              <Search size={18} />
+              Vector Search / RAG
+            </button>
+            <button 
+              className={`sidebar-nav-item ${activeView === 'replay' ? 'active' : ''}`}
+              onClick={() => handleNavigateToView('replay')}
+            >
+              <Film size={18} />
+              Replay Engine
+            </button>
+            <button 
+              className={`sidebar-nav-item ${activeView === 'architecture' ? 'active' : ''}`}
+              onClick={() => handleNavigateToView('architecture')}
+            >
+              <Layers size={18} />
+              System Architecture
+            </button>
+            <button 
+              className={`sidebar-nav-item ${activeView === 'interview' ? 'active' : ''}`}
+              onClick={() => handleNavigateToView('interview')}
+            >
+              <BookOpen size={18} />
+              Interview Guide
+            </button>
+          </nav>
+        </div>
+
+        {/* Cluster Infrastructure Status Footer */}
+        <div className="sidebar-footer">
+          <div className="cluster-status-title">Infrastructure Health</div>
+          <div className="cluster-status-list">
+            <div className="cluster-status-item">
+              <span>Redis Broker</span>
+              <div className="status-dot-container">
+                <div className={`status-dot ${redisStatus}`} />
+                <span>{redisStatus === 'online' ? 'Connected' : 'Offline'}</span>
+              </div>
+            </div>
+            
+            <div className="cluster-status-item">
+              <span>Postgres DB</span>
+              <div className="status-dot-container">
+                <div className={`status-dot ${dbStatus}`} />
+                <span>{dbStatus === 'online' ? 'Connected' : 'Offline'}</span>
+              </div>
+            </div>
+
+            <div className="cluster-status-item">
+              <span>Qdrant Store</span>
+              <div className="status-dot-container">
+                <div className={`status-dot ${qdrantStatus}`} />
+                <span>{qdrantStatus === 'online' ? 'Connected' : 'Offline'}</span>
+              </div>
+            </div>
+
+            <div className="cluster-status-item" style={{ borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px', marginTop: '4px' }}>
+              <span>HA Status</span>
+              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#fff' }}>
+                {leaderId !== 'Checking...' && leaderId !== 'None' ? 'Leader' : 'Replica'}
+              </span>
+            </div>
+
+            <div className="cluster-status-item">
+              <span>Online Nodes</span>
+              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#5B8CFF' }}>
+                {workers.filter(w => w.status !== 'offline').length} Workers
+              </span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* 2. MAIN VIEWPORT */}
+      <main className="main-viewport">
+        
+        {/* Top Control Bar */}
+        <header className="top-bar">
+          <div className="top-bar-left">
+            <span className="view-title">
+              {activeView === 'overview' && 'Orchestration Control Plane'}
+              {activeView === 'pipelines' && 'Active Pipelines Workspace'}
+              {activeView === 'validation-lab' && 'System Validation & Chaos Lab'}
+              {activeView === 'workers' && 'Worker Registry Control'}
+              {activeView === 'vectors' && 'Vector Search Observability'}
+              {activeView === 'replay' && 'Deterministic Time Travel Replay'}
+              {activeView === 'architecture' && 'ScaleFlow System Architecture'}
+              {activeView === 'interview' && 'Engineering Interview Guide'}
+            </span>
+            
+            {/* Cluster pressure or backpressure modes */}
+            <span className={`mode-badge ${queuePressure > 60 ? 'backpressure' : queuePressure > 30 ? 'high-load' : ''}`}>
+              {queuePressure > 60 ? 'Queue Backpressure: Active' : queuePressure > 30 ? 'Load Mode: High' : 'Load Mode: Optimal'}
+            </span>
+          </div>
+
+          <div className="top-bar-right">
+            <div className="top-bar-stats">
+              <div>
+                <span>Orchestrators:</span>
+                <span className="top-bar-stat-val">{orchestratorCount}</span>
+              </div>
+              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '12px' }}>
+                <span>Active Leader ID:</span>
+                <span className="top-bar-stat-val" style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                  {leaderId.length > 10 ? `${leaderId.slice(0, 8)}...` : leaderId}
+                </span>
+              </div>
+              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '12px' }}>
+                <span>Queue Size:</span>
+                <span className="top-bar-stat-val" style={{ color: queuePressure > 60 ? '#EF4444' : '#fff' }}>
+                  {queueStats.total || 0}
+                </span>
+              </div>
+            </div>
+
+            <button 
+              onClick={handleRunTests}
+              disabled={testing}
+              className="btn btn-primary"
+              style={{
+                borderRadius: '4px',
+                padding: '8px 16px',
+                fontSize: '0.8rem',
+                fontWeight: '700',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: testing ? 'rgba(91, 140, 255, 0.2)' : 'var(--color-accent)',
+                boxShadow: 'none'
+              }}
+            >
+              {testing ? <RefreshCw size={14} className="animate-spin" /> : <Cpu size={14} />}
+              Run System Tests
+            </button>
+          </div>
+        </header>
+
+        {/* Global Stuck Queue reconcilliation Banner */}
         {showStuckWarning && (
-          <div className="alert-banner warning">
-            <span className="alert-icon">⚠</span>
-            <span className="alert-message">Tasks are queued but no worker is processing them. Check worker logs or Redis consumer loop.</span>
+          <div className="alert-banner warning" style={{ borderRadius: 0, borderLeft: 0, borderRight: 0, margin: 0 }}>
+            <ShieldAlert size={16} />
+            <span className="alert-message">
+              Execution queue reconciliation required. Tasks are queued in Redis but worker heartbeat loop is standing by. Check worker registers.
+            </span>
           </div>
         )}
 
-        <div className="activity-banner">
-          <div className={`activity-pulse ${workers.some(w => w.status === 'busy') ? 'busy' : showStuckWarning ? 'stuck' : workers.some(w => w.status === 'idle') ? 'idle' : 'offline'}`} />
-          <span className="activity-text">{getActivityText()}</span>
-        </div>
+        {/* 3. WORKSPACE SCROLL AREA */}
+        <div className="workspace-content">
+          {activeView === 'overview' && (
+            <OverviewPage 
+              pipelines={pipelines}
+              workers={workers}
+              queueStats={queueStats}
+              stats={stats}
+              onSelectPipeline={handleSelectPipeline}
+              onNavigateToView={handleNavigateToView}
+              onUploadFile={handleUploadFile}
+              fileType={fileType}
+              setFileType={setFileType}
+              uploading={uploading}
+              uploadStatus={uploadStatus}
+            />
+          )}
 
-        <div className="metrics-grid">
-          <MetricCard icon={Activity} label="Total Tasks" value={stats.total} trend={stats.total > 0 ? 12 : 0} color="rgba(139, 92, 246, 0.2)" gradient="linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%)" />
-          <MetricCard icon={Clock} label="Recent Pending" value={stats.pending} color="rgba(251, 191, 36, 0.2)" gradient="linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(251, 191, 36, 0.05) 100%)" />
-          <MetricCard icon={Cpu} label="Recent Executing" value={stats.running} color="rgba(59, 130, 246, 0.2)" gradient="linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)" />
-          <MetricCard icon={TrendingUp} label="Recent Completed" value={stats.completed} trend={stats.completed > 0 ? 8 : 0} color="rgba(16, 185, 129, 0.2)" gradient="linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%)" />
-        </div>
+          {activeView === 'pipelines' && (
+            <PipelineDashboard 
+              selectedPipelineId={selectedPipelineId} 
+              setSelectedPipelineId={setSelectedPipelineId} 
+            />
+          )}
 
-        <div className="dashboard-grid">
-          <QueueStats stats={queueStats} />
-          <WorkerStatus workers={workers} />
-          <ThroughputChart throughput={throughput} />
-          <WorkerLoadChart workerDistribution={workerDistribution} />
-          <TaskForm onTaskCreated={loadData} />
-          <TaskLog 
-            tasks={tasks} 
-            workers={workers} 
-            onTaskClick={setSelectedTaskId} 
-            page={page}
-            totalPages={totalPages}
-            onPageChange={setPage}
-          />
+          {activeView === 'workers' && <WorkersPage />}
+
+          {activeView === 'validation-lab' && <ValidationLab />}
+
+          {activeView === 'vectors' && <VectorSearchPage />}
+
+          {activeView === 'replay' && <ReplayPage />}
+
+          {activeView === 'architecture' && <ArchitectureOverview />}
+
+          {activeView === 'interview' && <InterviewGuide />}
         </div>
-        <PipelineDashboard />
-      </div>
-      
+      </main>
+
+      {/* Selected Task Details Modal */}
       <TaskModal 
         taskId={selectedTaskId} 
         onClose={() => setSelectedTaskId(null)} 
-        onActionComplete={loadData} 
+        onActionComplete={loadFastData} 
       />
 
+      {/* System Integration Test Modal */}
       {showTestModal && testResults && (
         <div className="modal-overlay" onClick={() => setShowTestModal(false)} style={{
           position: 'fixed',
@@ -266,23 +478,23 @@ function App() {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(15, 23, 42, 0.8)',
-          backdropFilter: 'blur(8px)',
+          background: 'rgba(11, 16, 32, 0.8)',
+          backdropFilter: 'none',
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
           zIndex: 1000
         }}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{
-            background: '#1e293b',
-            border: '1px solid #334155',
-            borderRadius: '16px',
+            background: 'var(--bg-panel)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: '4px',
             width: '90%',
             maxWidth: '650px',
             maxHeight: '80vh',
             display: 'flex',
             flexDirection: 'column',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)',
+            boxShadow: 'none',
             color: '#f8fafc'
           }}>
             <div className="modal-header" style={{
@@ -290,11 +502,11 @@ function App() {
               justifyContent: 'space-between',
               alignItems: 'center',
               padding: '16px 24px',
-              borderBottom: '1px solid #334155'
+              borderBottom: '1px solid var(--border-subtle)'
             }}>
               <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{
-                  background: testResults.status === 'success' ? '#10b981' : '#ef4444',
+                  background: testResults.status === 'success' ? 'var(--color-success)' : 'var(--color-failure)',
                   color: '#ffffff',
                   padding: '4px 10px',
                   borderRadius: '6px',
@@ -311,7 +523,7 @@ function App() {
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#94a3b8',
+                  color: 'var(--text-muted)',
                   cursor: 'pointer',
                   fontSize: '1.25rem',
                   lineHeight: '1',
@@ -332,13 +544,13 @@ function App() {
               fontFamily: 'monospace',
               fontSize: '0.875rem',
               lineHeight: 1.6,
-              background: '#0f172a'
+              background: '#090d16'
             }}>
               {testResults.logs && testResults.logs.map((log, index) => {
                 let color = '#cbd5e1';
-                if (log.includes('--- Test')) color = '#3b82f6';
-                if (log.includes('successfully') || log.includes('passed')) color = '#10b981';
-                if (log.includes('Failed') || log.includes('rejected') || log.includes('error')) color = '#fb7185';
+                if (log.includes('--- Test')) color = 'var(--color-accent)';
+                if (log.includes('successfully') || log.includes('passed')) color = 'var(--color-success)';
+                if (log.includes('Failed') || log.includes('rejected') || log.includes('error')) color = 'var(--color-failure)';
                 
                 return (
                   <div key={index} style={{ color, marginBottom: '6px', whiteSpace: 'pre-wrap' }}>
@@ -347,29 +559,21 @@ function App() {
                 );
               })}
               {testResults.error && (
-                <div style={{ color: '#ef4444', marginTop: '12px', padding: '12px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                <div style={{ color: 'var(--color-failure)', marginTop: '12px', padding: '12px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
                   <strong>Error:</strong> {JSON.stringify(testResults.error, null, 2)}
                 </div>
               )}
             </div>
             <div className="modal-footer" style={{
               padding: '16px 24px',
-              borderTop: '1px solid #334155',
+              borderTop: '1px solid var(--border-subtle)',
               display: 'flex',
               justifyContent: 'flex-end'
             }}>
               <button 
                 onClick={() => setShowTestModal(false)}
-                style={{
-                  background: '#334155',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '8px 20px',
-                  fontSize: '0.875rem',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
+                className="btn btn-secondary"
+                style={{ padding: '8px 20px' }}
               >
                 Close
               </button>

@@ -38,8 +38,20 @@ redis_client = redis.Redis(
     socket_connect_timeout=5
 )
 
-# Standard list of queue names
-PRIORITY_QUEUES = ['task_queue_high', 'task_queue_medium', 'task_queue_low']
+WORKER_CAPABILITIES_STR = os.getenv("WORKER_CAPABILITIES", "default,cpu_heavy,embedding_gpu,summarization_llm,retrieval_optimized,io_heavy")
+try:
+    WORKER_CAPABILITIES = json.loads(WORKER_CAPABILITIES_STR)
+    if not isinstance(WORKER_CAPABILITIES, list):
+        WORKER_CAPABILITIES = [WORKER_CAPABILITIES_STR]
+except Exception:
+    WORKER_CAPABILITIES = [c.strip() for c in WORKER_CAPABILITIES_STR.split(",") if c.strip()]
+
+# Build the complete list of matching queues for the worker
+ALL_WORKER_QUEUES = []
+for p in ['high', 'medium', 'low']:
+    for cap in WORKER_CAPABILITIES:
+        ALL_WORKER_QUEUES.append(f"task_queue_test_{cap}_{p}")
+        ALL_WORKER_QUEUES.append(f"task_queue_{cap}_{p}")
 
 worker_state = {
     'status': 'idle',
@@ -720,33 +732,65 @@ def execute_task(task):
     else:
         print(f"[{WORKER_ID}]   [WARN] Unknown task type / handler: {task_type}", flush=True)
 
-def get_next_task():
-    """Get next task using deterministic Weighted Round-Robin (WRR) scheduling"""
+def register_worker():
+    """Registers worker and its capabilities with the orchestrator"""
     try:
+        payload = {
+            "worker_id": WORKER_ID,
+            "capabilities": WORKER_CAPABILITIES,
+            "resource_limits": {"concurrency": 1}
+        }
+        res = requests.post(f"{API_URL}/workers/register", json=payload, headers=HEADERS, timeout=5)
+        if res.status_code in [200, 201]:
+            print(f"[{WORKER_ID}] Registered with capabilities: {WORKER_CAPABILITIES}", flush=True)
+        else:
+            print(f"[{WORKER_ID}] Registration failed: {res.status_code} - {res.text}", flush=True)
+    except Exception as e:
+        print(f"[{WORKER_ID}] Registration error: {e}", flush=True)
+
+def get_next_task():
+    """Get next task using capability-aware Weighted Round-Robin (WRR) scheduling"""
+    try:
+        try:
+            paused_queues = redis_client.smembers("scaleflow:paused_queues") or set()
+            paused_queues = {q.decode() if isinstance(q, bytes) else str(q) for q in paused_queues}
+        except Exception:
+            paused_queues = set()
+
         cycle_priorities = ['high', 'high', 'high', 'high', 'high', 'high', 'medium', 'medium', 'medium', 'low']
         # Atomic increment wrr_index in Redis
         wrr_idx = redis_client.incr('wrr_index') % len(cycle_priorities)
         target_priority = cycle_priorities[wrr_idx]
-        target_queue = f"task_queue_{target_priority}"
         
-        # 1. Try to pop from the target queue non-blockingly
-        val = redis_client.rpop(target_queue)
-        if val:
-            return (target_queue, val)
-            
+        # 1. Try to pop from target priority queues matching capabilities (test first, then prod)
+        for is_test in [True, False]:
+            for cap in WORKER_CAPABILITIES:
+                q_name = f"task_queue_test_{cap}_{target_priority}" if is_test else f"task_queue_{cap}_{target_priority}"
+                if q_name in paused_queues:
+                    continue
+                val = redis_client.rpop(q_name)
+                if val:
+                    return (q_name, val)
+                    
         # 2. Fall back to priority order non-blockingly to prevent starvation
         for p in ['high', 'medium', 'low']:
-            q_name = f"task_queue_{p}"
-            if q_name == target_queue:
+            if p == target_priority:
                 continue
-            val = redis_client.rpop(q_name)
-            if val:
-                return (q_name, val)
-                
-        # 3. If all queues are empty, block on brpop of all queues
-        result = redis_client.brpop(PRIORITY_QUEUES, timeout=5)
-        if result:
-            return result
+            for is_test in [True, False]:
+                for cap in WORKER_CAPABILITIES:
+                    q_name = f"task_queue_test_{cap}_{p}" if is_test else f"task_queue_{cap}_{p}"
+                    if q_name in paused_queues:
+                        continue
+                    val = redis_client.rpop(q_name)
+                    if val:
+                        return (q_name, val)
+                        
+        # 3. If all queues are empty, block on brpop of active (non-paused) worker queues
+        active_queues = [q for q in ALL_WORKER_QUEUES if q not in paused_queues]
+        if active_queues:
+            result = redis_client.brpop(active_queues, timeout=5)
+            if result:
+                return result
     except redis.exceptions.ConnectionError as ce:
         print(f"[{WORKER_ID}] Redis connection error during task pop: {ce}", flush=True)
         raise ce
@@ -758,7 +802,7 @@ def get_next_task():
     return None
 
 def worker_loop():
-    worker_state['last_action'] = 'Verifying Redis'
+    worker_state['last_action'] = 'Registering worker'
     print(f"[{WORKER_ID}] Worker started! Verifying Redis connection...", flush=True)
     try:
         redis_client.ping()
@@ -766,8 +810,8 @@ def worker_loop():
     except Exception as e:
         print(f"[{WORKER_ID}] CRITICAL: Failed to connect to Redis: {e}", flush=True)
     
-    print(f"[{WORKER_ID}] PRIORITY_QUEUES type: {type(PRIORITY_QUEUES)}, value: {PRIORITY_QUEUES}", flush=True)
-    print(f"[{WORKER_ID}] Listening on queue names: {PRIORITY_QUEUES}", flush=True)
+    register_worker()
+    print(f"[{WORKER_ID}] Listening on capability queues: {ALL_WORKER_QUEUES}", flush=True)
     print(f"[{WORKER_ID}] Heartbeat enabled - sending to {API_URL}/workers/heartbeat every 10s", flush=True)
     
     heartbeat_thread = threading.Thread(target=send_heartbeat, daemon=True)

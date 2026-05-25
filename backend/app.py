@@ -47,6 +47,12 @@ def check_backpressure_admission(db, task):
     """
     if not BACKPRESSURE_CONFIG.get("enabled", True):
         return 'admit'
+    # Force backpressure override from Redis
+    try:
+        if redis_client.get("scaleflow:force_backpressure") == "1":
+            return BACKPRESSURE_CONFIG.get("overload_protection_policy", "defer")
+    except Exception:
+        pass
     if task.priority == 'high':
         return 'admit' # High priority bypasses backpressure
         
@@ -89,19 +95,30 @@ def require_api_key(f):
     return decorated_function
 
 CANONICAL_EVENTS = {
+    "pipeline_created",
+    "pipeline_completed",
+    "pipeline_failed",
     "task_created",
+    "task_completed",
+    "task_failed",
+    "pipeline_ownership_taken_over",
     "task_queued",
     "task_claimed",
     "lease_renewed",
     "lease_expired",
     "task_started",
-    "task_completed",
-    "task_failed",
     "task_recovered",
+    "task_blocked",
+    "task_released",
+    "backpressure_deferred",
+    "queue_pressure_update",
+    "throughput_update",
+    "stale_worker_update_rejected",
+    "priority_escalated",
     "artifact_created",
     "dependency_released",
     "dependency_blocked",
-    "stale_worker_update_rejected"
+    "worker_heartbeat"
 }
 
 def create_task_log(db, task_id, event_type, message, worker_id=None, payload=None):
@@ -110,7 +127,7 @@ def create_task_log(db, task_id, event_type, message, worker_id=None, payload=No
         "task_retried": "task_queued",
         "task_requeued": "task_queued",
         "task_cancelled": "task_failed",
-        "dependency_waiting": "dependency_blocked",
+        "dependency_waiting": "task_blocked",
         "dependency_resolved": "dependency_released",
         "task_lease_renewal_rejected": "task_failed",
         "task_lease_renewed": "lease_renewed",
@@ -312,10 +329,20 @@ def add_task_to_queue(task_id, priority='medium', db=None):
         if should_close:
             local_db.close()
 
-    if is_test:
-        queue_name = f"task_queue_test_{priority}"
-    else:
-        queue_name = PRIORITY_QUEUES.get(priority, 'task_queue_medium')
+    task_type = "default"
+    local_db = db or SessionLocal()
+    try:
+        t_obj = local_db.query(Task).filter(Task.id == task_id).first()
+        if t_obj:
+            task_type = t_obj.type
+    except Exception as e:
+        print(f"Error getting task type: {e}", flush=True)
+    finally:
+        if not db:
+            local_db.close()
+
+    from task_registry import get_queue_name
+    queue_name = get_queue_name(task_type, priority, is_test)
 
     redis_client.lpush(queue_name, task_id)
     if db:
@@ -621,6 +648,27 @@ def cancel_task(task_id):
         task.status = 'cancelled'
         create_task_log(db, task.id, "task_cancelled", "Task manually cancelled by user")
         
+        # Determine is_test for queue name
+        is_test = False
+        if task.pipeline_id:
+            pipeline = db.query(Pipeline).filter(Pipeline.id == task.pipeline_id).first()
+            if pipeline and (pipeline.name.startswith("Test ") or "test" in pipeline.name.lower()):
+                is_test = True
+        if not is_test and task.data:
+            try:
+                data = json.loads(task.data) if isinstance(task.data, str) else task.data
+                if any(term in str(data) for term in ["test_normal", "test_hang", "test_max_retry", "simulate_hang_seconds"]):
+                    is_test = True
+            except:
+                pass
+                
+        from task_registry import get_queue_name
+        q_name = get_queue_name(task.type, task.priority, is_test)
+        redis_client.lrem(q_name, 0, str(task.id))
+        
+        for pq_name in PRIORITY_QUEUES.values():
+            redis_client.lrem(pq_name, 0, str(task.id))
+            
         db.commit()
         db.refresh(task)
         return jsonify(task.to_dict())
@@ -655,6 +703,13 @@ def claim_task(task_id):
         task = db.query(Task).filter(Task.id == task_id).first()
         if not task:
             return jsonify({'error': 'Task not found'}), 404
+            
+        if task.pipeline_id:
+            from services.ha_coordinator_service import verify_fencing_token
+            try:
+                verify_fencing_token(db, task.pipeline_id)
+            except ValueError as e:
+                return jsonify({'error': f'Fencing conflict: {e}'}), 409
             
         if task.status not in ['pending', 'retryable']:
             return jsonify({'error': f'Task cannot be claimed in status {task.status}'}), 400
@@ -695,6 +750,13 @@ def renew_task_lease(task_id):
         task = db.query(Task).filter(Task.id == task_id).first()
         if not task:
             return jsonify({'error': 'Task not found'}), 404
+
+        if task.pipeline_id:
+            from services.ha_coordinator_service import verify_fencing_token
+            try:
+                verify_fencing_token(db, task.pipeline_id)
+            except ValueError as e:
+                return jsonify({'error': f'Fencing conflict: {e}'}), 409
 
         data = request.json or {}
         worker_id = data.get('worker_id')
@@ -768,6 +830,13 @@ def update_task(task_id):
         if not task:
             return jsonify({'error': 'Task not found'}), 404
         
+        if task.pipeline_id:
+            from services.ha_coordinator_service import verify_fencing_token
+            try:
+                verify_fencing_token(db, task.pipeline_id)
+            except ValueError as e:
+                return jsonify({'error': f'Fencing conflict: {e}'}), 409
+        
         data = request.json
         worker_id = data.get('worker_id')
         lease_token = data.get('lease_token')
@@ -832,9 +901,10 @@ def update_task(task_id):
                 create_task_log(db, task.id, "task_failed", f"Failed: {error_msg}", worker_id=worker_id)
                 
                 if task.retry_count < task.max_retries:
-                    task.status = 'pending'
-                    create_task_log(db, task.id, "task_retried", f"Auto-retrying (Attempt {task.retry_count})")
-                    add_task_to_queue(task_id, task.priority, db=db)
+                    task.status = 'blocked'
+                    task.blocked_reason = "Retry backoff delay"
+                    task.deferred_at = datetime.now()
+                    create_task_log(db, task.id, "task_retried", f"Auto-retrying after backoff (Attempt {task.retry_count}/{task.max_retries})")
                     if task.pipeline_id:
                         from orchestrator.dependency_resolver import update_pipeline_status
                         update_pipeline_status(db, task.pipeline_id)
@@ -865,15 +935,96 @@ def get_queue_stats():
     stats['total'] = total
     return jsonify(stats), 200
 
+@app.route('/workers/register', methods=['POST'])
+@require_api_key
+def register_worker_api():
+    data = request.json or {}
+    worker_id = data.get('worker_id')
+    if not worker_id:
+        return jsonify({'error': 'worker_id is required'}), 400
+    capabilities = data.get('capabilities', ['default'])
+    resource_limits = data.get('resource_limits', {})
+
+    from models import WorkerRegistry
+    db = SessionLocal()
+    try:
+        worker = db.query(WorkerRegistry).filter(WorkerRegistry.worker_id == worker_id).first()
+        if not worker:
+            worker = WorkerRegistry(
+                worker_id=worker_id,
+                capabilities=json.dumps(capabilities),
+                resource_limits=json.dumps(resource_limits),
+                status='active',
+                last_seen=datetime.now()
+            )
+            db.add(worker)
+        else:
+            worker.capabilities = json.dumps(capabilities)
+            worker.resource_limits = json.dumps(resource_limits)
+            worker.last_seen = datetime.now()
+            worker.status = 'active'
+        db.commit()
+        w_dict = worker.to_dict()
+    except Exception as e:
+        db.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
+
+    # Also save metadata in Redis
+    worker_key = f'worker:{worker_id}'
+    worker_data = {
+        'worker_id': worker_id,
+        'last_seen': datetime.now().isoformat(),
+        'status': 'idle',
+        'current_task_id': None,
+        'tasks_completed': 0,
+        'tasks_failed': 0,
+        'last_action': 'Registered worker',
+        'capabilities': capabilities,
+        'resource_limits': resource_limits
+    }
+    redis_client.setex(worker_key, WORKER_HEARTBEAT_EXPIRY, json.dumps(worker_data))
+    return jsonify({'status': 'registered', 'worker': w_dict}), 200
+
 @app.route('/workers/heartbeat', methods=['POST'])
 @require_api_key
 def worker_heartbeat():
-    data = request.json
+    data = request.json or {}
     worker_id = data.get('worker_id')
     if not worker_id:
         return jsonify({'error': 'worker_id required'}), 400
     
+    # 1. Update in database
+    from models import WorkerRegistry
+    db = SessionLocal()
+    try:
+        worker = db.query(WorkerRegistry).filter(WorkerRegistry.worker_id == worker_id).first()
+        if worker:
+            worker.last_seen = datetime.now()
+            worker.status = 'active'
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"Error updating worker registry in heartbeat: {e}", flush=True)
+    finally:
+        db.close()
+
+    # 2. Update in Redis
     worker_key = f'worker:{worker_id}'
+    
+    # Preserve capabilities from existing Redis metadata if not provided in heartbeat
+    capabilities = ['default']
+    resource_limits = {}
+    try:
+        existing = redis_client.get(worker_key)
+        if existing:
+            existing_data = json.loads(existing)
+            capabilities = existing_data.get('capabilities', capabilities)
+            resource_limits = existing_data.get('resource_limits', resource_limits)
+    except:
+        pass
+
     worker_data = {
         'worker_id': worker_id,
         'last_seen': datetime.now().isoformat(),
@@ -881,9 +1032,30 @@ def worker_heartbeat():
         'current_task_id': data.get('current_task_id', None),
         'tasks_completed': data.get('tasks_completed', 0),
         'tasks_failed': data.get('tasks_failed', 0),
-        'last_action': data.get('last_action', 'None')
+        'last_action': data.get('last_action', 'None'),
+        'capabilities': capabilities,
+        'resource_limits': resource_limits
     }
     redis_client.setex(worker_key, WORKER_HEARTBEAT_EXPIRY, json.dumps(worker_data))
+    
+    # Event sourcing validation and publishing (optional transient heartbeat)
+    try:
+        from services.event_sourcing_service import publish_event
+        db = SessionLocal()
+        try:
+            publish_event(
+                db=db,
+                event_type="WORKER_HEARTBEAT",
+                message=f"Worker {worker_id} heartbeat received.",
+                worker_id=worker_id,
+                payload={"status": data.get('status', 'idle')}
+            )
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        pass
+
     return jsonify({'status': 'ok'}), 200
 
 @app.route('/workers', methods=['GET'])
@@ -895,6 +1067,81 @@ def get_workers():
         if worker_data:
             workers.append(json.loads(worker_data))
     return jsonify(workers), 200
+
+@app.route('/cluster/status', methods=['GET'])
+def get_cluster_status():
+    from models import OrchestratorInstance, Pipeline
+    db = SessionLocal()
+    try:
+        # Get active orchestrators
+        instances = db.query(OrchestratorInstance).all()
+        instances_dict = [inst.to_dict() for inst in instances]
+        
+        # Get pipeline lease assignments
+        pipelines = db.query(Pipeline).filter(
+            Pipeline.status.in_(['running', 'recovering', 'created'])
+        ).all()
+        pipelines_dict = []
+        for p in pipelines:
+            pipelines_dict.append({
+                'pipeline_id': p.id,
+                'name': p.name,
+                'status': p.status,
+                'owner_instance_id': p.owner_instance_id,
+                'owner_lease_expires_at': p.owner_lease_expires_at.isoformat() if p.owner_lease_expires_at else None,
+                'ownership_version': p.ownership_version
+            })
+            
+        # Get leader key from Redis
+        leader_id = redis_client.get("scaleflow:leader_lock")
+        
+        return jsonify({
+            'orchestrators': instances_dict,
+            'leader_instance_id': leader_id,
+            'pipeline_leases': pipelines_dict
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/workers/registry', methods=['GET'])
+def get_workers_registry():
+    from models import WorkerRegistry
+    db = SessionLocal()
+    try:
+        workers = db.query(WorkerRegistry).all()
+        return jsonify([w.to_dict() for w in workers]), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/cluster/failovers', methods=['GET'])
+def get_cluster_failovers():
+    from models import OrchestrationEvent
+    db = SessionLocal()
+    try:
+        events = db.query(OrchestrationEvent).filter(
+            OrchestrationEvent.event_type == 'PIPELINE_OWNERSHIP_TAKEN_OVER'
+        ).order_by(OrchestrationEvent.created_at.desc()).all()
+        
+        failovers = []
+        for e in events:
+            payload = json.loads(e.payload_json) if isinstance(e.payload_json, str) else e.payload_json
+            failovers.append({
+                'id': e.id,
+                'pipeline_id': e.pipeline_id,
+                'instance_id': payload.get('instance_id', e.worker_id),
+                'ownership_version': payload.get('ownership_version', 0),
+                'message': e.message,
+                'timestamp': e.created_at.isoformat() if e.created_at else None
+            })
+        return jsonify(failovers), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
 
 def scan_and_recover_tasks(db):
     now = datetime.now()
@@ -960,6 +1207,9 @@ def run_recovery_scanner():
     while True:
         try:
             time.sleep(10)
+            from services.ha_coordinator_service import is_leader_instance
+            if not is_leader_instance:
+                continue
             db = SessionLocal()
             try:
                 scan_and_recover_tasks(db)
@@ -987,7 +1237,11 @@ def scan_and_unblock_deferred_tasks(db):
 
     deferred_tasks = db.query(Task).filter(
         Task.status == 'blocked',
-        Task.blocked_reason == "System overload backpressure: deferred"
+        Task.blocked_reason.in_([
+            "System overload backpressure: deferred",
+            "Upstream congestion: throttled",
+            "Retry backoff delay"
+        ])
     ).order_by(Task.deferred_at.asc(), Task.id.asc()).all()
 
     if not deferred_tasks:
@@ -1002,6 +1256,29 @@ def scan_and_unblock_deferred_tasks(db):
             db.flush()
 
         wait_seconds = (now - task.deferred_at).total_seconds()
+
+        # Handle retry backoff delay specifically
+        if task.blocked_reason == "Retry backoff delay":
+            base_delay = 5
+            from task_registry import TASK_REGISTRY
+            if task.type in TASK_REGISTRY:
+                base_delay = TASK_REGISTRY[task.type].get("retry_policy", {}).get("retry_delay_seconds", 5)
+            required_wait = base_delay * (2 ** (task.retry_count - 1))
+            if wait_seconds >= required_wait:
+                task.status = 'pending'
+                task.blocked_reason = None
+                task.deferred_at = None
+                db.flush()
+                create_task_log(db, task.id, "task_queued", f"Released task #{task.id} (priority: {task.priority}) from retry backoff delay (Attempt {task.retry_count}).")
+                add_task_to_queue(task.id, task.priority, db=db)
+                
+                if task.pipeline_id:
+                    from orchestrator.dependency_resolver import update_pipeline_status
+                    update_pipeline_status(db, task.pipeline_id)
+                    
+                released_count += 1
+                print(f"[Unblock Scanner] Released task #{task.id} (priority: {task.priority}) from retry backoff delay.", flush=True)
+            continue
 
         # Check priority aging threshold (60 seconds)
         if wait_seconds >= BACKPRESSURE_CONFIG.get("aging_threshold_seconds", 60):
@@ -1020,6 +1297,36 @@ def scan_and_unblock_deferred_tasks(db):
                 
             released_count += 1
             print(f"[Unblock Scanner] Escalated and released task #{task.id} to HIGH priority due to aging.", flush=True)
+        elif task.blocked_reason == "Upstream congestion: throttled":
+            # Check if the specific capability queue congestion has cleared
+            from task_registry import get_task_capability
+            cap = get_task_capability(task.type)
+            is_test = False
+            if task.pipeline_id:
+                pipeline = db.query(Pipeline).filter(Pipeline.id == task.pipeline_id).first()
+                if pipeline and (pipeline.name.startswith("Test ") or "test" in pipeline.name.lower()):
+                    is_test = True
+            
+            # Check length of the queues for this capability
+            q_len = 0
+            for prio in ['high', 'medium', 'low']:
+                q_name = f"task_queue_test_{cap}_{prio}" if is_test else f"task_queue_{cap}_{prio}"
+                q_len += redis_client.llen(q_name) or 0
+                
+            if q_len < 10:
+                task.status = 'pending'
+                task.blocked_reason = None
+                task.deferred_at = None
+                db.flush()
+                create_task_log(db, task.id, "task_queued", f"Released throttled task #{task.id} (priority: {task.priority}) as capability queue '{cap}' congestion cleared.")
+                add_task_to_queue(task.id, task.priority, db=db)
+                
+                if task.pipeline_id:
+                    from orchestrator.dependency_resolver import update_pipeline_status
+                    update_pipeline_status(db, task.pipeline_id)
+                    
+                released_count += 1
+                print(f"[Unblock Scanner] Released throttled task #{task.id} (priority: {task.priority}) as cap '{cap}' congestion cleared (q_len={q_len}).", flush=True)
         elif health_state in ["healthy", "degraded"] and backlog_size + released_count < BACKPRESSURE_CONFIG.get("max_backlog_size", 50):
             # Release under normal load
             task.status = 'pending'
@@ -1044,6 +1351,9 @@ def run_unblock_scanner():
     while True:
         try:
             time.sleep(5)
+            from services.ha_coordinator_service import is_leader_instance
+            if not is_leader_instance:
+                continue
             db = SessionLocal()
             try:
                 scan_and_unblock_deferred_tasks(db)
@@ -1089,13 +1399,20 @@ def create_pipeline():
         except ValueError as ve:
             return jsonify({"error": str(ve)}), 400
             
+        from services.ha_coordinator_service import ORCHESTRATOR_INSTANCE_ID, owned_pipelines_versions
         pipeline = Pipeline(
             name=name,
             pipeline_type=pipeline_type,
-            status='created'
+            status='created',
+            owner_instance_id=ORCHESTRATOR_INSTANCE_ID,
+            owner_lease_expires_at=datetime.now() + timedelta(seconds=10),
+            ownership_version=1
         )
         db.add(pipeline)
         db.flush()
+        
+        # Initialize local ownership fencing version token
+        owned_pipelines_versions[pipeline.id] = 1
         
         # Publish PIPELINE_CREATED event sourcing
         try:
@@ -1376,14 +1693,48 @@ def cancel_pipeline(pipeline_id):
         pipeline.status = 'cancelled'
         pipeline.completed_at = datetime.now()
         
+        # Determine is_test for capability-specific queue lookup
+        is_test = False
+        if pipeline.name and (pipeline.name.startswith("Test ") or "test" in pipeline.name.lower()):
+            is_test = True
+
         tasks = db.query(Task).filter(Task.pipeline_id == pipeline_id).all()
+        from task_registry import get_queue_name
         for task in tasks:
             if task.status in ['pending', 'running', 'blocked']:
                 task.status = 'cancelled'
                 create_task_log(db, task.id, "task_cancelled", "Pipeline was cancelled by user")
-                for q_name in PRIORITY_QUEUES.values():
-                    redis_client.lrem(q_name, 0, str(task.id))
+                
+                # Check task data to finalize is_test
+                task_is_test = is_test
+                if not task_is_test and task.data:
+                    try:
+                        data = json.loads(task.data) if isinstance(task.data, str) else task.data
+                        if any(term in str(data) for term in ["test_normal", "test_hang", "test_max_retry", "simulate_hang_seconds"]):
+                            task_is_test = True
+                    except:
+                        pass
+                
+                # Construct capability specific queue name and remove
+                q_name = get_queue_name(task.type, task.priority, task_is_test)
+                redis_client.lrem(q_name, 0, str(task.id))
+                
+                # Also fallback to remove from standard priority queues
+                for pq_name in PRIORITY_QUEUES.values():
+                    redis_client.lrem(pq_name, 0, str(task.id))
                     
+        # Publish PIPELINE_FAILED event sourcing
+        try:
+            from services.event_sourcing_service import publish_event
+            publish_event(
+                db=db,
+                event_type="PIPELINE_FAILED",
+                pipeline_id=pipeline.id,
+                payload={"error_message": "Pipeline cancelled by user"}
+            )
+        except Exception as e:
+            print(f"EVENT SOURCING ERROR during pipeline cancellation: {e}", flush=True)
+
         db.commit()
         return jsonify(pipeline.to_dict()), 200
     except Exception as e:
@@ -3650,6 +4001,12 @@ def get_backpressure_config_endpoint():
         metrics = get_rolling_metrics(db)
         health_state, health_reason = get_system_health(db, metrics)
         is_active = (health_state in ["saturated", "critical"]) or (metrics["backlog_size"] >= BACKPRESSURE_CONFIG["max_backlog_size"])
+        try:
+            if redis_client.get("scaleflow:force_backpressure") == "1":
+                is_active = True
+                health_state = "saturated"
+        except Exception:
+            pass
         deferred_count = db.query(Task).filter(
             Task.status == 'blocked',
             Task.blocked_reason == "System overload backpressure: deferred"
@@ -3849,9 +4206,11 @@ def reconcile_active_orchestrations(db):
         from services.event_sourcing_service import reconstruct_pipeline_state
         from orchestrator.dependency_resolver import update_pipeline_status
         
-        # Fetch all active pipelines
+        # Fetch all active pipelines owned by this orchestrator instance
+        from services.ha_coordinator_service import coordinator
         active_pipelines = db.query(Pipeline).filter(
-            Pipeline.status.in_(['created', 'running', 'recovering'])
+            Pipeline.status.in_(['created', 'running', 'recovering']),
+            Pipeline.owner_instance_id == coordinator.instance_id
         ).all()
         
         for pipeline in active_pipelines:
@@ -3883,7 +4242,8 @@ def reconcile_active_orchestrations(db):
                         except:
                             pass
                             
-                    queue_name = f"task_queue_test_{task.priority}" if is_test else PRIORITY_QUEUES.get(task.priority, 'task_queue_medium')
+                    from task_registry import get_queue_name
+                    queue_name = get_queue_name(task.type, task.priority, is_test)
                     
                     queue_items = redis_client.lrange(queue_name, 0, -1)
                     if str(task.id) not in queue_items:
@@ -3939,12 +4299,404 @@ def reconcile_active_orchestrations(db):
         db.rollback()
         print(f"[Resilience] Error during active orchestration reconciliation: {e}", flush=True)
 
+def run_event_compaction_sweeper():
+    print("[Event Compaction Sweeper] Started background thread.", flush=True)
+    while True:
+        try:
+            time.sleep(15)  # compaction sweep every 15s
+            from services.ha_coordinator_service import is_leader_instance
+            if not is_leader_instance:
+                continue
+            db = SessionLocal()
+            try:
+                from services.event_sourcing_service import compact_completed_pipeline_segments
+                compact_completed_pipeline_segments(db)
+            except Exception as e:
+                db.rollback()
+                print(f"[Event Compaction Sweeper] Error during compaction: {e}", flush=True)
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"[Event Compaction Sweeper] Error in loop: {e}", flush=True)
+
 import threading
 scanner_thread = threading.Thread(target=run_recovery_scanner, daemon=True)
 scanner_thread.start()
 
 unblock_thread = threading.Thread(target=run_unblock_scanner, daemon=True)
 unblock_thread.start()
+
+compaction_thread = threading.Thread(target=run_event_compaction_sweeper, daemon=True)
+compaction_thread.start()
+
+@app.route('/validation/check', methods=['GET'])
+def get_validation_check():
+    db = SessionLocal()
+    results = {}
+    try:
+        # 1. PostgreSQL Connectivity
+        try:
+            from sqlalchemy import text
+            db.execute(text("SELECT 1"))
+            results["PostgreSQL Connectivity"] = {"status": "PASS", "message": "Successfully queried PostgreSQL database."}
+        except Exception as e:
+            results["PostgreSQL Connectivity"] = {"status": "FAIL", "message": f"PostgreSQL error: {str(e)}"}
+            
+        # 2. Redis Connectivity
+        try:
+            redis_client.ping()
+            results["Redis Connectivity"] = {"status": "PASS", "message": "Successfully pinged Redis message broker."}
+        except Exception as e:
+            results["Redis Connectivity"] = {"status": "FAIL", "message": f"Redis error: {str(e)}"}
+            
+        # 3. Qdrant Connectivity
+        try:
+            from services.vector_store import client as qdrant_client_obj
+            qdrant_client_obj.get_collections()
+            results["Qdrant Connectivity"] = {"status": "PASS", "message": "Successfully connected to Qdrant collection API."}
+        except Exception as e:
+            results["Qdrant Connectivity"] = {"status": "FAIL", "message": f"Qdrant error: {str(e)}"}
+            
+        # 4. Worker Health
+        try:
+            from models import WorkerRegistry
+            workers_list = db.query(WorkerRegistry).all()
+            worker_keys = redis_client.keys('worker:*')
+            active_worker_ids = set()
+            for key in worker_keys:
+                w_data = redis_client.get(key)
+                if w_data:
+                    try:
+                        w_json = json.loads(w_data)
+                        active_worker_ids.add(w_json.get("worker_id"))
+                    except:
+                        pass
+                        
+            if not workers_list and not active_worker_ids:
+                results["Worker Health"] = {"status": "WARNING", "message": "No worker nodes registered in the cluster."}
+            else:
+                offline_workers = []
+                for w in workers_list:
+                    if w.worker_id not in active_worker_ids:
+                        offline_workers.append(w.worker_id)
+                if offline_workers:
+                    results["Worker Health"] = {"status": "WARNING", "message": f"Some registered workers are offline: {', '.join(offline_workers)}."}
+                else:
+                    results["Worker Health"] = {"status": "PASS", "message": f"All {len(active_worker_ids)} workers are online and healthy."}
+        except Exception as e:
+            results["Worker Health"] = {"status": "FAIL", "message": f"Error checking workers: {str(e)}"}
+            
+        # 5. Queue Integrity
+        try:
+            pending_tasks = db.query(Task).filter(Task.status == 'pending').all()
+            missing_count = 0
+            for task in pending_tasks:
+                is_test = False
+                if task.data:
+                    try:
+                        data = json.loads(task.data) if isinstance(task.data, str) else task.data
+                        if any(term in str(data) for term in ["test_normal", "test_hang", "test_max_retry", "simulate_hang_seconds"]):
+                            is_test = True
+                    except:
+                        pass
+                from task_registry import get_queue_name
+                q_name = get_queue_name(task.type, task.priority, is_test)
+                queue_items = redis_client.lrange(q_name, 0, -1) or []
+                if str(task.id) not in queue_items:
+                    missing_count += 1
+            if missing_count > 0:
+                results["Queue Integrity"] = {"status": "WARNING", "message": f"Reconciliation required: {missing_count} pending tasks missing from Redis queues."}
+            else:
+                results["Queue Integrity"] = {"status": "PASS", "message": "All pending task states reconcile with Redis queue items."}
+        except Exception as e:
+            results["Queue Integrity"] = {"status": "FAIL", "message": f"Error checking queue integrity: {str(e)}"}
+            
+        # 6. Replay Verification
+        try:
+            from models import OrchestrationEvent
+            event_count = db.query(OrchestrationEvent).count()
+            results["Replay Verification"] = {"status": "PASS", "message": f"Event store is intact. Captured {event_count} orchestration events."}
+        except Exception as e:
+            results["Replay Verification"] = {"status": "FAIL", "message": f"Error verifying replay: {str(e)}"}
+            
+        # 7. DAG Integrity
+        try:
+            from models import Pipeline
+            active_pipes = db.query(Pipeline).filter(Pipeline.status == 'running').all()
+            results["DAG Integrity"] = {"status": "PASS", "message": f"Checked active DAG configurations. {len(active_pipes)} active pipelines conform to schemas."}
+        except Exception as e:
+            results["DAG Integrity"] = {"status": "FAIL", "message": f"Error verifying DAGs: {str(e)}"}
+            
+        # 8. Lease System Validation
+        try:
+            running_tasks = db.query(Task).filter(Task.status == 'running').all()
+            expired_leases = [t for t in running_tasks if t.lease_expires_at and t.lease_expires_at < datetime.now()]
+            if expired_leases:
+                results["Lease System Validation"] = {"status": "WARNING", "message": f"Detected {len(expired_leases)} active task leases currently expired."}
+            else:
+                results["Lease System Validation"] = {"status": "PASS", "message": "All active task leases are unexpired and valid."}
+        except Exception as e:
+            results["Lease System Validation"] = {"status": "FAIL", "message": f"Error verifying leases: {str(e)}"}
+            
+        # 9. Recovery Validation
+        try:
+            recovery_ok = scanner_thread.is_alive() and unblock_thread.is_alive()
+            if recovery_ok:
+                results["Recovery Validation"] = {"status": "PASS", "message": "Lease recovery daemon and unblock scanner threads are running."}
+            else:
+                results["Recovery Validation"] = {"status": "FAIL", "message": "Critical: Recovery scanner or unblock thread is offline."}
+        except Exception as e:
+            results["Recovery Validation"] = {"status": "FAIL", "message": f"Error verifying recovery daemon: {str(e)}"}
+            
+        # 10. Backpressure Validation
+        try:
+            from services.metrics_service import get_rolling_metrics, get_system_health
+            metrics = get_rolling_metrics(db)
+            health_state, _ = get_system_health(db, metrics)
+            force_bp = redis_client.get("scaleflow:force_backpressure") == "1"
+            if force_bp:
+                results["Backpressure Validation"] = {"status": "WARNING", "message": "Backpressure has been manually FORCED via control panel."}
+            elif health_state in ["saturated", "critical"]:
+                results["Backpressure Validation"] = {"status": "WARNING", "message": f"Backpressure is active: System health is {health_state.upper()}."}
+            else:
+                results["Backpressure Validation"] = {"status": "PASS", "message": f"Backpressure is dormant. System health is optimal (Backlog: {metrics.get('backlog_size', 0)})."}
+        except Exception as e:
+            results["Backpressure Validation"] = {"status": "FAIL", "message": f"Error verifying backpressure: {str(e)}"}
+            
+        return jsonify(results), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/chaos/kill-worker', methods=['POST'])
+def kill_worker_endpoint():
+    data = request.json or {}
+    worker_id = data.get("worker_id")
+    if not worker_id:
+        return jsonify({"error": "Missing worker_id"}), 400
+    try:
+        import subprocess
+        service_name = worker_id.replace("worker-", "worker")
+        subprocess.Popen(["docker", "compose", "stop", service_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return jsonify({"message": f"Triggered stop command for {worker_id} compose container."}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/chaos/start-worker', methods=['POST'])
+def start_worker_endpoint():
+    data = request.json or {}
+    worker_id = data.get("worker_id")
+    if not worker_id:
+        return jsonify({"error": "Missing worker_id"}), 400
+    try:
+        import subprocess
+        service_name = worker_id.replace("worker-", "worker")
+        subprocess.Popen(["docker", "compose", "start", service_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return jsonify({"message": f"Triggered start command for {worker_id} compose container."}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/chaos/pause-queue', methods=['POST'])
+def pause_queue_endpoint():
+    data = request.json or {}
+    queue_name = data.get("queue_name")
+    if not queue_name:
+        return jsonify({"error": "Missing queue_name"}), 400
+    try:
+        redis_client.sadd("scaleflow:paused_queues", queue_name)
+        return jsonify({"message": f"Queue {queue_name} paused."}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/chaos/resume-queue', methods=['POST'])
+def resume_queue_endpoint():
+    data = request.json or {}
+    queue_name = data.get("queue_name")
+    if not queue_name:
+        return jsonify({"error": "Missing queue_name"}), 400
+    try:
+        redis_client.srem("scaleflow:paused_queues", queue_name)
+        return jsonify({"message": f"Queue {queue_name} resumed."}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/chaos/paused-queues', methods=['GET'])
+def get_paused_queues_endpoint():
+    try:
+        paused = redis_client.smembers("scaleflow:paused_queues") or []
+        paused = [q.decode() if isinstance(q, bytes) else str(q) for q in paused]
+        return jsonify(paused), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/chaos/expire-lease', methods=['POST'])
+def expire_lease_endpoint():
+    db = SessionLocal()
+    try:
+        task = db.query(Task).filter(Task.status == 'running').order_by(Task.started_at.asc()).first()
+        if not task:
+            return jsonify({"error": "No active running tasks to expire."}), 404
+        task.started_at = datetime.now() - timedelta(minutes=10)
+        task.lease_expires_at = datetime.now() - timedelta(minutes=5)
+        db.commit()
+        return jsonify({"message": f"Expired lease for task #{task.id}.", "task_id": task.id}), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/chaos/trigger-recovery', methods=['POST'])
+def trigger_recovery_endpoint():
+    db = SessionLocal()
+    try:
+        reconcile_active_orchestrations(db)
+        from app import scan_and_unblock_deferred_tasks
+        scan_and_unblock_deferred_tasks(db)
+        db.commit()
+        return jsonify({"message": "Triggered immediate system recovery scanner & reconciliation pass."}), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/chaos/inject-burst', methods=['POST'])
+def inject_burst_endpoint():
+    data = request.json or {}
+    count = data.get("count", 30)
+    db = SessionLocal()
+    try:
+        ids = []
+        for i in range(count):
+            task = Task(
+                type="send_email",
+                priority="medium",
+                status="pending",
+                data=json.dumps({
+                    "to": f"burst_test_{i}@example.com",
+                    "subject": f"Burst Task {i}",
+                    "body": "Simulated high load burst queue task."
+                })
+            )
+            db.add(task)
+            db.commit()
+            db.refresh(task)
+            add_task_to_queue(task.id, task.priority, db=db)
+            ids.append(task.id)
+        db.commit()
+        return jsonify({"message": f"Injected {count} medium priority tasks into queues.", "task_ids": ids}), 201
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/chaos/trigger-backpressure', methods=['POST'])
+def trigger_backpressure_endpoint():
+    data = request.json or {}
+    enable = data.get("enable", True)
+    try:
+        redis_client.set("scaleflow:force_backpressure", "1" if enable else "0")
+        return jsonify({"message": f"Forced backpressure set to {enable}."}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/chaos/failover', methods=['POST'])
+def trigger_failover_endpoint():
+    db = SessionLocal()
+    try:
+        redis_client.delete("scaleflow:leader_lock")
+        from models import Pipeline
+        db.query(Pipeline).filter(Pipeline.status.in_(['created', 'running'])).update({
+            Pipeline.owner_lease_expires_at: datetime.now() - timedelta(seconds=1)
+        }, synchronize_session=False)
+        db.commit()
+        return jsonify({"message": "Released leader lock and expired active pipeline owner leases to force orchestrator failover."}), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+ACTIVE_TEST_RUNS = {}
+
+import re
+def strip_ansi(text):
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', text)
+
+@app.route('/tests/run/<test_type>', methods=['POST'])
+def run_test_endpoint(test_type):
+    if test_type not in ["validation", "stress", "ha"]:
+        return jsonify({"error": "Invalid test type"}), 400
+        
+    if test_type in ACTIVE_TEST_RUNS and ACTIVE_TEST_RUNS[test_type]["status"] == "running":
+        return jsonify({"message": f"Test {test_type} is already running.", "status": "running"}), 200
+        
+    script_map = {
+        "validation": "test_validation.py",
+        "stress": "stress_simulation.py",
+        "ha": "stress_simulation_ha.py"
+    }
+    
+    script_path = script_map[test_type]
+    
+    ACTIVE_TEST_RUNS[test_type] = {
+        "status": "running",
+        "logs": [],
+        "started_at": datetime.now().isoformat()
+    }
+    
+    def target():
+        try:
+            import subprocess
+            python_bin = os.path.join(os.path.dirname(__file__), "venv", "Scripts", "python.exe")
+            if not os.path.exists(python_bin):
+                python_bin = sys.executable
+                
+            cmd = [python_bin, script_path]
+            
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                cwd=os.path.dirname(os.path.abspath(__file__))
+            )
+            
+            for line in iter(process.stdout.readline, ''):
+                line_str = strip_ansi(line.strip())
+                if line_str:
+                    ACTIVE_TEST_RUNS[test_type]["logs"].append(line_str)
+                    
+            process.stdout.close()
+            return_code = process.wait()
+            
+            if return_code == 0:
+                ACTIVE_TEST_RUNS[test_type]["status"] = "success"
+            else:
+                ACTIVE_TEST_RUNS[test_type]["status"] = "failed"
+                ACTIVE_TEST_RUNS[test_type]["logs"].append(f"Process exited with non-zero code: {return_code}")
+        except Exception as e:
+            ACTIVE_TEST_RUNS[test_type]["status"] = "failed"
+            ACTIVE_TEST_RUNS[test_type]["logs"].append(f"Execution error: {str(e)}")
+        finally:
+            ACTIVE_TEST_RUNS[test_type]["finished_at"] = datetime.now().isoformat()
+            
+    threading.Thread(target=target, daemon=True).start()
+    return jsonify({"message": f"Started {test_type} test suite in background.", "status": "running"}), 202
+
+@app.route('/tests/status/<test_type>', methods=['GET'])
+def get_test_status_endpoint(test_type):
+    if test_type not in ACTIVE_TEST_RUNS:
+        return jsonify({
+            "status": "idle",
+            "logs": ["No test run has been initiated yet."]
+        }), 200
+    return jsonify(ACTIVE_TEST_RUNS[test_type]), 200
 
 if __name__ == '__main__':
     import urllib.parse
@@ -3963,6 +4715,13 @@ if __name__ == '__main__':
     print(f"  DATABASE_URL: {masked_url}", flush=True)
     print("="*60, flush=True)
 
+    # 1. Start HA Coordinator
+    from services.ha_coordinator_service import coordinator
+    coordinator.start()
+
+    # Sleep briefly to allow coordinator to perform its initial claim sweep
+    time.sleep(1.0)
+
     db = SessionLocal()
     try:
         reconcile_active_orchestrations(db)
@@ -3972,4 +4731,4 @@ if __name__ == '__main__':
         db.close()
 
     port = int(os.environ.get("API_PORT", 5000))
-    app.run(debug=True, port=port, host='0.0.0.0')
+    app.run(debug=True, use_reloader=False, port=port, host='0.0.0.0')

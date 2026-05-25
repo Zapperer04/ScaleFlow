@@ -20,7 +20,7 @@ export const ThroughputChart = ({ throughput }) => (
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
         <XAxis dataKey="name" stroke="#9ca3af" />
         <YAxis stroke="#9ca3af" />
-        <Tooltip contentStyle={{ background: '#1f2937', border: 'none', borderRadius: '8px', color: '#fff' }} />
+        <Tooltip contentStyle={{ background: '#1f2937', border: 'none', borderRadius: '4px', color: '#fff' }} />
         <Area type="monotone" dataKey="count" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorThroughput)" />
       </AreaChart>
     </ResponsiveContainer>
@@ -48,7 +48,7 @@ export const WorkerLoadChart = ({ workerDistribution }) => (
             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
           ))}
         </Pie>
-        <Tooltip contentStyle={{ background: '#1f2937', border: 'none', borderRadius: '8px', color: '#fff' }} />
+        <Tooltip contentStyle={{ background: '#1f2937', border: 'none', borderRadius: '4px', color: '#fff' }} />
       </PieChart>
     </ResponsiveContainer>
     <div className="legend">
