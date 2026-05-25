@@ -10,7 +10,6 @@ import {
 import OverviewPage from './components/OverviewPage';
 import PipelineDashboard from './components/PipelineDashboard';
 import WorkersPage from './components/WorkersPage';
-import VectorSearchPage from './components/VectorSearchPage';
 import ReplayPage from './components/ReplayPage';
 import ArchitectureOverview from './components/ArchitectureOverview';
 import InterviewGuide from './components/InterviewGuide';
@@ -245,19 +244,26 @@ function App() {
           </div>
 
           <nav className="sidebar-nav">
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', paddingLeft: '8px' }}>
+              Main Experience
+            </div>
             <button 
               className={`sidebar-nav-item ${activeView === 'overview' ? 'active' : ''}`}
               onClick={() => handleNavigateToView('overview')}
             >
               <Activity size={18} />
-              Overview
+              AI Document Workspace
             </button>
+
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '24px', marginBottom: '8px', paddingLeft: '8px' }}>
+              Advanced Runtime Tools
+            </div>
             <button 
               className={`sidebar-nav-item ${activeView === 'pipelines' ? 'active' : ''}`}
               onClick={() => handleNavigateToView('pipelines')}
             >
               <Play size={18} />
-              Active Pipelines
+              DAG Orchestration
             </button>
             <button 
               className={`sidebar-nav-item ${activeView === 'validation-lab' ? 'active' : ''}`}
@@ -272,13 +278,6 @@ function App() {
             >
               <Server size={18} />
               Workers Registry
-            </button>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'vectors' ? 'active' : ''}`}
-              onClick={() => handleNavigateToView('vectors')}
-            >
-              <Search size={18} />
-              Vector Search / RAG
             </button>
             <button 
               className={`sidebar-nav-item ${activeView === 'replay' ? 'active' : ''}`}
@@ -439,6 +438,9 @@ function App() {
               setFileType={setFileType}
               uploading={uploading}
               uploadStatus={uploadStatus}
+              selectedPipelineId={selectedPipelineId}
+              setSelectedPipelineId={setSelectedPipelineId}
+              onSelectTask={setSelectedTaskId}
             />
           )}
 
@@ -452,8 +454,6 @@ function App() {
           {activeView === 'workers' && <WorkersPage />}
 
           {activeView === 'validation-lab' && <ValidationLab />}
-
-          {activeView === 'vectors' && <VectorSearchPage />}
 
           {activeView === 'replay' && <ReplayPage />}
 
