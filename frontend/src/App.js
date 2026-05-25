@@ -431,6 +431,9 @@ function App() {
               workers={workers}
               queueStats={queueStats}
               stats={stats}
+              redisStatus={redisStatus}
+              dbStatus={dbStatus}
+              qdrantStatus={qdrantStatus}
               onSelectPipeline={handleSelectPipeline}
               onNavigateToView={handleNavigateToView}
               onUploadFile={handleUploadFile}

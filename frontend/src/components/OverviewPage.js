@@ -3,7 +3,7 @@ import {
   Upload, Activity, Database, Search, Sparkles, Loader2, ChevronDown, ChevronUp, FileText, BookOpen
 } from 'lucide-react';
 import { 
-  createRetrievalPipeline, fetchRetrievalPipelineAnswer, fetchPipelineDetails, fetchTasks 
+  createRetrievalPipeline, fetchRetrievalPipelineAnswer, fetchPipelineDetails 
 } from '../services/api';
 
 const OverviewPage = ({ 
@@ -11,7 +11,10 @@ const OverviewPage = ({
   workers, 
   queueStats, 
   stats, 
-  onSelectPipeline, 
+  redisStatus,
+  dbStatus,
+  qdrantStatus,
+  onSelectPipeline,
   onNavigateToView,
   onUploadFile,
   fileType,
@@ -26,8 +29,7 @@ const OverviewPage = ({
   // Pipeline details state
   const [pipelineDetails, setPipelineDetails] = useState(null);
   
-  // Timeline log state (fallback to general tasks if no active pipeline)
-  const [generalTasks, setGeneralTasks] = useState([]);
+  // Timeline log state
   const [expandedTasks, setExpandedTasks] = useState(new Set());
 
   // RAG query state
@@ -62,26 +64,7 @@ const OverviewPage = ({
     };
   }, [selectedPipelineId]);
 
-  // Poll general tasks if no active pipeline
-  useEffect(() => {
-    let timer;
-    const getTasks = async () => {
-      try {
-        const res = await fetchTasks(1, 10);
-        setGeneralTasks(res.tasks || []);
-      } catch (err) {
-        console.error('Failed to load recent tasks:', err);
-      }
-    };
-    
-    if (!selectedPipelineId) {
-      getTasks();
-      timer = setInterval(getTasks, 3000);
-    }
-    return () => {
-      if (timer) clearInterval(timer);
-    };
-  }, [selectedPipelineId]);
+
 
   // Auto-focus and highlight RAG query input when pipeline finishes
   const pipelineStatus = pipelineDetails?.pipeline?.status;
@@ -358,7 +341,7 @@ const OverviewPage = ({
     });
   };
 
-  const activeTasks = pipelineDetails?.tasks || generalTasks;
+  const activeTasks = pipelineDetails?.tasks || [];
   const totalQueued = queueStats.total || 0;
   const onlineWorkers = workers.filter(w => w.status !== 'offline');
 
@@ -395,15 +378,30 @@ const OverviewPage = ({
         <div style={{ display: 'flex', gap: '20px' }}>
           <div>
             <span>PostgreSQL: </span>
-            <span style={{ color: 'var(--color-success)', fontWeight: 'bold' }}>ONLINE</span>
+            <span style={{ 
+              color: dbStatus === 'online' ? 'var(--color-success)' : dbStatus === 'checking' ? 'var(--color-warning)' : 'var(--color-failure)', 
+              fontWeight: 'bold' 
+            }}>
+              {dbStatus === 'online' ? 'ONLINE' : dbStatus === 'checking' ? 'CHECKING...' : 'OFFLINE'}
+            </span>
           </div>
           <div style={{ borderLeft: '1px solid var(--border-subtle)', paddingLeft: '20px' }}>
             <span>Redis Broker: </span>
-            <span style={{ color: 'var(--color-success)', fontWeight: 'bold' }}>ONLINE</span>
+            <span style={{ 
+              color: redisStatus === 'online' ? 'var(--color-success)' : redisStatus === 'checking' ? 'var(--color-warning)' : 'var(--color-failure)', 
+              fontWeight: 'bold' 
+            }}>
+              {redisStatus === 'online' ? 'ONLINE' : redisStatus === 'checking' ? 'CHECKING...' : 'OFFLINE'}
+            </span>
           </div>
           <div style={{ borderLeft: '1px solid var(--border-subtle)', paddingLeft: '20px' }}>
             <span>Qdrant Core: </span>
-            <span style={{ color: 'var(--color-success)', fontWeight: 'bold' }}>ONLINE</span>
+            <span style={{ 
+              color: qdrantStatus === 'online' ? 'var(--color-success)' : qdrantStatus === 'checking' ? 'var(--color-warning)' : 'var(--color-failure)', 
+              fontWeight: 'bold' 
+            }}>
+              {qdrantStatus === 'online' ? 'ONLINE' : qdrantStatus === 'checking' ? 'CHECKING...' : 'OFFLINE'}
+            </span>
           </div>
         </div>
         <div style={{ display: 'flex', gap: '16px', fontFamily: 'monospace' }}>
@@ -806,7 +804,7 @@ const OverviewPage = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', maxHeight: 'calc(100vh - 250px)' }}>
               {activeTasks.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                  Waiting for task logs...
+                  Awaiting active document pipeline execution logs...
                 </div>
               ) : (
                 activeTasks.map((task) => {
@@ -862,7 +860,7 @@ const OverviewPage = ({
                             <span style={{ color: 'var(--text-muted)' }}>Task ID:</span> # {task.id}
                           </div>
                           <div>
-                            <span style={{ color: 'var(--text-muted)' }}>Duration:</span> {task.duration ? `${task.duration.toFixed(2)}s` : 'running'}
+                            <span style={{ color: 'var(--text-muted)' }}>Duration:</span> {task.execution_duration !== undefined && task.execution_duration !== null ? `${task.execution_duration.toFixed(2)}s` : 'running'}
                           </div>
                           <div>
                             <span style={{ color: 'var(--text-muted)' }}>Queue Name:</span> <code style={{ color: 'var(--color-accent)' }}>{task.queue_name || 'default'}</code>
