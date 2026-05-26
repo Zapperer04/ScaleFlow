@@ -136,7 +136,7 @@ class HACoordinator:
         global owned_pipelines_versions
         pids = list(owned_pipelines_versions.keys())
         now = datetime.now()
-        new_expiry = now + timedelta(seconds=10)
+        new_expiry = now + timedelta(seconds=30)
         
         for pid in pids:
             try:
@@ -157,7 +157,7 @@ class HACoordinator:
     def _claim_active_pipelines(self, db):
         global owned_pipelines_versions
         now = datetime.now()
-        new_expiry = now + timedelta(seconds=10)
+        new_expiry = now + timedelta(seconds=30)
         
         # Query pipelines that are running/recovering and either unowned or lease expired
         active_pipes = db.query(Pipeline).filter(
@@ -222,7 +222,7 @@ def verify_fencing_token(db, pipeline_id):
     
     # 1. JIT Claim if unowned or lease has expired
     if pipe.owner_instance_id is None or pipe.owner_lease_expires_at < now:
-        new_expiry = now + timedelta(seconds=10)
+        new_expiry = now + timedelta(seconds=30)
         stmt = text(
             "UPDATE pipelines "
             "SET owner_instance_id = :my_id, owner_lease_expires_at = :expiry, ownership_version = ownership_version + 1 "

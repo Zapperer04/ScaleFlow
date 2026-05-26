@@ -1200,6 +1200,52 @@ def scan_and_recover_tasks(db):
             db.commit()
     return len(expired_tasks)
 
+def scan_and_fix_missing_queue_tasks(db):
+    """
+    Scans for 'pending' tasks that are NOT present in their Redis queue and re-enqueues them.
+    This handles the case where the Flask server restarts and tasks created after startup
+    are never pushed to Redis (since the startup reconciliation already ran).
+    """
+    try:
+        pending_tasks = db.query(Task).filter(
+            Task.status == 'pending'
+        ).all()
+        
+        requeued = 0
+        for task in pending_tasks:
+            is_test = False
+            if task.pipeline_id:
+                pipeline = db.query(Pipeline).filter(Pipeline.id == task.pipeline_id).first()
+                if pipeline and pipeline.name:
+                    if pipeline.name.startswith("Test ") or "test" in pipeline.name.lower():
+                        is_test = True
+            
+            if not is_test and task.data:
+                try:
+                    data = json.loads(task.data) if isinstance(task.data, str) else task.data
+                    if any(term in str(data) for term in ["test_normal", "test_hang", "test_max_retry", "simulate_hang_seconds"]):
+                        is_test = True
+                except Exception:
+                    pass
+            
+            from task_registry import get_queue_name
+            queue_name = get_queue_name(task.type, task.priority, is_test)
+            queue_items = redis_client.lrange(queue_name, 0, -1)
+            task_id_str = str(task.id)
+            if task_id_str not in [item.decode() if isinstance(item, bytes) else str(item) for item in queue_items]:
+                redis_client.lpush(queue_name, task.id)
+                create_task_log(db, task.id, "task_queued", f"[Queue Heal] Re-enqueued missing pending task to {queue_name}")
+                requeued += 1
+                print(f"[Queue Heal] Task #{task.id} ({task.type}) was missing from Redis queue '{queue_name}'. Re-enqueued.", flush=True)
+        
+        if requeued > 0:
+            db.commit()
+        return requeued
+    except Exception as e:
+        db.rollback()
+        print(f"[Queue Heal] Error in scan_and_fix_missing_queue_tasks: {e}", flush=True)
+        return 0
+
 def run_recovery_scanner():
     print("[Recovery Scanner] Started background thread.", flush=True)
     while True:
@@ -1211,6 +1257,7 @@ def run_recovery_scanner():
             db = SessionLocal()
             try:
                 scan_and_recover_tasks(db)
+                scan_and_fix_missing_queue_tasks(db)
             except Exception as e:
                 db.rollback()
                 print(f"[Recovery Scanner] Error during scan: {e}", flush=True)
@@ -1218,6 +1265,7 @@ def run_recovery_scanner():
                 db.close()
         except Exception as e:
             print(f"[Recovery Scanner] Error in loop: {e}", flush=True)
+
 
 def scan_and_unblock_deferred_tasks(db):
     """

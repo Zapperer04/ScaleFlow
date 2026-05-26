@@ -964,7 +964,18 @@ def worker_loop():
                 max_attempts = 5
                 response = None
                 for attempt in range(max_attempts):
-                    response = requests.post(f"{API_URL}/tasks/{task_id}/claim", json={'worker_id': WORKER_ID}, headers=HEADERS, timeout=5)
+                    try:
+                        response = requests.post(f"{API_URL}/tasks/{task_id}/claim", json={'worker_id': WORKER_ID}, headers=HEADERS, timeout=15)
+                    except requests.exceptions.Timeout:
+                        print(f"[{WORKER_ID}] Claim attempt {attempt+1} timed out for task #{task_id}", flush=True)
+                        response = None
+                        time.sleep(0.5)
+                        continue
+                    except requests.exceptions.ConnectionError as ce:
+                        print(f"[{WORKER_ID}] Claim connection error for task #{task_id}: {ce}", flush=True)
+                        response = None
+                        time.sleep(1)
+                        continue
                     if response.status_code == 200:
                         break
                     elif response.status_code == 400 and attempt < max_attempts - 1:
