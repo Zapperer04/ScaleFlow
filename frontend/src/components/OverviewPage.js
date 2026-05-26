@@ -55,7 +55,7 @@ const OverviewPage = ({
         }
       };
       getDetails();
-      timer = setInterval(getDetails, 2000);
+      timer = setInterval(getDetails, 5000);
     } else {
       setPipelineDetails(null);
     }

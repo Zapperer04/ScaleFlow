@@ -787,13 +787,11 @@ def renew_task_lease(task_id):
             db.commit()
             return jsonify({'error': 'Lease renewal rejected. Token mismatch.'}), 409
 
-        # Validate current lease has not expired
-        if task.lease_expires_at is None or task.lease_expires_at < datetime.now():
-            create_task_log(db, task.id, "task_lease_renewal_rejected", 
-                            f"Lease renewal rejected for worker {worker_id}: lease already expired", 
-                            worker_id=worker_id)
-            db.commit()
-            return jsonify({'error': 'Lease renewal rejected. Lease already expired.'}), 409
+        # Validate current lease has not expired (allow late renewal if task is still owned and running)
+        is_late = False
+        if task.lease_expires_at is not None and task.lease_expires_at < datetime.now():
+            is_late = True
+            print(f"[Lease Renewal] Late lease renewal accepted for task #{task.id} (worker={worker_id}). Expiry was {task.lease_expires_at}.", flush=True)
 
         # Extend lease_expires_at = now + extend_by_seconds
         task.lease_expires_at = datetime.now() + timedelta(seconds=extend_by_seconds)
@@ -1150,7 +1148,7 @@ def scan_and_recover_tasks(db):
         Task.status == 'running',
         Task.lease_expires_at.isnot(None),
         Task.lease_expires_at < now
-    ).all()
+    ).with_for_update(skip_locked=True).all()
     
     tasks_to_requeue = []
     for task in expired_tasks:
@@ -1826,6 +1824,23 @@ def get_artifact_content(artifact_id):
 
 UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "storage", "uploads"))
 
+import re
+
+def sanitize_filename(filename):
+    # Extract only the base name (no folders/traversals)
+    filename = os.path.basename(filename)
+    # Remove characters that are invalid in Windows and Linux file systems: \ / : * ? " < > |
+    filename = re.sub(r'[\\/*?:"<>|]', "", filename)
+    # Replace spaces, single quotes, double quotes, backticks, and smart quotes with underscores
+    filename = re.sub(r'[\s’\'`“‘”]+', "_", filename)
+    # Limit strictly to safe ASCII alphanumeric characters, periods, dashes, and underscores
+    # This prevents Unicode encoding mismatches between DB records and local filesystems
+    filename = "".join(c for c in filename if c.isalnum() or c in "._-")
+    # If filename is empty after cleaning, use a safe default
+    if not filename or filename in (".", ".."):
+        filename = f"upload_{uuid.uuid4().hex[:8]}"
+    return filename
+
 @app.route('/files/upload', methods=['POST'])
 @require_api_key
 def upload_file():
@@ -1839,17 +1854,18 @@ def upload_file():
     pipeline_type_req = request.form.get('pipeline_type')
     
     db = SessionLocal()
+    temp_path = None
+    final_path = None
     try:
         original_filename = file.filename
-        if len(original_filename) > 250:
-            base, ext = os.path.splitext(original_filename)
-            max_base = 250 - len(ext)
-            if max_base > 0:
-                original_filename = base[:max_base] + ext
-            else:
-                original_filename = original_filename[:250]
-        _, ext = os.path.splitext(original_filename)
-        file_type = ext.lower().replace('.', '')
+        base, ext = os.path.splitext(original_filename)
+        sanitized_base = sanitize_filename(base)[:80]
+        sanitized_ext = sanitize_filename(ext)[:10]
+        if not sanitized_ext.startswith("."):
+            sanitized_ext = "." + sanitized_ext
+        original_filename = f"{sanitized_base}{sanitized_ext}"
+        
+        file_type = sanitized_ext.lower().replace('.', '')
         if not file_type:
             file_type = 'txt'
             
@@ -1858,18 +1874,18 @@ def upload_file():
         if pipeline_type_req and pipeline_type_req != 'auto':
             pipeline_type = pipeline_type_req
         else:
-            if ext.lower() == '.txt':
+            if sanitized_ext.lower() == '.txt':
                 pipeline_type = 'document_processing_demo'
-            elif ext.lower() == '.log':
+            elif sanitized_ext.lower() == '.log':
                 pipeline_type = 'log_analysis_demo'
-            elif ext.lower() == '.pdf':
+            elif sanitized_ext.lower() == '.pdf':
                 pipeline_type = 'document_processing_demo'
             else:
                 pipeline_type = 'document_processing_demo'
                 
-        # 1. Save file to temporary path
+        # 1. Save file to temporary path (using UUID-only name to prevent MAX_PATH)
         os.makedirs(UPLOAD_DIR, exist_ok=True)
-        temp_filename = f"tmp_{uuid.uuid4()}_{original_filename}"
+        temp_filename = f"tmp_{uuid.uuid4()}{sanitized_ext}"
         temp_path = os.path.join(UPLOAD_DIR, temp_filename)
         
         sha256 = hashlib.sha256()
@@ -1899,6 +1915,7 @@ def upload_file():
         final_filename = f"{file_record.id}_{original_filename}"
         final_path = os.path.join(UPLOAD_DIR, final_filename)
         os.replace(temp_path, final_path)
+        temp_path = None # Successfully renamed, no longer needs cleanup
         
         storage_uri = f"storage/uploads/{final_filename}"
         file_record.storage_uri = storage_uri
@@ -1942,8 +1959,7 @@ def upload_file():
         try:
             dag_definition = get_dag_template(pipeline_type, {})
         except ValueError as ve:
-            db.rollback()
-            return jsonify({"error": str(ve)}), 400
+            raise ve
             
         node_to_task_map = {}
         for node in dag_definition["nodes"]:
@@ -2008,6 +2024,17 @@ def upload_file():
         
     except Exception as e:
         db.rollback()
+        # Clean up files on error to prevent leakages
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+        if final_path and os.path.exists(final_path):
+            try:
+                os.remove(final_path)
+            except:
+                pass
         return jsonify({"error": str(e)}), 500
     finally:
         db.close()
@@ -4750,4 +4777,6 @@ if __name__ == '__main__':
         db.close()
 
     port = int(os.environ.get("API_PORT", 5000))
-    app.run(debug=True, use_reloader=False, port=port, host='0.0.0.0')
+    from waitress import serve
+    print(f"Starting multi-threaded Waitress WSGI server on port {port} with 8 threads...", flush=True)
+    serve(app, host='0.0.0.0', port=port, threads=8)

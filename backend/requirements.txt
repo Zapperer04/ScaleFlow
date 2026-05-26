@@ -10,3 +10,4 @@ qdrant-client==1.8.2
 numpy<2.0.0
 sentence-transformers==2.5.1
 pypdf==6.12.1
+waitress==3.0.1

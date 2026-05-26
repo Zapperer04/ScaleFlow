@@ -40,10 +40,13 @@ def load_artifact_from_disk(storage_uri):
     # The storage_uri is relative to the backend directory, e.g. storage/...
     if storage_uri.startswith("storage/"):
         rel_path = storage_uri[len("storage/"):]
+    elif storage_uri.startswith("storage\\"):
+        rel_path = storage_uri[len("storage\\"):]
     else:
         rel_path = storage_uri
         
-    file_path = os.path.join(BASE_STORAGE_DIR, rel_path)
+    rel_path = rel_path.replace("\\", "/")
+    file_path = os.path.normpath(os.path.join(BASE_STORAGE_DIR, rel_path))
     
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Artifact file not found at {file_path}")

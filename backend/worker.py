@@ -146,9 +146,14 @@ def get_uploaded_file_path(pipeline_id):
                     from context.artifact_store import BASE_STORAGE_DIR
                     if storage_uri.startswith("storage/"):
                         rel_path = storage_uri[len("storage/"):]
+                    elif storage_uri.startswith("storage\\"):
+                        rel_path = storage_uri[len("storage\\"):]
                     else:
                         rel_path = storage_uri
-                    return os.path.join(BASE_STORAGE_DIR, rel_path)
+                    # Normalize separators for cross-platform compliance
+                    rel_path = rel_path.replace("\\", "/")
+                    full_path = os.path.normpath(os.path.join(BASE_STORAGE_DIR, rel_path))
+                    return full_path
     except Exception as e:
         print(f"[{WORKER_ID}] Error fetching uploaded file path: {e}", flush=True)
     return None
@@ -320,12 +325,7 @@ def handle_generate_embeddings(payload, input_artifacts):
     # Generate real embeddings (384-dimensional)
     vectors = []
     if chunks:
-        try:
-            vectors = embed_chunks(chunks)
-        except Exception as e:
-            print(f"[{WORKER_ID}] Embedding failed: {e}. Using deterministic fallback.", flush=True)
-            from services.embedding_service import deterministic_fallback_embed
-            vectors = [deterministic_fallback_embed(chunk) for chunk in chunks]
+        vectors = embed_chunks(chunks)
         
     # Get context details via helper
     file_id = None
@@ -786,7 +786,13 @@ def execute_task(task):
     if current_renewer and current_renewer.aborted:
         raise Exception("Task execution aborted: lease expired or rejected.")
 
-    if random.random() < 0.1 and retry_count < 2:
+    # Simulated random failure applies ONLY to demo/simulation task types.
+    # Real AI pipeline tasks (document ingestion & RAG retrieval) must never be randomly failed.
+    REAL_PIPELINE_TASK_TYPES = {
+        "parse_document", "chunk_text", "generate_embeddings", "summarize_document",
+        "embed_query", "retrieve_context", "generate_answer_report"
+    }
+    if task_type not in REAL_PIPELINE_TASK_TYPES and random.random() < 0.1 and retry_count < 2:
         print(f"[{WORKER_ID}]   [FAIL] Task failed! Will retry...", flush=True)
         raise Exception(f"Simulated failure for task {task_id}")
     

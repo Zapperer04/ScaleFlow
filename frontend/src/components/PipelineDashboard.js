@@ -644,7 +644,7 @@ const PipelineDashboard = () => {
       } catch (err) {
         console.error('Failed to poll retrieval answer:', err);
       }
-    }, 2000);
+    }, 5000);
     
     return () => {
       isMounted = false;
@@ -1000,7 +1000,7 @@ const PipelineDashboard = () => {
           });
         }
       }
-    }, 2000);
+    }, 5000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dashboardTab, replayPipelineId, replayStatus, globalEventCategory]);
@@ -1030,7 +1030,7 @@ const PipelineDashboard = () => {
       if (dashboardTab === 'observability') {
         loadSystemObservabilityData();
       }
-    }, 2000); // 2-second polling refresh
+    }, 5000); // 5-second polling refresh
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPipelineId, dashboardTab]);
