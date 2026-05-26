@@ -158,20 +158,86 @@ def get_uploaded_file_path(pipeline_id):
         print(f"[{WORKER_ID}] Error fetching uploaded file path: {e}", flush=True)
     return None
 
-def parse_pdf_text_file(filepath):
+def parse_pdf_text_file(filepath, task_id=None, lease_token=None, progress_json=None):
     import pypdf
+    import psutil
+    import time
+    
+    start_time = time.time()
+    MAX_PARSE_DURATION = 1800 # 30 mins limit
+    
+    checkpoint_page = 0
+    if progress_json:
+        try:
+            import json
+            prog = progress_json if isinstance(progress_json, dict) else json.loads(progress_json)
+            checkpoint_page = prog.get('checkpoint_page', 0)
+        except Exception:
+            pass
+            
+    temp_cache_file = f"temp_parse_{task_id}.txt" if task_id else None
+    
     try:
         reader = pypdf.PdfReader(filepath)
+        
+        # PDF Circuit Breaker
+        file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
+        page_count = len(reader.pages)
+        if page_count > (file_size_mb * 500) + 100:
+            raise ValueError(f"FAILED_VALIDATION: Anomaly detected! Page count ({page_count}) excessively high for file size ({file_size_mb:.2f} MB)")
+            
         text_parts = []
-        for i, page in enumerate(reader.pages):
+        if checkpoint_page > 0 and temp_cache_file and os.path.exists(temp_cache_file):
+            print(f"[{WORKER_ID}] Resuming PDF parsing from checkpoint page {checkpoint_page}", flush=True)
+            with open(temp_cache_file, "r", encoding="utf-8") as f:
+                text_parts.append(f.read())
+        elif temp_cache_file and os.path.exists(temp_cache_file):
+            os.remove(temp_cache_file)
+            
+        for i in range(checkpoint_page, page_count):
+            if time.time() - start_time > MAX_PARSE_DURATION:
+                raise TimeoutError("Execution timeout exceeded (Parse duration > 30m)")
+                
+            page = reader.pages[i]
             page_text = page.extract_text()
             if page_text:
                 text_parts.append(page_text)
+                if temp_cache_file:
+                    with open(temp_cache_file, "a", encoding="utf-8") as f:
+                        f.write(page_text + "\n\n")
+                        
+            # Emit telemetry every 10 pages
+            if task_id and lease_token and (i + 1) % 10 == 0:
+                mem_mb = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+                prog_payload = {
+                    "worker_id": WORKER_ID,
+                    "lease_token": lease_token,
+                    "checkpoint_page": i + 1,
+                    "total_pages": page_count,
+                    "memory_mb": round(mem_mb, 2),
+                    "status": "parsing"
+                }
+                try:
+                    requests.patch(f"{API_URL}/tasks/{task_id}/progress", json=prog_payload, headers=HEADERS, timeout=5)
+                except Exception as ex:
+                    print(f"[{WORKER_ID}] Failed to emit progress: {ex}", flush=True)
+                    
         full_text = "\n\n".join(text_parts)
+        if temp_cache_file and os.path.exists(temp_cache_file):
+            try:
+                os.remove(temp_cache_file)
+            except:
+                pass
         return full_text
+    except ValueError as ve:
+        print(f"[{WORKER_ID}] Circuit Breaker Triggered: {ve}", flush=True)
+        raise ve
+    except TimeoutError as te:
+        print(f"[{WORKER_ID}] Timeout Triggered: {te}", flush=True)
+        raise Exception(str(te))
     except Exception as e:
         print(f"[{WORKER_ID}] Error parsing PDF with pypdf: {e}", flush=True)
-        return ""
+        raise e
 
 def parse_pdf_text(content):
     matches = re.findall(r'\(([^)]*)\)', content)
@@ -188,6 +254,9 @@ def parse_pdf_text(content):
 def handle_parse_document(payload, input_artifacts):
     text = payload.get('source_text')
     pipeline_id = payload.get('_pipeline_id')
+    task_id = payload.get('_task_id')
+    lease_token = payload.get('_lease_token')
+    progress_json = payload.get('_progress_json')
     
     if not text and pipeline_id:
         filepath = get_uploaded_file_path(pipeline_id)
@@ -201,7 +270,7 @@ def handle_parse_document(payload, input_artifacts):
                 
             if is_pdf:
                 print(f"[{WORKER_ID}] Extraction: Parsing PDF via pypdf from {filepath}", flush=True)
-                text = parse_pdf_text_file(filepath)
+                text = parse_pdf_text_file(filepath, task_id=task_id, lease_token=lease_token, progress_json=progress_json)
                 if not text:
                     print(f"[{WORKER_ID}] Extraction Warning: pypdf returned empty text, trying raw content fallback", flush=True)
             else:
@@ -824,10 +893,21 @@ def execute_task(task):
             if isinstance(task_data, dict):
                 task_data['_task_id'] = task_id
                 task_data['_pipeline_id'] = task.get('pipeline_id')
+                task_data['_lease_token'] = task.get('lease_token')
+                task_data['_progress_json'] = task.get('progress_json')
             
             if current_renewer and current_renewer.aborted:
                 raise Exception("Task execution aborted: lease expired or rejected.")
-            output_data = handler(task_data, input_artifacts)
+                
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(handler, task_data, input_artifacts)
+                try:
+                    output_data = future.result(timeout=300)
+                except concurrent.futures.TimeoutError:
+                    print(f"[{WORKER_ID}] [TIMEOUT] Task {task_id} exceeded 300s limit!", flush=True)
+                    raise Exception("Task timed out after 300 seconds (Worker Deadlock Prevented)")
+
             if current_renewer and current_renewer.aborted:
                 raise Exception("Task execution aborted: lease expired or rejected.")
             

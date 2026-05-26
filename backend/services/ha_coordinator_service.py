@@ -142,7 +142,7 @@ class HACoordinator:
             try:
                 # Check if we still hold the ownership in DB
                 pipe = db.query(Pipeline).filter(Pipeline.id == pid).first()
-                if pipe and pipe.owner_instance_id == self.instance_id and pipe.owner_lease_expires_at > now:
+                if pipe and pipe.owner_instance_id == self.instance_id and pipe.owner_lease_expires_at is not None and pipe.owner_lease_expires_at > now:
                     # Renew lease in DB
                     pipe.owner_lease_expires_at = new_expiry
                     db.commit()
@@ -162,7 +162,7 @@ class HACoordinator:
         # Query pipelines that are running/recovering and either unowned or lease expired
         active_pipes = db.query(Pipeline).filter(
             Pipeline.status.in_(['running', 'recovering', 'created']),
-            (Pipeline.owner_instance_id == None) | (Pipeline.owner_lease_expires_at < now)
+            (Pipeline.owner_instance_id == None) | (Pipeline.owner_lease_expires_at == None) | (Pipeline.owner_lease_expires_at < now)
         ).all()
         
         for pipe in active_pipes:
@@ -172,7 +172,7 @@ class HACoordinator:
                 stmt = text(
                     "UPDATE pipelines "
                     "SET owner_instance_id = :my_id, owner_lease_expires_at = :expiry, ownership_version = ownership_version + 1 "
-                    "WHERE id = :pid AND (owner_instance_id IS NULL OR owner_lease_expires_at < :now OR owner_instance_id = :my_id)"
+                    "WHERE id = :pid AND (owner_instance_id IS NULL OR owner_lease_expires_at IS NULL OR owner_lease_expires_at < :now OR owner_instance_id = :my_id)"
                 )
                 res = db.execute(stmt, {
                     "my_id": self.instance_id,
@@ -221,12 +221,12 @@ def verify_fencing_token(db, pipeline_id):
     now = datetime.now()
     
     # 1. JIT Claim if unowned or lease has expired
-    if pipe.owner_instance_id is None or pipe.owner_lease_expires_at < now:
+    if pipe.owner_instance_id is None or pipe.owner_lease_expires_at is None or pipe.owner_lease_expires_at < now:
         new_expiry = now + timedelta(seconds=30)
         stmt = text(
             "UPDATE pipelines "
             "SET owner_instance_id = :my_id, owner_lease_expires_at = :expiry, ownership_version = ownership_version + 1 "
-            "WHERE id = :pid AND (owner_instance_id IS NULL OR owner_lease_expires_at < :now)"
+            "WHERE id = :pid AND (owner_instance_id IS NULL OR owner_lease_expires_at IS NULL OR owner_lease_expires_at < :now)"
         )
         res = db.execute(stmt, {
             "my_id": ORCHESTRATOR_INSTANCE_ID,

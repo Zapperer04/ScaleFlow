@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Layers, Server, Activity, Cpu, RefreshCw, 
-  Play, Film, Search, BookOpen, ShieldAlert, Shield
+  Play, Film, BookOpen, ShieldAlert, Shield
 } from 'lucide-react';
 import { 
   fetchTasks, fetchWorkers, getQueueStats, runIntegrationTests, fetchPipelines,
@@ -13,6 +13,7 @@ import WorkersPage from './components/WorkersPage';
 import ReplayPage from './components/ReplayPage';
 import ArchitectureOverview from './components/ArchitectureOverview';
 import InterviewGuide from './components/InterviewGuide';
+import DiagnosticsPage from './components/DiagnosticsPage';
 import TaskModal from './components/TaskModal';
 import ValidationLab from './components/ValidationLab';
 import './App.css';
@@ -300,6 +301,13 @@ function App() {
               <BookOpen size={18} />
               Interview Guide
             </button>
+            <button 
+              className={`sidebar-nav-item ${activeView === 'diagnostics' ? 'active' : ''}`}
+              onClick={() => handleNavigateToView('diagnostics')}
+            >
+              <ShieldAlert size={18} />
+              Diagnostics & DLQ
+            </button>
           </nav>
         </div>
 
@@ -363,6 +371,7 @@ function App() {
               {activeView === 'replay' && 'Deterministic Time Travel Replay'}
               {activeView === 'architecture' && 'ScaleFlow System Architecture'}
               {activeView === 'interview' && 'Engineering Interview Guide'}
+              {activeView === 'diagnostics' && 'Diagnostics & Dead-Letter Queue'}
             </span>
             
             {/* Cluster pressure or backpressure modes */}
@@ -463,8 +472,9 @@ function App() {
           {activeView === 'architecture' && <ArchitectureOverview />}
 
           {activeView === 'interview' && <InterviewGuide />}
+
+          {activeView === 'diagnostics' && <DiagnosticsPage />}
         </div>
-      </main>
 
       {/* Selected Task Details Modal */}
       <TaskModal 
@@ -584,6 +594,7 @@ function App() {
           </div>
         </div>
       )}
+      </main>
     </div>
   );
 }

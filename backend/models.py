@@ -162,6 +162,9 @@ class Task(Base):
     recovered_count = Column(Integer, default=0)
     lease_renewal_count = Column(Integer, default=0)
     
+    last_progress_at = Column(DateTime, nullable=True)
+    progress_json = Column(Text, nullable=True)
+    
     # Phase 2 columns
     pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True)
     input_artifact_ids = Column(Text, nullable=True) # JSON list
@@ -231,7 +234,9 @@ class Task(Base):
             'blocked_reason': self.blocked_reason,
             'deferred_at': self.deferred_at.isoformat() if self.deferred_at else None,
             'queue_wait_duration': round(queue_wait, 2),
-            'execution_duration': round(execution, 2)
+            'execution_duration': round(execution, 2),
+            'last_progress_at': self.last_progress_at.isoformat() if self.last_progress_at else None,
+            'progress_json': json.loads(self.progress_json) if self.progress_json else None
         }
 
 class FileRecord(Base):

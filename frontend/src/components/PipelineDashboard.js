@@ -68,6 +68,25 @@ const CustomTaskNode = ({ data }) => {
     borderColor = '#8b5cf6';
     glowColor = 'rgba(139, 92, 246, 0.4)';
   }
+  
+  // Stalled logic
+  let isStalled = false;
+  if (status === 'running' && data.last_progress_at) {
+    const elapsed = (new Date() - new Date(data.last_progress_at)) / 1000;
+    if (elapsed > 30) {
+      isStalled = true;
+    }
+  } else if (status === 'running' && data.started_at && !data.last_progress_at) {
+    const elapsed = (new Date() - new Date(data.started_at)) / 1000;
+    if (elapsed > 30) {
+      isStalled = true;
+    }
+  }
+
+  if (isStalled && status === 'running') {
+    borderColor = '#f97316'; // Orange for stalled
+    glowColor = 'rgba(249, 115, 22, 0.6)';
+  }
 
   // Override if critical path or bottleneck
   if (isOnCriticalPath) {
@@ -149,9 +168,32 @@ const CustomTaskNode = ({ data }) => {
           fontWeight: 'bold', 
           textTransform: 'uppercase' 
         }}>
-          {status}
+          {isStalled && status === 'running' ? 'STALLED ⚠️' : status}
         </span>
       </div>
+
+      {status === 'failed' && data.error_message && (
+        <div style={{ background: 'rgba(239,68,68,0.15)', color: '#fca5a5', padding: '4px', borderRadius: '4px', marginBottom: '6px', fontSize: '0.65rem', border: '1px solid rgba(239,68,68,0.3)', wordBreak: 'break-word' }}>
+          <strong>Error:</strong> {data.error_message}
+        </div>
+      )}
+
+      {data.progress_json && data.progress_json.total_pages > 0 && (
+        <div style={{ marginBottom: '6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: '#cbd5e1', marginBottom: '2px' }}>
+            <span>{data.progress_json.status || 'Processing'}...</span>
+            <span>{data.progress_json.checkpoint_page} / {data.progress_json.total_pages}</span>
+          </div>
+          <div style={{ width: '100%', background: '#334155', height: '4px', borderRadius: '2px', overflow: 'hidden' }}>
+            <div style={{ width: `${(data.progress_json.checkpoint_page / data.progress_json.total_pages) * 100}%`, background: '#3b82f6', height: '100%', transition: 'width 0.3s' }}></div>
+          </div>
+          {data.progress_json.memory_mb && (
+            <div style={{ fontSize: '0.6rem', color: '#94a3b8', marginTop: '2px', textAlign: 'right' }}>
+              RAM: {data.progress_json.memory_mb} MB
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', color: '#94a3b8', fontSize: '0.7rem' }}>
         <div><strong>Task ID:</strong> #{id}</div>
@@ -353,7 +395,9 @@ const reconstructStateClient = (events) => {
           blocked_reason: null,
           deferred_at: null,
           queue_wait_duration: 0.0,
-          execution_duration: 0.0
+          execution_duration: 0.0,
+          last_progress_at: null,
+          progress_json: null
         };
         state.dependencies[tid] = payload.dependencies || [];
       }
@@ -449,6 +493,14 @@ const reconstructStateClient = (events) => {
     } else if (type === 'PRIORITY_ESCALATED') {
       if (tid && state.tasks[tid]) {
         state.tasks[tid].priority = payload.new_priority || 'medium';
+      }
+    } else if (type === 'TASK_PROGRESS') {
+      if (tid && state.tasks[tid]) {
+        state.tasks[tid].last_progress_at = evtTime;
+        state.tasks[tid].progress_json = payload;
+        if (state.tasks[tid].status === 'pending') {
+            state.tasks[tid].status = 'running';
+        }
       }
     } else if (type === 'ARTIFACT_CREATED') {
       const art = {

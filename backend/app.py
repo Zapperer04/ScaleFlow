@@ -8,6 +8,8 @@ import uuid
 import time
 import hashlib
 from functools import wraps
+import sys
+from typing import Any
 from models import SessionLocal, Task, TaskDependency, TaskLog, Pipeline, Artifact, FileRecord, load_env, ACTIVE_DB_MODE, ACTIVE_DATABASE_URL, engine
 from task_registry import TASK_REGISTRY, validate_task_payload
 from orchestrator.dag_builder import get_dag_template
@@ -26,7 +28,7 @@ if "*" in ALLOWED_ORIGINS:
 else:
     CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGINS}})
 
-redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+redis_client: Any = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
 PRIORITY_QUEUES = {
     'high': 'task_queue_high',
@@ -71,7 +73,7 @@ def check_backpressure_admission(db, task):
     low_size = redis_client.llen('task_queue_low') or 0
     backlog_size = high_size + medium_size + low_size
     
-    if backlog_size >= BACKPRESSURE_CONFIG.get("max_backlog_size", 50):
+    if backlog_size >= int(BACKPRESSURE_CONFIG.get("max_backlog_size", 50)):
         return BACKPRESSURE_CONFIG.get("overload_protection_policy", "defer")
         
     # Detailed check on rolling metrics health
@@ -388,7 +390,11 @@ def create_task():
 
         # Retrieve retry policy default
         registry_info = TASK_REGISTRY.get(task_type, {})
-        default_max_retries = registry_info.get("retry_policy", {}).get("max_retries", 3)
+        default_max_retries = 3
+        if isinstance(registry_info, dict):
+            retry_policy = registry_info.get("retry_policy")
+            if isinstance(retry_policy, dict):
+                default_max_retries = retry_policy.get("max_retries", 3)
         max_retries = data.get('max_retries', default_max_retries)
 
         task = Task(
@@ -421,11 +427,11 @@ def create_task():
                 db.commit()
                 return jsonify({"error": "System overloaded. Task request rejected."}), 429
             elif admission == 'defer':
-                task.status = 'blocked'
-                task.blocked_reason = "System overload backpressure: deferred"
-                task.deferred_at = datetime.now()
+                task.status = 'blocked'  # type: ignore
+                task.blocked_reason = "System overload backpressure: deferred"  # type: ignore
+                task.deferred_at = datetime.now()  # type: ignore
                 db.flush()
-                create_task_log(db, task.id, "dependency_blocked", "System overload backpressure: deferred")
+                create_task_log(db, task.id, "backpressure_deferred", "System overload backpressure: deferred")
                 db.commit()
             else:
                 add_task_to_queue(task.id, priority, db=db)
@@ -736,6 +742,64 @@ def claim_task(task_id):
         # Return task payload, lease_token, lease_expires_at
         td = task.to_dict()
         return jsonify(td), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/tasks/<int:task_id>/progress', methods=['PATCH'])
+@require_api_key
+def update_task_progress(task_id):
+    db = SessionLocal()
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+
+        data = request.json or {}
+        worker_id = data.get('worker_id')
+        lease_token = data.get('lease_token')
+
+        if task.status != 'running':
+            return jsonify({'error': f'Cannot update progress. Task is in status {task.status}'}), 409
+
+        if task.assigned_worker_id != worker_id or task.lease_token != lease_token:
+            return jsonify({'error': 'Worker mismatch or invalid lease token'}), 409
+
+        # Update progress and heartbeat
+        task.last_progress_at = datetime.now()
+        
+        # Extend lease automatically on progress
+        task.lease_expires_at = datetime.now() + timedelta(seconds=30)
+
+        # Merge progress payload
+        import json
+        current_progress = {}
+        if task.progress_json:
+            try:
+                current_progress = json.loads(task.progress_json)
+            except Exception:
+                pass
+        
+        current_progress.update(data)
+        
+        # Remove auth tokens before saving
+        current_progress.pop('worker_id', None)
+        current_progress.pop('lease_token', None)
+        
+        task.progress_json = json.dumps(current_progress)
+
+        create_task_log(
+            db, task.id, "task_progress",
+            "Task progress updated",
+            worker_id=worker_id,
+            payload=current_progress
+        )
+
+        db.commit()
+        db.refresh(task)
+        return jsonify(task.to_dict()), 200
     except Exception as e:
         db.rollback()
         return jsonify({"error": str(e)}), 500
@@ -1115,6 +1179,43 @@ def get_workers_registry():
     finally:
         db.close()
 
+@app.route('/diagnostics', methods=['GET'])
+def get_diagnostics():
+    db = SessionLocal()
+    try:
+        worker_keys = redis_client.keys('worker:*')
+        active_workers = len(worker_keys)
+        
+        # DLQ count (permanently failed tasks)
+        dlq_count = db.query(Task).filter(Task.status == 'failed').count()
+        
+        cpu = None
+        ram_percent = None
+        try:
+            import psutil  # type: ignore
+            mem = psutil.virtual_memory()
+            cpu = psutil.cpu_percent(interval=0.1)
+            ram_percent = mem.percent
+        except Exception:
+            pass
+        
+        queue_stats = {}
+        for q in redis_client.keys('task_queue*'):
+            queue_stats[q] = redis_client.llen(q)
+            
+        return jsonify({
+            'status': 'ok',
+            'active_workers': active_workers,
+            'dlq_count': dlq_count,
+            'cpu_utilization_percent': cpu,
+            'ram_utilization_percent': ram_percent,
+            'queue_depths': queue_stats
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
+
 @app.route('/cluster/failovers', methods=['GET'])
 def get_cluster_failovers():
     from models import OrchestrationEvent
@@ -1143,11 +1244,16 @@ def get_cluster_failovers():
 
 def scan_and_recover_tasks(db):
     now = datetime.now()
-    # Scan running tasks where lease_expires_at < now
+    # Scan running tasks where lease_expires_at < now AND (no progress for > 120s)
+    # STALLED != FAILED: We only recover if lease is expired AND no progress for 120s
     expired_tasks = db.query(Task).filter(
         Task.status == 'running',
         Task.lease_expires_at.isnot(None),
-        Task.lease_expires_at < now
+        Task.lease_expires_at < now,
+        db.or_(
+            Task.last_progress_at == None,
+            Task.last_progress_at < now - timedelta(seconds=120)
+        )
     ).with_for_update(skip_locked=True).all()
     
     tasks_to_requeue = []
@@ -1308,7 +1414,11 @@ def scan_and_unblock_deferred_tasks(db):
             base_delay = 5
             from task_registry import TASK_REGISTRY
             if task.type in TASK_REGISTRY:
-                base_delay = TASK_REGISTRY[task.type].get("retry_policy", {}).get("retry_delay_seconds", 5)
+                registry_info = TASK_REGISTRY[task.type]
+                if isinstance(registry_info, dict):
+                    retry_policy = registry_info.get("retry_policy")
+                    if isinstance(retry_policy, dict):
+                        base_delay = retry_policy.get("retry_delay_seconds", 5)
             required_wait = base_delay * (2 ** (task.retry_count - 1))
             if wait_seconds >= required_wait:
                 task.status = 'pending'
@@ -1327,7 +1437,7 @@ def scan_and_unblock_deferred_tasks(db):
             continue
 
         # Check priority aging threshold (60 seconds)
-        if wait_seconds >= BACKPRESSURE_CONFIG.get("aging_threshold_seconds", 60):
+        if wait_seconds >= float(BACKPRESSURE_CONFIG.get("aging_threshold_seconds", 60)):
             # Escalate priority
             task.priority = 'high'
             task.status = 'pending'
@@ -1373,7 +1483,7 @@ def scan_and_unblock_deferred_tasks(db):
                     
                 released_count += 1
                 print(f"[Unblock Scanner] Released throttled task #{task.id} (priority: {task.priority}) as cap '{cap}' congestion cleared (q_len={q_len}).", flush=True)
-        elif health_state in ["healthy", "degraded"] and backlog_size + released_count < BACKPRESSURE_CONFIG.get("max_backlog_size", 50):
+        elif health_state in ["healthy", "degraded"] and backlog_size + released_count < int(BACKPRESSURE_CONFIG.get("max_backlog_size", 50)):
             # Release under normal load
             task.status = 'pending'
             task.blocked_reason = None
@@ -1430,7 +1540,7 @@ def create_pipeline():
             medium_size = redis_client.llen('task_queue_medium') or 0
             low_size = redis_client.llen('task_queue_low') or 0
             backlog_size = high_size + medium_size + low_size
-            if backlog_size >= BACKPRESSURE_CONFIG.get("max_backlog_size", 50):
+            if backlog_size >= int(BACKPRESSURE_CONFIG.get("max_backlog_size", 50)):
                 db.close()
                 return jsonify({"error": "System overloaded. Pipeline request rejected."}), 429
                 
@@ -1482,7 +1592,11 @@ def create_pipeline():
         node_to_task_map = {}
         for node in dag_definition["nodes"]:
             registry_info = TASK_REGISTRY.get(node["task_type"], {})
-            default_max_retries = registry_info.get("retry_policy", {}).get("max_retries", 3)
+            default_max_retries = 3
+            if isinstance(registry_info, dict):
+                retry_policy = registry_info.get("retry_policy")
+                if isinstance(retry_policy, dict):
+                    default_max_retries = retry_policy.get("max_retries", 3)
             
             initial_status = "blocked" if node.get("depends_on") else "pending"
             task = Task(
@@ -1522,7 +1636,7 @@ def create_pipeline():
                     task.blocked_reason = "System overload backpressure: deferred"
                     task.deferred_at = datetime.now()
                     db.flush()
-                    create_task_log(db, task.id, "dependency_blocked", "System overload backpressure: deferred")
+                    create_task_log(db, task.id, "backpressure_deferred", "System overload backpressure: deferred")
                 else:
                     add_task_to_queue(task.id, task.priority, db=db)
                 
@@ -1905,7 +2019,7 @@ def upload_file():
     temp_path = None
     final_path = None
     try:
-        original_filename = file.filename
+        original_filename = file.filename or "unknown"
         base, ext = os.path.splitext(original_filename)
         sanitized_base = sanitize_filename(base)[:80]
         sanitized_ext = sanitize_filename(ext)[:10]
@@ -1966,7 +2080,7 @@ def upload_file():
         temp_path = None # Successfully renamed, no longer needs cleanup
         
         storage_uri = f"storage/uploads/{final_filename}"
-        file_record.storage_uri = storage_uri
+        file_record.storage_uri = storage_uri  # type: ignore
         db.flush()
         
         # 4. Create Pipeline automatically
@@ -1983,7 +2097,7 @@ def upload_file():
         db.flush()
         
         file_record.pipeline_id = pipeline.id
-        file_record.status = 'processing'
+        file_record.status = 'processing'  # type: ignore
         db.flush()
         
         # 5. Create uploaded_file artifact
@@ -2012,7 +2126,11 @@ def upload_file():
         node_to_task_map = {}
         for node in dag_definition["nodes"]:
             registry_info = TASK_REGISTRY.get(node["task_type"], {})
-            default_max_retries = registry_info.get("retry_policy", {}).get("max_retries", 3)
+            default_max_retries = 3
+            if isinstance(registry_info, dict):
+                retry_policy = registry_info.get("retry_policy")
+                if isinstance(retry_policy, dict):
+                    default_max_retries = retry_policy.get("max_retries", 3)
             
             initial_status = "blocked" if node.get("depends_on") else "pending"
             
@@ -2138,7 +2256,8 @@ def test_ingestion_flow():
     for q in ['task_queue_test_high', 'task_queue_test_medium', 'task_queue_test_low']:
         redis_client.delete(q)
         
-    with app.test_client() as client:
+    with app.test_client() as c:
+        client: Any = c
         headers = {"X-API-Key": API_KEY}
         
         # A. Create a temporary text file upload or simulate upload internally
@@ -2444,7 +2563,8 @@ def test_vectors_search():
 
     log_test("Starting Real Embeddings + Vector Database Indexing integration test suite...")
     
-    with app.test_client() as client:
+    with app.test_client() as c:
+        client: Any = c
         headers = {"X-API-Key": API_KEY}
         
         # A. Create a temporary text file upload with known content
@@ -2643,8 +2763,8 @@ def test_vectors_search():
             
         # E. Confirm vector count increased.
         from services.vector_store import get_collection_stats
-        stats = get_collection_stats("scaleflow_chunks")
-        pts_count = stats.get("points_count", 0)
+        stats: Any = get_collection_stats("scaleflow_chunks")
+        pts_count = int(stats.get("points_count", 0) or 0)
         if pts_count <= 0:
             return jsonify({"status": "failed", "step": "verify_vector_count", "error": f"Vector count is {pts_count}, expected > 0"}), 400
         log_test(f"Confirmed Qdrant vector count increased to {pts_count} points.")
@@ -2783,7 +2903,11 @@ def create_query_pipeline():
         node_to_task_map = {}
         for node in dag_definition["nodes"]:
             registry_info = TASK_REGISTRY.get(node["task_type"], {})
-            default_max_retries = registry_info.get("retry_policy", {}).get("max_retries", 3)
+            default_max_retries = 3
+            if isinstance(registry_info, dict):
+                retry_policy = registry_info.get("retry_policy", {})
+                if isinstance(retry_policy, dict):
+                    default_max_retries = retry_policy.get("max_retries", 3)
             
             initial_status = "blocked" if node.get("depends_on") else "pending"
             task = Task(
@@ -2954,7 +3078,8 @@ def test_retrieval_flow():
 
     log_test("Starting Phase 5 Retrieval Pipeline integration test suite...")
     
-    with app.test_client() as client:
+    with app.test_client() as c:
+        client: Any = c
         headers = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
         auth_headers = {"X-API-Key": API_KEY}
         
@@ -3076,7 +3201,7 @@ def test_retrieval_flow():
             return jsonify({"status": "failed", "step": "claim_retrieve_context", "error": res_claim.json}), 400
         redis_client.lrem('task_queue_test_medium', 0, str(task["id"]))
         
-        retrieve_res = handle_retrieve_context({}, {"query_vector": embed_res})
+        retrieve_res: Any = handle_retrieve_context({}, {"query_vector": embed_res})
         uri, chk = save_artifact_to_disk(qp_id, task["id"], "retrieved_context", retrieve_res)
         res_art = client.post('/artifacts', json={"pipeline_id": qp_id, "task_id": task["id"], "artifact_type": "retrieved_context", "storage_uri": uri, "checksum": chk}, headers=headers)
         client.patch(f'/tasks/{task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
@@ -3089,7 +3214,7 @@ def test_retrieval_flow():
             return jsonify({"status": "failed", "step": "claim_generate_answer_report", "error": res_claim.json}), 400
         redis_client.lrem('task_queue_test_medium', 0, str(task["id"]))
         
-        answer_res = handle_generate_answer_report({}, {"retrieved_context": retrieve_res})
+        answer_res: Any = handle_generate_answer_report({}, {"retrieved_context": retrieve_res})
         uri, chk = save_artifact_to_disk(qp_id, task["id"], "final_answer", answer_res)
         res_art = client.post('/artifacts', json={"pipeline_id": qp_id, "task_id": task["id"], "artifact_type": "final_answer", "storage_uri": uri, "checksum": chk}, headers=headers)
         client.patch(f'/tasks/{task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
@@ -3097,10 +3222,10 @@ def test_retrieval_flow():
         
         # G. Confirm final answer asserts
         log_test("Asserting correctness of generated answer and citations...")
-        ans_text = answer_res.get("answer", "")
+        ans_text = str(answer_res.get("answer", ""))
         
         min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
-        top_score = retrieve_res.get("results", [{}])[0].get("score", 0.0)
+        top_score = float(retrieve_res.get("results", [{}])[0].get("score", 0.0) or 0.0)
         log_test(f"Top retrieval score: {top_score} vs min threshold: {min_score}")
         if top_score < min_score:
             return jsonify({"status": "failed", "step": "verify_top_score", "error": f"Top score {top_score} is below threshold {min_score}"}), 400
@@ -3289,7 +3414,8 @@ def test_dag_flow():
 
     log_test("Starting DAG Orchestration integration test suite...")
     
-    with app.test_client() as client:
+    with app.test_client() as c:
+        client: Any = c
         headers = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
         
         log_test("--- Test A: Create document_processing_demo pipeline ---")
@@ -3549,7 +3675,8 @@ def test_recovery_flow():
 
     log_test("Starting recovery flow integration test suite...")
     
-    with app.test_client() as client:
+    with app.test_client() as c:
+        client: Any = c
         headers = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
         
         # Test A: Normal valid task completes.
@@ -3818,7 +3945,8 @@ def test_lease_renewal_flow():
 
     log_test("Starting lease renewal flow integration test suite...")
     
-    with app.test_client() as client:
+    with app.test_client() as c:
+        client: Any = c
         headers = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
         
         # A. Create a long-running generate_embeddings-style task.
@@ -4309,7 +4437,7 @@ def reconcile_active_orchestrations(db):
         
         for pipeline in active_pipelines:
             # Replay events to reconstruct deterministic state
-            reconstructed = reconstruct_pipeline_state(db, pipeline.id, skip_snapshot=True)
+            reconstructed: Any = reconstruct_pipeline_state(db, pipeline.id, skip_snapshot=True)
             
             # Fetch all tasks in this pipeline from database
             tasks = db.query(Task).filter(Task.pipeline_id == pipeline.id).all()
@@ -4646,7 +4774,6 @@ def trigger_recovery_endpoint():
     db = SessionLocal()
     try:
         reconcile_active_orchestrations(db)
-        from app import scan_and_unblock_deferred_tasks
         scan_and_unblock_deferred_tasks(db)
         db.commit()
         return jsonify({"message": "Triggered immediate system recovery scanner & reconciliation pass."}), 200
@@ -4761,12 +4888,12 @@ def run_test_endpoint(test_type):
                 cwd=os.path.dirname(os.path.abspath(__file__))
             )
             
-            for line in iter(process.stdout.readline, ''):
-                line_str = strip_ansi(line.strip())
-                if line_str:
-                    ACTIVE_TEST_RUNS[test_type]["logs"].append(line_str)
-                    
-            process.stdout.close()
+            if process.stdout:
+                for line in iter(process.stdout.readline, ''):
+                    line_str = strip_ansi(line.strip())
+                    if line_str:
+                        ACTIVE_TEST_RUNS[test_type]["logs"].append(line_str)
+                process.stdout.close()
             return_code = process.wait()
             
             if return_code == 0:

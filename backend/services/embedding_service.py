@@ -38,8 +38,13 @@ def embed_text(text: str) -> list[float]:
 def embed_chunks(chunks: list[str]) -> list[list[float]]:
     model = get_embedding_model()
     try:
-        vectors = model.encode(chunks, convert_to_numpy=True).tolist()
-        return [[round(float(v), 6) for v in vector] for vector in vectors]
+        all_vectors = []
+        batch_size = 64
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i:i + batch_size]
+            vectors = model.encode(batch, convert_to_numpy=True).tolist()
+            all_vectors.extend([[round(float(v), 6) for v in vector] for vector in vectors])
+        return all_vectors
     except Exception as e:
         logger.critical(f"CRITICAL: Error during model batch encoding: {e}")
         raise RuntimeError(f"Batch chunks embedding generation failed: {e}") from e
