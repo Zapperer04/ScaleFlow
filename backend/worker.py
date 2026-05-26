@@ -135,6 +135,39 @@ def handle_webhook_trigger(payload):
     print(f"[{WORKER_ID}]   [OK] Webhook triggered!", flush=True)
 
 # Phase 2 Demo Handlers
+def get_uploaded_file_path(pipeline_id):
+    try:
+        res = requests.get(f"{API_URL}/pipelines/{pipeline_id}", headers=HEADERS, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            for art in data.get("artifacts", []):
+                if art.get("artifact_type") == "uploaded_file":
+                    storage_uri = art.get("storage_uri")
+                    from context.artifact_store import BASE_STORAGE_DIR
+                    if storage_uri.startswith("storage/"):
+                        rel_path = storage_uri[len("storage/"):]
+                    else:
+                        rel_path = storage_uri
+                    return os.path.join(BASE_STORAGE_DIR, rel_path)
+    except Exception as e:
+        print(f"[{WORKER_ID}] Error fetching uploaded file path: {e}", flush=True)
+    return None
+
+def parse_pdf_text_file(filepath):
+    import pypdf
+    try:
+        reader = pypdf.PdfReader(filepath)
+        text_parts = []
+        for i, page in enumerate(reader.pages):
+            page_text = page.extract_text()
+            if page_text:
+                text_parts.append(page_text)
+        full_text = "\n\n".join(text_parts)
+        return full_text
+    except Exception as e:
+        print(f"[{WORKER_ID}] Error parsing PDF with pypdf: {e}", flush=True)
+        return ""
+
 def parse_pdf_text(content):
     matches = re.findall(r'\(([^)]*)\)', content)
     if matches:
@@ -149,6 +182,30 @@ def parse_pdf_text(content):
 
 def handle_parse_document(payload, input_artifacts):
     text = payload.get('source_text')
+    pipeline_id = payload.get('_pipeline_id')
+    
+    if not text and pipeline_id:
+        filepath = get_uploaded_file_path(pipeline_id)
+        if filepath and os.path.exists(filepath):
+            file_id, original_filename, _ = get_pipeline_file_info(pipeline_id)
+            is_pdf = False
+            if original_filename and original_filename.lower().endswith(".pdf"):
+                is_pdf = True
+            elif filepath.lower().endswith(".pdf"):
+                is_pdf = True
+                
+            if is_pdf:
+                print(f"[{WORKER_ID}] Extraction: Parsing PDF via pypdf from {filepath}", flush=True)
+                text = parse_pdf_text_file(filepath)
+                if not text:
+                    print(f"[{WORKER_ID}] Extraction Warning: pypdf returned empty text, trying raw content fallback", flush=True)
+            else:
+                try:
+                    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                        text = f.read()
+                except Exception as e:
+                    print(f"[{WORKER_ID}] Error reading non-PDF file: {e}", flush=True)
+                    
     if not text and input_artifacts:
         uploaded_file_data = input_artifacts.get("uploaded_file")
         if uploaded_file_data is not None:
@@ -160,6 +217,7 @@ def handle_parse_document(payload, input_artifacts):
             text = list(input_artifacts.values())[0]
             if isinstance(text, dict) and "content" in text:
                 text = text["content"]
+                
     if not text:
         text = ""
     normalized = text.strip()
@@ -171,24 +229,22 @@ def handle_chunk_text(payload, input_artifacts):
     if not text:
         text = payload.get("source_text", "")
         
-    chunks = []
+    # Sliding window word chunking
+    chunk_size_words = 200
+    overlap_words = 40
+    
     words = text.split()
-    current_chunk = []
-    current_len = 0
-    for word in words:
-        current_chunk.append(word)
-        current_len += len(word) + 1
-        if current_len >= 300:
-            chunks.append(" ".join(current_chunk))
-            current_chunk = []
-            current_len = 0
-    if current_chunk:
-        chunks.append(" ".join(current_chunk))
-        
-    if not chunks:
+    chunks = []
+    if words:
+        i = 0
+        while i < len(words):
+            chunk_words = words[i:i+chunk_size_words]
+            chunks.append(" ".join(chunk_words))
+            i += chunk_size_words - overlap_words
+    else:
         chunks = [text]
         
-    print(f"[{WORKER_ID}]   [OK] Chunked text into {len(chunks)} chunks", flush=True)
+    print(f"[{WORKER_ID}]   [OK] Chunked text into {len(chunks)} chunks with sliding window (size={chunk_size_words}, overlap={overlap_words})", flush=True)
     return chunks
 
 def get_pipeline_file_info(pipeline_id):
@@ -431,6 +487,30 @@ def handle_embed_query(payload, input_artifacts):
     print(f"[{WORKER_ID}] [OK] Generated query vector for query: {query[:50]}...", flush=True)
     return artifact_data
 
+def is_general_query(query: str) -> bool:
+    if not query:
+        return False
+    q = query.lower().strip("?. ")
+    general_phrases = [
+        "what is it about",
+        "what is this document about",
+        "what is this about",
+        "summarize",
+        "summary",
+        "give me a summary",
+        "what does it talk about",
+        "what is this",
+        "tell me about this",
+        "what is the document about",
+        "what is the file about",
+        "summarize this document",
+        "summarize this file"
+    ]
+    for phrase in general_phrases:
+        if phrase in q:
+            return True
+    return False
+
 def handle_retrieve_context(payload, input_artifacts):
     from services.vector_store import search_similar
     query_vector_data = input_artifacts.get("query_vector")
@@ -462,10 +542,47 @@ def handle_retrieve_context(payload, input_artifacts):
     print(f"[{WORKER_ID}] Searching Qdrant collection scaleflow_chunks with top_k={top_k}, filters={filters}", flush=True)
     results = search_similar("scaleflow_chunks", vector, top_k=top_k, filters=filters)
     
+    pipeline_id = p_id or to_int_or_none(payload.get("_pipeline_id"))
+    
+    # If the query is a general/summary query, inject document summary
+    if pipeline_id and is_general_query(query):
+        doc_summary = get_artifact_content_by_type(pipeline_id, "summary")
+        if doc_summary:
+            _, original_filename, _ = get_pipeline_file_info(pipeline_id)
+            summary_chunk = {
+                "score": 0.95,
+                "chunk_text": f"Document Summary:\n{doc_summary}",
+                "original_filename": original_filename or "Document",
+                "file_id": f_id,
+                "chunk_index": -1
+            }
+            results = [summary_chunk] + results
+            print(f"[{WORKER_ID}] [OK] General query detected. Injected document summary into context.", flush=True)
+            
     # Filter results by MIN_RETRIEVAL_SCORE
     min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
-    filtered_results = [r for r in results if r.get("score", 0.0) >= min_score]
+    filtered_results = [r for r in results if r.get("score", 0.0) >= min_score or r.get("chunk_index") == -1]
     
+    # Fallback 1: If isolated to a specific document/pipeline and nothing passed, bypass threshold
+    if not filtered_results and results and ("pipeline_id" in filters or "file_id" in filters):
+        print(f"[{WORKER_ID}] No results passed threshold {min_score}. Falling back to top chunks without threshold.", flush=True)
+        filtered_results = results
+        
+    # Fallback 2: If we still have no context and summary hasn't been injected, inject summary
+    if not filtered_results and pipeline_id:
+        doc_summary = get_artifact_content_by_type(pipeline_id, "summary")
+        if doc_summary:
+            _, original_filename, _ = get_pipeline_file_info(pipeline_id)
+            summary_chunk = {
+                "score": 0.85,
+                "chunk_text": f"Document Summary:\n{doc_summary}",
+                "original_filename": original_filename or "Document",
+                "file_id": f_id,
+                "chunk_index": -1
+            }
+            filtered_results = [summary_chunk]
+            print(f"[{WORKER_ID}] [OK] Fallback: Injected document summary as sole context.", flush=True)
+            
     artifact_data = {
         "query": query,
         "results": filtered_results
@@ -481,9 +598,9 @@ def handle_generate_answer_report(payload, input_artifacts):
     query = context_data.get("query", "")
     results = context_data.get("results", [])
     
-    # Verify score threshold in case retrieve_context was bypassed or not filtered
+    # Verify score threshold or summary chunk
     min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
-    valid_results = [r for r in results if r.get("score", 0.0) >= min_score]
+    valid_results = [r for r in results if r.get("score", 0.0) >= min_score or r.get("chunk_index") == -1]
     
     confidence = "low"
     if valid_results:
@@ -509,7 +626,12 @@ def handle_generate_answer_report(payload, input_artifacts):
             fid = hit.get("file_id")
             cidx = hit.get("chunk_index", 0)
             
-            answer_parts.append(f"Source [{idx+1}] (Confidence Score: {score}): \"{chunk_text}\"")
+            if cidx == -1:
+                # It's an injected summary chunk
+                cleaned_text = chunk_text.replace("Document Summary:", "").strip()
+                answer_parts.append(f"Auto-generated Document Summary (Confidence Score: {score}):\n{cleaned_text}")
+            else:
+                answer_parts.append(f"Source [{idx+1}] (Confidence Score: {score}): \"{chunk_text}\"")
             
             citation_key = (fid, cidx)
             if citation_key not in seen_citations:

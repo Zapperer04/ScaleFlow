@@ -1400,8 +1400,12 @@ def create_pipeline():
             return jsonify({"error": str(ve)}), 400
             
         from services.ha_coordinator_service import ORCHESTRATOR_INSTANCE_ID, owned_pipelines_versions
+        pipeline_name = name or f"Pipeline - {pipeline_type}"
+        if len(pipeline_name) > 100:
+            pipeline_name = pipeline_name[:97] + "..."
+            
         pipeline = Pipeline(
-            name=name,
+            name=pipeline_name,
             pipeline_type=pipeline_type,
             status='created',
             owner_instance_id=ORCHESTRATOR_INSTANCE_ID,
@@ -1837,6 +1841,13 @@ def upload_file():
     db = SessionLocal()
     try:
         original_filename = file.filename
+        if len(original_filename) > 250:
+            base, ext = os.path.splitext(original_filename)
+            max_base = 250 - len(ext)
+            if max_base > 0:
+                original_filename = base[:max_base] + ext
+            else:
+                original_filename = original_filename[:250]
         _, ext = os.path.splitext(original_filename)
         file_type = ext.lower().replace('.', '')
         if not file_type:
@@ -1894,8 +1905,12 @@ def upload_file():
         db.flush()
         
         # 4. Create Pipeline automatically
+        pipeline_name = f"Ingestion Pipeline - {original_filename}"
+        if len(pipeline_name) > 100:
+            pipeline_name = pipeline_name[:97] + "..."
+            
         pipeline = Pipeline(
-            name=f"Ingestion Pipeline - {original_filename}",
+            name=pipeline_name,
             pipeline_type=pipeline_type,
             status='created'
         )
@@ -2678,8 +2693,12 @@ def create_query_pipeline():
             
         dag_definition = get_dag_template(pipeline_type, initial_payload)
         
+        pipeline_name = name or "Retrieval Pipeline"
+        if len(pipeline_name) > 100:
+            pipeline_name = pipeline_name[:97] + "..."
+            
         pipeline = Pipeline(
-            name=name,
+            name=pipeline_name,
             pipeline_type=pipeline_type,
             status='created'
         )
