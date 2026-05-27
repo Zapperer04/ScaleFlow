@@ -585,52 +585,7 @@ const OverviewPage = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       
-      {/* 1. HEALTH STRIP */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        background: 'var(--bg-panel)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: '6px',
-        padding: '10px 16px',
-        fontSize: '0.75rem',
-        color: 'var(--text-muted-light)'
-      }}>
-        <div style={{ display: 'flex', gap: '20px' }}>
-          <div>
-            <span>PostgreSQL: </span>
-            <span style={{ 
-              color: dbStatus === 'online' ? 'var(--color-success)' : dbStatus === 'checking' ? 'var(--color-warning)' : 'var(--color-failure)', 
-              fontWeight: 'bold' 
-            }}>
-              {dbStatus === 'online' ? 'ONLINE' : dbStatus === 'checking' ? 'CHECKING...' : 'OFFLINE'}
-            </span>
-          </div>
-          <div style={{ borderLeft: '1px solid var(--border-subtle)', paddingLeft: '20px' }}>
-            <span>Redis Broker: </span>
-            <span style={{ 
-              color: redisStatus === 'online' ? 'var(--color-success)' : redisStatus === 'checking' ? 'var(--color-warning)' : 'var(--color-failure)', 
-              fontWeight: 'bold' 
-            }}>
-              {redisStatus === 'online' ? 'ONLINE' : redisStatus === 'checking' ? 'CHECKING...' : 'OFFLINE'}
-            </span>
-          </div>
-          <div style={{ borderLeft: '1px solid var(--border-subtle)', paddingLeft: '20px' }}>
-            <span>Qdrant Core: </span>
-            <span style={{ 
-              color: qdrantStatus === 'online' ? 'var(--color-success)' : qdrantStatus === 'checking' ? 'var(--color-warning)' : 'var(--color-failure)', 
-              fontWeight: 'bold' 
-            }}>
-              {qdrantStatus === 'online' ? 'ONLINE' : qdrantStatus === 'checking' ? 'CHECKING...' : 'OFFLINE'}
-            </span>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '16px', fontFamily: 'monospace' }}>
-          <span>Workers: <strong style={{ color: '#fff' }}>{onlineWorkers.length} online</strong></span>
-          <span>Queue Depth: <strong style={{ color: '#fff' }}>{totalQueued}</strong></span>
-        </div>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
       {/* 2. SPLIT LAYOUT */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1.2fr', gap: '20px' }}>
@@ -861,58 +816,116 @@ const OverviewPage = ({
 
 const LiveTraceStream = ({ events }) => {
   const terminalRef = useRef(null);
+  const [filter, setFilter] = useState('ALL'); // ALL, INFO, WARN, ERROR
+  const [autoScroll, setAutoScroll] = useState(true);
+
+  // Handle scroll events to toggle auto-scroll
+  const handleScroll = () => {
+    if (!terminalRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = terminalRef.current;
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+    setAutoScroll(isAtBottom);
+  };
 
   useEffect(() => {
-    if (terminalRef.current) {
-      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    if (autoScroll && terminalRef.current) {
+      terminalRef.current.scrollTo({
+        top: terminalRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
     }
-  }, [events]);
+  }, [events, autoScroll]);
+
+  const filteredEvents = events.filter(e => {
+    if (filter === 'ALL') return true;
+    const type = e.event_type.toLowerCase();
+    const cat = e.event_category?.toLowerCase() || '';
+    const msg = e.message?.toLowerCase() || '';
+    
+    if (filter === 'ERROR') {
+      return cat === 'critical' || type.includes('fail') || msg.includes('fail') || msg.includes('error');
+    }
+    if (filter === 'WARN') {
+      return type.includes('retry') || type.includes('recover') || msg.includes('retry');
+    }
+    if (filter === 'INFO') {
+      return !(cat === 'critical' || type.includes('fail') || msg.includes('fail') || msg.includes('error') || type.includes('retry') || type.includes('recover'));
+    }
+    return true;
+  });
 
   return (
     <div style={{
       background: '#0a0f1d',
       border: '1px solid var(--border-subtle)',
       borderRadius: '6px',
-      padding: '16px',
+      padding: '0',
       fontFamily: 'monospace',
       fontSize: '0.75rem',
       height: '420px',
       display: 'flex',
       flexDirection: 'column',
-      gap: '8px',
-      boxShadow: 'inset 0 0 10px rgba(0,0,0,0.5)'
+      boxShadow: 'inset 0 0 10px rgba(0,0,0,0.5)',
+      overflow: 'hidden',
+      position: 'relative'
     }}>
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
+        background: 'rgba(255,255,255,0.02)',
         borderBottom: '1px solid rgba(255,255,255,0.05)',
-        paddingBottom: '8px',
+        padding: '10px 16px',
         color: '#94a3b8',
         fontSize: '0.7rem',
         textTransform: 'uppercase',
         letterSpacing: '1px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} className="animate-pulse" />
-          <span>Live Orchestration Trace</span>
+          <span style={{ fontWeight: 'bold', color: '#fff' }}>Execution Trace</span>
         </div>
-        <span>{events.length} LOGS</span>
+        
+        <div style={{ display: 'flex', gap: '6px' }}>
+          {['ALL', 'INFO', 'WARN', 'ERROR'].map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              style={{
+                background: filter === f ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                color: filter === f ? '#60a5fa' : '#64748b',
+                border: `1px solid ${filter === f ? '#3b82f6' : 'transparent'}`,
+                borderRadius: '4px',
+                padding: '2px 8px',
+                fontSize: '0.65rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
       </div>
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '4px',
-        paddingRight: '4px'
-      }} ref={terminalRef}>
-        {events.length === 0 ? (
+      
+      <div 
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '2px',
+          padding: '12px 16px'
+        }} 
+        ref={terminalRef}
+        onScroll={handleScroll}
+      >
+        {filteredEvents.length === 0 ? (
           <div style={{ color: '#475569', fontStyle: 'italic', textAlign: 'center', marginTop: '120px' }}>
-            Awaiting active pipeline trace logs...
+            No matching trace logs found...
           </div>
         ) : (
-          events.map((e, idx) => {
+          filteredEvents.map((e, idx) => {
             let color = '#e2e8f0'; // default white
             const type = e.event_type.toLowerCase();
             const cat = e.event_category?.toLowerCase() || '';
@@ -932,14 +945,14 @@ const LiveTraceStream = ({ events }) => {
               color = '#94a3b8'; // slate
             }
 
-            const timeStr = e.created_at ? new Date(e.created_at).toLocaleTimeString() : 'N/A';
-            const workerTag = e.worker_id ? `[${e.worker_id}] ` : '';
+            const timeStr = e.created_at ? new Date(e.created_at).toLocaleTimeString([], {hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit'}) : 'N/A';
+            const workerTag = e.worker_id ? `[${e.worker_id.split('-').pop()}]` : '[SYSTEM]';
 
             return (
-              <div key={e.id || idx} style={{ color, display: 'flex', gap: '8px', lineHeight: '1.4' }}>
-                <span style={{ color: '#475569', flexShrink: 0 }}>[{timeStr}]</span>
-                <span style={{ flex: 1, wordBreak: 'break-word' }}>
-                  {workerTag && <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>{workerTag}</span>}
+              <div key={e.id || idx} style={{ color, display: 'flex', gap: '10px', lineHeight: '1.5' }}>
+                <span style={{ color: '#475569', flexShrink: 0, width: '65px' }}>{timeStr}</span>
+                <span style={{ color: '#64748b', flexShrink: 0, width: '60px', fontWeight: 'bold' }}>{workerTag}</span>
+                <span style={{ flex: 1, wordBreak: 'break-word', opacity: 0.9 }}>
                   {msg}
                 </span>
               </div>
@@ -947,6 +960,32 @@ const LiveTraceStream = ({ events }) => {
           })
         )}
       </div>
+      
+      {!autoScroll && (
+        <div 
+          onClick={() => {
+            setAutoScroll(true);
+            if (terminalRef.current) {
+              terminalRef.current.scrollTo({ top: terminalRef.current.scrollHeight, behavior: 'smooth' });
+            }
+          }}
+          style={{
+            position: 'absolute',
+            bottom: '20px',
+            right: '40px',
+            background: 'var(--color-accent)',
+            color: '#fff',
+            padding: '4px 12px',
+            borderRadius: '12px',
+            fontSize: '0.65rem',
+            cursor: 'pointer',
+            boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
+            fontWeight: 'bold'
+          }}
+        >
+          ↓ Auto-scroll paused
+        </div>
+      )}
     </div>
   );
 };

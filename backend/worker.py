@@ -352,8 +352,8 @@ def _semantic_chunk(text: str, task_id=None) -> list:
 
     # ── step 3: resource cap ─────────────────────────────────────────────────
     if len(chunks) > MAX_CHUNKS:
-        emit_task_trace(task_id, f"[CHUNKER] WARNING: {len(chunks)} chunks exceeds limit of {MAX_CHUNKS}. Truncating.")
-        chunks = chunks[:MAX_CHUNKS]
+        emit_task_trace(task_id, f"[CHUNKER] ERROR: {len(chunks)} chunks exceeds hard limit of {MAX_CHUNKS}. Aborting to prevent embedding overload.")
+        raise RuntimeError(f"Chunk explosion detected: Generated {len(chunks)} chunks (limit is {MAX_CHUNKS}).")
 
     return chunks
 

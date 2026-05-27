@@ -225,8 +225,8 @@ def parse_pdf(
 
     # Hard page cap
     if page_count > MAX_PAGES:
-        _trace(f"[PARSER] WARNING: {page_count} pages exceeds limit of {MAX_PAGES}. Processing first {MAX_PAGES} pages only.")
-        page_count = MAX_PAGES
+        _cleanup()
+        raise RuntimeError(f"Governance Limit Exceeded: PDF has {page_count} pages (limit is {MAX_PAGES}). Aborting to prevent overload.")
 
     # ── per-page extraction loop ─────────────────────────────────────────────
     start_time  = time.time()
@@ -257,11 +257,9 @@ def parse_pdf(
         if (i - checkpoint_page) % MEMORY_CHECK_EVERY == 0 and i > checkpoint_page:
             rss = _rss_mb()
             if rss > MEMORY_LIMIT_MB:
-                _trace(f"[PARSER] MEMORY GUARD: {rss:.0f} MB RSS at page {i + 1} — stopping early to prevent OOM")
+                _trace(f"[PARSER] MEMORY GUARD: {rss:.0f} MB RSS at page {i + 1} — raising error to prevent OOM")
                 _cleanup()
-                # Return what we have so far rather than fail entirely
-                text_parts.append(f"\n\n[Parser stopped at page {i + 1} of {page_count} — memory limit reached]")
-                break
+                raise MemoryError(f"Governance Limit Exceeded: Parser memory usage ({rss:.0f} MB) exceeded limit ({MEMORY_LIMIT_MB} MB).")
 
         # ── attempt 1: pypdf ─────────────────────────────────────────────────
         page_text = ""
