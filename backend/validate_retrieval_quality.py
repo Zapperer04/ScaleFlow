@@ -5,7 +5,7 @@ import requests
 import json
 from datetime import datetime
 
-API_URL = "http://localhost:5001"
+API_URL = "http://localhost:5000"
 # Ensure the uploads directory exists
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "storage", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)

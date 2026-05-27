@@ -23,15 +23,21 @@ def main():
     print("#"*60)
     
     suites = [
-        "run_20_tests.py",             # TXT determinism validation
-        "validate_pdf_pipeline.py",      # PDF hardening & recovery validation
-        "validate_retrieval_quality.py"  # RAG retrieval quality validation
+        {"name": "TXT Determinism Validation", "script": os.path.join(os.path.dirname(os.path.dirname(__file__)), "run_20_tests.py")},
+        {"name": "PDF Fallback Validation", "script": os.path.join(os.path.dirname(__file__), "validate_pdf_pipeline.py")},
+        {"name": "Retrieval Validation", "script": os.path.join(os.path.dirname(__file__), "validate_retrieval_quality.py")}
     ]
     
     all_passed = True
     for s in suites:
-        passed = run_suite(s)
-        if not passed:
+        print(f"\n{'='*60}")
+        print(f"Executing: {s['name']} ({s['script']})")
+        print(f"{'='*60}")
+        try:
+            result = subprocess.run([sys.executable, s['script']], check=True)
+            print(f"[{s['name']}] SUCCESS")
+        except subprocess.CalledProcessError as e:
+            print(f"[{s['name']}] FAILED with exit code {e.returncode}")
             all_passed = False
             
     print("\n" + "#"*60)

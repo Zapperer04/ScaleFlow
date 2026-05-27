@@ -584,8 +584,6 @@ const OverviewPage = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
       {/* 2. SPLIT LAYOUT */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1.2fr', gap: '20px' }}>
