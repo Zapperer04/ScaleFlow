@@ -59,3 +59,8 @@ qdrant_storage/
 # Temporary files
 backend/powershell.cmd
 powershell.cmd
+
+# Test output files
+trace_run_*.log
+test_document.txt
+run_*.py.log
