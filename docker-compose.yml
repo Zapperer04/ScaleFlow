@@ -1,11 +1,52 @@
 version: '3.8'
 
 services:
+  backend:
+    build: ./backend
+    command: ["python", "-u", "app.py"]
+    environment:
+      REDIS_HOST: "redis"
+      QDRANT_HOST: "qdrant"
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/task_schedular"
+      DB_MODE: "postgres"
+      API_KEY: "${API_KEY:-dev_secret_api_key}"
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend/storage:/app/storage
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/task-types')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
   worker1:
     build: ./backend
     command: ["python", "-u", "worker.py"]
     environment:
-      API_URL: "http://host.docker.internal:5000"
+      API_URL: "http://backend:5000"
       REDIS_HOST: "redis"
       QDRANT_HOST: "qdrant"
       WORKER_ID: "worker-1"
@@ -16,17 +57,19 @@ services:
     volumes:
       - ./backend/storage:/app/storage
     depends_on:
-      - redis
-      - qdrant
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
     restart: unless-stopped
 
   worker2:
     build: ./backend
     command: ["python", "-u", "worker.py"]
     environment:
-      API_URL: "http://host.docker.internal:5000"
+      API_URL: "http://backend:5000"
       REDIS_HOST: "redis"
       QDRANT_HOST: "qdrant"
       WORKER_ID: "worker-2"
@@ -37,17 +80,19 @@ services:
     volumes:
       - ./backend/storage:/app/storage
     depends_on:
-      - redis
-      - qdrant
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
     restart: unless-stopped
 
   worker3:
     build: ./backend
     command: ["python", "-u", "worker.py"]
     environment:
-      API_URL: "http://host.docker.internal:5000"
+      API_URL: "http://backend:5000"
       REDIS_HOST: "redis"
       QDRANT_HOST: "qdrant"
       WORKER_ID: "worker-3"
@@ -58,16 +103,23 @@ services:
     volumes:
       - ./backend/storage:/app/storage
     depends_on:
-      - redis
-      - qdrant
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
     restart: unless-stopped
 
   redis:
     image: redis:latest
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
   qdrant:

@@ -46,6 +46,41 @@ TEMPLATES = {
             }
         ]
     },
+    "system_stability_pipeline": {
+        "name": "System Stability Pipeline",
+        "nodes": [
+            {
+                "id": "parse_document",
+                "task_type": "parse_document",
+                "display_name": "Parse Document",
+                "depends_on": [],
+                "priority": "high",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "parsed_text",
+                "payload": {}
+            },
+            {
+                "id": "chunk_text",
+                "task_type": "chunk_text",
+                "display_name": "Chunk Text",
+                "depends_on": ["parse_document"],
+                "priority": "medium",
+                "expected_input_artifacts": ["parsed_text"],
+                "output_artifact_type": "text_chunks",
+                "payload": {}
+            },
+            {
+                "id": "generate_embeddings",
+                "task_type": "generate_embeddings",
+                "display_name": "Generate Embeddings & Qdrant Insert",
+                "depends_on": ["chunk_text"],
+                "priority": "medium",
+                "expected_input_artifacts": ["text_chunks"],
+                "output_artifact_type": "vector_index",
+                "payload": {}
+            }
+        ]
+    },
     "log_analysis_demo": {
         "name": "Log Analysis Demo",
         "nodes": [

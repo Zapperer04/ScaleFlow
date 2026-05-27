@@ -3,7 +3,7 @@ import {
   Upload, Activity, Database, Search, Sparkles, Loader2, ChevronDown, ChevronUp, FileText, BookOpen
 } from 'lucide-react';
 import { 
-  createRetrievalPipeline, fetchRetrievalPipelineAnswer, fetchPipelineDetails 
+  createRetrievalPipeline, fetchRetrievalPipelineAnswer, fetchPipelineDetails, fetchPipelineEvents
 } from '../services/api';
 
 const OverviewPage = ({ 
@@ -29,6 +29,9 @@ const OverviewPage = ({
   // Pipeline details state
   const [pipelineDetails, setPipelineDetails] = useState(null);
   
+  // Live trace events state
+  const [traceEvents, setTraceEvents] = useState([]);
+  
   // Timeline log state
   const [expandedTasks, setExpandedTasks] = useState(new Set());
 
@@ -42,9 +45,11 @@ const OverviewPage = ({
   
   const chatInputRef = useRef(null);
 
-  // Poll active pipeline details
+  // Poll active pipeline details and events
   useEffect(() => {
-    let timer;
+    let detailsTimer;
+    let eventsTimer;
+    
     if (selectedPipelineId) {
       const getDetails = async () => {
         try {
@@ -54,13 +59,29 @@ const OverviewPage = ({
           console.error('Failed to load active pipeline details:', err);
         }
       };
+      
+      const getEvents = async () => {
+        try {
+          const events = await fetchPipelineEvents(selectedPipelineId);
+          setTraceEvents(events || []);
+        } catch (err) {
+          console.error('Failed to load active pipeline events:', err);
+        }
+      };
+      
       getDetails();
-      timer = setInterval(getDetails, 5000);
+      getEvents();
+      
+      detailsTimer = setInterval(getDetails, 3000);
+      eventsTimer = setInterval(getEvents, 2000);
     } else {
       setPipelineDetails(null);
+      setTraceEvents([]);
     }
+    
     return () => {
-      if (timer) clearInterval(timer);
+      if (detailsTimer) clearInterval(detailsTimer);
+      if (eventsTimer) clearInterval(eventsTimer);
     };
   }, [selectedPipelineId]);
 
@@ -341,6 +362,76 @@ const OverviewPage = ({
     });
   };
 
+  const getStageExecutionDetails = (taskType) => {
+    const task = pipelineDetails?.tasks?.find(t => t.type === taskType);
+    const artifactType = {
+      'parse_document': 'parsed_text',
+      'chunk_text': 'text_chunks',
+      'generate_embeddings': 'vector_index',
+      'summarize_document': 'summary',
+      'parse_logs': 'parsed_logs',
+      'detect_error_patterns': 'error_patterns',
+      'summarize_logs': 'log_summary'
+    }[taskType];
+    
+    const art = pipelineDetails?.artifacts?.find(a => a.artifact_type === artifactType);
+    let artifactDisplay = 'None';
+    if (art) {
+      const sizeKB = art.metadata_json?.size_bytes ? ` (${(art.metadata_json.size_bytes / 1024).toFixed(1)} KB)` : '';
+      const countBlocks = art.metadata_json?.vector_count ? ` (${art.metadata_json.vector_count} blocks)` : '';
+      artifactDisplay = `${art.artifact_type} (ID: #${art.id}${sizeKB}${countBlocks})`;
+    }
+    
+    if (!task) {
+      return {
+        status: 'PENDING',
+        workerId: 'N/A',
+        startTime: 'N/A',
+        completionTime: 'N/A',
+        duration: 'N/A',
+        retries: 0,
+        errors: 'N/A',
+        artifact: 'N/A'
+      };
+    }
+    
+    // Map status
+    let mappedStatus = task.status.toUpperCase();
+    if (task.status === 'pending') {
+      mappedStatus = task.retry_count > 0 ? 'RETRYING' : 'QUEUED';
+    } else if (task.status === 'running') {
+      mappedStatus = task.started_at ? 'EXECUTING' : 'DEQUEUED';
+    }
+    
+    const formatTime = (timeStr) => {
+      if (!timeStr) return 'N/A';
+      return new Date(timeStr).toLocaleTimeString();
+    };
+    
+    return {
+      status: mappedStatus,
+      workerId: task.assigned_worker_id || 'N/A',
+      startTime: formatTime(task.started_at),
+      completionTime: formatTime(task.completed_at),
+      duration: task.execution_duration !== null && task.execution_duration !== undefined ? `${task.execution_duration.toFixed(2)}s` : task.status === 'running' ? 'Active' : 'N/A',
+      retries: task.retry_count || 0,
+      errors: task.error_message || 'None',
+      artifact: artifactDisplay
+    };
+  };
+
+  const stagesToRender = isLogPipeline ? [
+    { type: 'parse_logs', label: 'Parse Logs' },
+    { type: 'detect_error_patterns', label: 'Detect Error Patterns' },
+    { type: 'generate_embeddings', label: 'Generate Embeddings' },
+    { type: 'summarize_logs', label: 'Summarize Logs' }
+  ] : [
+    { type: 'parse_document', label: 'Parse Document' },
+    { type: 'chunk_text', label: 'Chunk Text' },
+    { type: 'generate_embeddings', label: 'Generate Embeddings' },
+    { type: 'summarize_document', label: 'Summarize Document' }
+  ];
+
   const activeTasks = pipelineDetails?.tasks || [];
   const totalQueued = queueStats.total || 0;
   const onlineWorkers = workers.filter(w => w.status !== 'offline');
@@ -350,15 +441,121 @@ const OverviewPage = ({
     p.pipeline_type === 'document_processing_demo' || p.pipeline_type === 'log_analysis_demo'
   );
 
-  const stageList = [
-    { id: 'upload', label: 'Upload' },
-    { id: 'parse', label: 'Document Understanding' },
-    { id: 'chunk', label: 'Chunk Generation' },
-    { id: 'embed', label: 'Semantic Embedding' },
-    { id: 'index', label: 'Vector Indexing' },
-    { id: 'ready', label: 'Retrieval Ready' },
-    { id: 'ask', label: 'Ask Questions' }
-  ];
+  const renderConsoleHeader = () => {
+    if (!pipelineDetails) return null;
+    const pipeline = pipelineDetails.pipeline;
+    const currentTask = pipelineDetails.tasks?.find(t => t.status !== 'completed');
+    const currentStageLabel = currentTask 
+      ? currentTask.type.replace('_', ' ').toUpperCase()
+      : 'COMPLETED';
+      
+    const getElapsedRuntime = () => {
+      if (!pipeline) return '0s';
+      const start = new Date(pipeline.started_at || pipeline.created_at);
+      const end = pipeline.completed_at ? new Date(pipeline.completed_at) : new Date();
+      const diffSec = Math.max(0, Math.round((end - start) / 1000));
+      return `${diffSec}s`;
+    };
+    
+    const activeWorker = pipelineDetails.tasks?.find(t => t.status === 'running')?.assigned_worker_id || 'None';
+    
+    return (
+      <div className="panel" style={{ padding: '16px 20px', display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '6px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Pipeline ID</span>
+          <strong style={{ color: '#fff', fontSize: '1rem', fontFamily: 'monospace' }}>#{selectedPipelineId}</strong>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Current Stage</span>
+          <strong style={{ color: 'var(--color-accent)', fontSize: '0.9rem' }}>{currentStageLabel}</strong>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Status</span>
+          <span className={`badge ${pipeline.status}`} style={{ fontSize: '0.7rem', padding: '2px 8px', textTransform: 'uppercase' }}>
+            {pipeline.status}
+          </span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Elapsed Runtime</span>
+          <strong style={{ color: '#fff', fontSize: '0.9rem' }}>{getElapsedRuntime()}</strong>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Active Worker</span>
+          <strong style={{ color: '#cbd5e1', fontSize: '0.9rem', fontFamily: 'monospace' }}>{activeWorker}</strong>
+        </div>
+      </div>
+    );
+  };
+
+  const renderStagesTable = () => {
+    return (
+      <div className="panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', borderRadius: '6px' }}>
+        <h3 style={{ fontSize: '0.85rem', fontWeight: '800', color: '#fff', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>
+          Pipeline Execution Stages
+        </h3>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
+                <th style={{ padding: '8px 4px' }}>Stage</th>
+                <th style={{ padding: '8px 4px' }}>Status</th>
+                <th style={{ padding: '8px 4px' }}>Worker</th>
+                <th style={{ padding: '8px 4px' }}>Start Time</th>
+                <th style={{ padding: '8px 4px' }}>End Time</th>
+                <th style={{ padding: '8px 4px' }}>Duration</th>
+                <th style={{ padding: '8px 4px' }}>Retries</th>
+                <th style={{ padding: '8px 4px' }}>Errors</th>
+                <th style={{ padding: '8px 4px' }}>Generated Artifact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stagesToRender.map((stage) => {
+                const info = getStageExecutionDetails(stage.type);
+                let statusColor = 'var(--text-muted)';
+                if (info.status === 'COMPLETED') statusColor = 'var(--color-success)';
+                else if (info.status === 'EXECUTING') statusColor = 'var(--color-accent)';
+                else if (info.status === 'FAILED') statusColor = 'var(--color-failure)';
+                else if (info.status === 'RETRYING') statusColor = 'var(--color-warning)';
+                else if (info.status === 'DEQUEUED') statusColor = '#a855f7'; // Purple
+                else if (info.status === 'QUEUED') statusColor = '#3b82f6'; // Blue
+                
+                return (
+                  <tr key={stage.type} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', color: '#cbd5e1' }}>
+                    <td style={{ padding: '8px 4px', fontWeight: 'bold' }}>{stage.label}</td>
+                    <td style={{ padding: '8px 4px' }}>
+                      <span style={{
+                        color: statusColor,
+                        fontWeight: 'bold',
+                        fontSize: '0.7rem',
+                        background: 'rgba(255,255,255,0.02)',
+                        padding: '2px 6px',
+                        borderRadius: '3px',
+                        border: `1px solid ${statusColor}44`
+                      }}>{info.status}</span>
+                    </td>
+                    <td style={{ padding: '8px 4px', fontFamily: 'monospace' }}>{info.workerId}</td>
+                    <td style={{ padding: '8px 4px' }}>{info.startTime}</td>
+                    <td style={{ padding: '8px 4px' }}>{info.completionTime}</td>
+                    <td style={{ padding: '8px 4px' }}>{info.duration}</td>
+                    <td style={{ padding: '8px 4px', textAlign: 'center' }}>{info.retries}</td>
+                    <td style={{ 
+                      padding: '8px 4px', 
+                      color: info.errors !== 'None' ? 'var(--color-failure)' : '#cbd5e1',
+                      maxWidth: '120px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }} title={info.errors}>{info.errors}</td>
+                    <td style={{ padding: '8px 4px' }}><code style={{ fontSize: '0.68rem', color: 'var(--color-accent)' }}>{info.artifact}</code></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -370,7 +567,7 @@ const OverviewPage = ({
         alignItems: 'center',
         background: 'var(--bg-panel)',
         border: '1px solid var(--border-subtle)',
-        borderRadius: '4px',
+        borderRadius: '6px',
         padding: '10px 16px',
         fontSize: '0.75rem',
         color: 'var(--text-muted-light)'
@@ -411,20 +608,20 @@ const OverviewPage = ({
       </div>
 
       {/* 2. SPLIT LAYOUT */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.1fr', gap: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1.2fr', gap: '20px' }}>
         
-        {/* LEFT COLUMN: UPLOAD, PROGRESS & RAG CHAT */}
+        {/* LEFT COLUMN: UPLOAD, CONSOLE HEADER, STAGES TABLE, & RAG CHAT */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
           {/* UPLOAD PANEL */}
-          <div className="panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', borderRadius: '6px' }}>
             <div>
               <h2 style={{ fontSize: '1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                 <Upload size={18} style={{ color: 'var(--color-accent)' }} />
                 AI Document Ingestion
               </h2>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Upload unstructured text documents or system logs to trigger the distributed pipeline.
+                Upload unstructured text documents to trigger the distributed pipeline.
               </span>
             </div>
 
@@ -435,8 +632,7 @@ const OverviewPage = ({
                   onChange={(e) => setFileType(e.target.value)}
                   style={{ width: '100%' }}
                 >
-                  <option value="document_processing_demo">Standard AI Document Parsing (.pdf, .txt)</option>
-                  <option value="log_analysis_demo">Orchestrated Log Analysis (.log)</option>
+                  <option value="document_processing_demo">Standard AI Document Ingestion (.txt)</option>
                 </select>
               </div>
 
@@ -461,223 +657,13 @@ const OverviewPage = ({
             )}
           </div>
 
-          {/* DOCUMENT INTELLIGENCE SUMMARY */}
-          {pipelineDetails && (
-            <div className="panel fade-in" style={{ padding: '20px', background: 'rgba(59, 130, 246, 0.02)', border: '1px solid rgba(59, 130, 246, 0.15)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ fontSize: '0.85rem', fontWeight: '800', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px', margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  <FileText size={16} style={{ color: 'var(--color-accent)' }} />
-                  Document Intelligence Summary
-                </h3>
-                <span className="badge completed" style={{ fontSize: '0.65rem', textTransform: 'uppercase' }}>Analyzed</span>
-              </div>
-              
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', fontSize: '0.8rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Document:</span>{' '}
-                    <strong style={{ color: '#fff', fontFamily: 'monospace' }}>
-                      {pipelineDetails?.pipeline?.name?.replace("Ingestion Pipeline - ", "") || "document.pdf"}
-                    </strong>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Language:</span>{' '}
-                    <strong style={{ color: '#fff' }}>English (auto-detected)</strong>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Complexity:</span>{' '}
-                    <strong style={{ color: 'var(--color-warning)' }}>{getComplexity(chunkCount)}</strong>
-                  </div>
-                </div>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Page Count:</span>{' '}
-                    <strong style={{ color: '#fff' }}>{pageCount}</strong>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Chunk Count:</span>{' '}
-                    <strong style={{ color: '#fff' }}>{chunkCount || 'Analyzing...'}</strong>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Topics:</span>{' '}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
-                      {getDetectedTopics().map((t, i) => (
-                        <span key={i} style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.05)', color: '#cbd5e1', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
-                          {t}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
+          {/* ACTIVE PIPELINE RUNTIME CONSOLE */}
+          {selectedPipelineId && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }} className="fade-in">
+              {renderConsoleHeader()}
+              {renderStagesTable()}
             </div>
           )}
-
-          {/* ACTIVE PIPELINE TRACKER */}
-          <div className="panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div>
-              <h2 style={{ fontSize: '1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-                <Activity size={18} style={{ color: 'var(--color-accent)' }} />
-                AI Document Processing Pipeline
-              </h2>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Guided orchestration steps showing worker coordination and vector database loading.
-              </span>
-            </div>
-
-            {!selectedPipelineId ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)', background: 'rgba(0, 0, 0, 0.1)', border: '1px dashed var(--border-subtle)', borderRadius: '4px' }}>
-                  No active document pipeline. Upload a document above or select a historical run below to begin.
-                </div>
-                {documentHistoryPipelines.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Pipeline Ingestion History
-                    </span>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto' }}>
-                      {documentHistoryPipelines.slice(0, 5).map(p => (
-                        <div 
-                          key={p.id} 
-                          onClick={() => setSelectedPipelineId(p.id)}
-                          style={{ 
-                            display: 'flex', 
-                            justifyContent: 'space-between', 
-                            alignItems: 'center', 
-                            padding: '8px 12px', 
-                            background: 'rgba(255,255,255,0.01)', 
-                            border: '1px solid var(--border-subtle)', 
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s'
-                          }}
-                          className="pipeline-stage-item"
-                        >
-                          <span style={{ fontSize: '0.75rem', fontWeight: '600', color: '#fff' }}>
-                            {p.name.replace("Ingestion Pipeline - ", "")} (ID: #{p.id})
-                          </span>
-                          <span className={`badge ${p.status}`} style={{ fontSize: '0.65rem', padding: '2px 6px' }}>
-                            {p.status}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px' }}>
-                  <span>Ingestion Instance: <strong>Pipeline #{selectedPipelineId}</strong></span>
-                  <span className={`badge ${pipelineStatus || 'running'}`}>{pipelineStatus || 'running'}</span>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', position: 'relative', paddingLeft: '16px', borderLeft: '1px dashed var(--border-subtle)' }}>
-                  {stageList.map((stage) => {
-                    const info = getStageInfo(stage.id);
-                    const isCompleted = info.status === 'completed';
-                    const isRunning = info.status === 'running' || info.status === 'active';
-                    const isFailed = info.status === 'failed';
-                    
-                    let dotBg = 'var(--text-muted)';
-                    let dotClass = '';
-                    
-                    if (isCompleted) {
-                      dotBg = 'var(--color-success)';
-                    } else if (isRunning) {
-                      dotBg = 'var(--color-accent)';
-                      dotClass = 'animate-pulse';
-                    } else if (isFailed) {
-                      dotBg = 'var(--color-failure)';
-                    }
-                    
-                    return (
-                      <div 
-                        key={stage.id} 
-                        className="pipeline-stage-item fade-in"
-                        style={{
-                          display: 'flex',
-                          gap: '16px',
-                          position: 'relative',
-                          opacity: isCompleted || isRunning ? 1 : 0.5,
-                          padding: '12px',
-                          background: isRunning ? 'rgba(59, 130, 246, 0.03)' : 'rgba(255,255,255,0.01)',
-                          border: isRunning ? '1px solid rgba(59, 130, 246, 0.2)' : '1px solid var(--border-subtle)',
-                          borderRadius: '4px',
-                          boxShadow: isRunning ? '0 0 10px rgba(59, 130, 246, 0.05)' : 'none'
-                        }}
-                      >
-                        {/* Dot Connector */}
-                        <div style={{
-                          position: 'absolute',
-                          left: '-21px',
-                          top: '18px',
-                          width: '9px',
-                          height: '9px',
-                          borderRadius: '50%',
-                          background: dotBg,
-                          boxShadow: isRunning ? '0 0 8px var(--color-accent)' : 'none',
-                          border: '2px solid var(--bg-primary)'
-                        }} className={dotClass} />
-                        
-                        {/* Details */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.8rem', fontWeight: '700', color: isCompleted || isRunning ? '#fff' : 'var(--text-muted-light)' }}>
-                              {stage.label}
-                            </span>
-                            <span className={`badge ${info.status}`} style={{ fontSize: '0.6rem', padding: '1px 6px', textTransform: 'uppercase' }}>
-                              {info.status}
-                            </span>
-                          </div>
-                          
-                          <span style={{ fontSize: '0.72rem', color: '#cbd5e1' }}>
-                            {info.progressMsg}
-                          </span>
-                          
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.65rem', color: 'var(--text-muted-light)', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '4px' }}>
-                            <div>
-                              <span style={{ color: 'var(--text-muted)' }}>Worker:</span> <strong style={{ color: '#94a3b8' }}>{info.worker}</strong>
-                            </div>
-                            <div>
-                              <span style={{ color: 'var(--text-muted)' }}>Duration:</span> <strong style={{ color: '#94a3b8' }}>{info.duration}</strong>
-                            </div>
-                            <div style={{ gridColumn: 'span 2' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>Artifact:</span> <code style={{ color: 'var(--color-accent)', wordBreak: 'break-all' }}>{info.artifact}</code>
-                            </div>
-                          </div>
-                          
-                          {stage.id === 'ask' && isCompleted && (
-                            <button 
-                              onClick={() => {
-                                if (chatInputRef.current) {
-                                  chatInputRef.current.focus();
-                                  chatInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                  setHighlightChat(true);
-                                  setTimeout(() => setHighlightChat(false), 2000);
-                                }
-                              }}
-                              className="btn btn-secondary"
-                              style={{
-                                marginTop: '8px',
-                                height: '24px',
-                                fontSize: '0.68rem',
-                                alignSelf: 'flex-start',
-                                padding: '2px 8px'
-                              }}
-                            >
-                              Start Q&A Session ↓
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
 
           {/* CHAT WITH DOCUMENT PANEL (RAG) */}
           <div 
@@ -688,6 +674,7 @@ const OverviewPage = ({
               flexDirection: 'column', 
               gap: '16px',
               border: highlightChat ? '1px solid var(--color-accent)' : '1px solid var(--border-subtle)',
+              borderRadius: '6px',
               transition: 'border-color 0.25s ease'
             }}
           >
@@ -705,7 +692,7 @@ const OverviewPage = ({
               <input 
                 ref={chatInputRef}
                 type="text" 
-                placeholder="Ask a question about the document text..." 
+                placeholder={selectedPipelineId ? "Ask a question about this document..." : "Select an ingestion pipeline from history or upload a file first..."}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 disabled={ragLoading}
@@ -736,7 +723,7 @@ const OverviewPage = ({
                 background: 'rgba(59, 130, 246, 0.01)', 
                 border: '1px solid rgba(59, 130, 246, 0.1)', 
                 padding: '16px', 
-                borderRadius: '4px' 
+                borderRadius: '6px' 
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: 'var(--color-accent)', fontWeight: 'bold' }}>
@@ -787,131 +774,53 @@ const OverviewPage = ({
 
         </div>
 
-        {/* RIGHT COLUMN: COLLAPSIBLE MINIMAL EXECUTION TIMELINE */}
+        {/* RIGHT COLUMN: LIVE TRACE STREAM & HISTORICAL SELECTOR */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
-          <div className="panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', height: '100%' }}>
-            <div>
-              <h2 style={{ fontSize: '1rem', fontWeight: '800', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-                <Database size={18} style={{ color: 'var(--color-accent)' }} />
-                Execution Timeline
-              </h2>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Timeline logs of distributed task tasks. Click details to expand.
-              </span>
+          {selectedPipelineId ? (
+            <LiveTraceStream events={traceEvents} />
+          ) : (
+            <div className="panel" style={{ padding: '20px', background: 'rgba(0,0,0,0.2)', border: '1px dashed var(--border-subtle)', borderRadius: '6px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', padding: '60px 20px' }}>
+              Select a pipeline from the history below or upload a new file to watch live execution traces.
             </div>
+          )}
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', maxHeight: 'calc(100vh - 250px)' }}>
-              {activeTasks.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                  Awaiting active document pipeline execution logs...
-                </div>
+          {/* HISTORICAL PIPELINES SELECTOR */}
+          <div className="panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', borderRadius: '6px' }}>
+            <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Pipeline Ingestion History
+            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
+              {documentHistoryPipelines.length === 0 ? (
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '8px' }}>
+                  No historical pipelines found.
+                </span>
               ) : (
-                activeTasks.map((task) => {
-                  const isExpanded = expandedTasks.has(task.id);
-                  return (
-                    <div 
-                      key={task.id} 
-                      style={{ 
-                        background: 'rgba(255,255,255,0.01)', 
-                        border: '1px solid var(--border-subtle)', 
-                        borderRadius: '4px', 
-                        padding: '10px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px'
-                      }}
-                    >
-                      {/* Collapsed Header */}
-                      <div 
-                        onClick={() => toggleTaskExpanded(task.id)}
-                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-                      >
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#ffffff', fontFamily: 'monospace' }}>
-                            {task.type.replace('_', ' ')}
-                          </span>
-                          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                            Worker: {task.assigned_worker_id || 'unassigned'}
-                          </span>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span className={`badge ${task.status}`} style={{ fontSize: '0.65rem', padding: '2px 6px' }}>
-                            {task.status}
-                          </span>
-                          {isExpanded ? <ChevronUp size={14} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={14} style={{ color: 'var(--text-muted)' }} />}
-                        </div>
-                      </div>
-
-                      {/* Expanded Collapsible Details */}
-                      {isExpanded && (
-                        <div style={{ 
-                          borderTop: '1px solid var(--border-subtle)', 
-                          paddingTop: '8px', 
-                          marginTop: '4px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '6px',
-                          fontSize: '0.7rem',
-                          color: '#cbd5e1'
-                        }}>
-                          <div>
-                            <span style={{ color: 'var(--text-muted)' }}>Task ID:</span> # {task.id}
-                          </div>
-                          <div>
-                            <span style={{ color: 'var(--text-muted)' }}>Duration:</span> {task.execution_duration !== undefined && task.execution_duration !== null ? `${task.execution_duration.toFixed(2)}s` : 'running'}
-                          </div>
-                          <div>
-                            <span style={{ color: 'var(--text-muted)' }}>Queue Name:</span> <code style={{ color: 'var(--color-accent)' }}>{task.queue_name || 'default'}</code>
-                          </div>
-                          {task.queue_position !== undefined && task.queue_position !== null && (
-                            <div>
-                              <span style={{ color: 'var(--text-muted)' }}>Queue Position:</span> {task.queue_position}
-                            </div>
-                          )}
-                          {task.lease_expires_at && (
-                            <div>
-                              <span style={{ color: 'var(--text-muted)' }}>Lease Expiration:</span> {new Date(task.lease_expires_at).toLocaleTimeString()}
-                            </div>
-                          )}
-                          {task.retry_count > 0 && (
-                            <div>
-                              <span style={{ color: 'var(--text-muted)' }}>Retry Loop:</span> {task.retry_count}/{task.max_retries}
-                            </div>
-                          )}
-                          {task.error_message && (
-                            <div style={{ color: 'var(--color-failure)', background: 'rgba(239, 68, 68, 0.05)', padding: '6px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
-                              <strong>Error:</strong> {task.error_message}
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
-                            <button 
-                              onClick={() => onSelectTask(task.id)}
-                              className="btn"
-                              style={{ padding: '2px 8px', fontSize: '0.65rem', height: '20px' }}
-                            >
-                              Actions / Details
-                            </button>
-                            <button 
-                              onClick={() => {
-                                if (task.pipeline_id) {
-                                  onSelectPipeline(task.pipeline_id);
-                                } else {
-                                  onNavigateToView('pipelines');
-                                }
-                              }}
-                              className="btn btn-secondary" 
-                              style={{ padding: '2px 8px', fontSize: '0.65rem', height: '20px' }}
-                            >
-                              Go to Graph →
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
+                documentHistoryPipelines.map(p => (
+                  <div 
+                    key={p.id} 
+                    onClick={() => setSelectedPipelineId(p.id)}
+                    style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center', 
+                      padding: '8px 12px', 
+                      background: selectedPipelineId === p.id ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255,255,255,0.01)', 
+                      border: selectedPipelineId === p.id ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid var(--border-subtle)', 
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                    className="pipeline-stage-item"
+                  >
+                    <span style={{ fontSize: '0.75rem', fontWeight: '600', color: selectedPipelineId === p.id ? '#5B8CFF' : '#fff' }}>
+                      {p.name.replace("Ingestion Pipeline - ", "")} (ID: #{p.id})
+                    </span>
+                    <span className={`badge ${p.status}`} style={{ fontSize: '0.65rem', padding: '2px 6px', textTransform: 'uppercase' }}>
+                      {p.status}
+                    </span>
+                  </div>
+                ))
               )}
             </div>
           </div>
@@ -920,6 +829,98 @@ const OverviewPage = ({
 
       </div>
 
+    </div>
+  );
+};
+
+const LiveTraceStream = ({ events }) => {
+  const terminalRef = useRef(null);
+
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
+  }, [events]);
+
+  return (
+    <div style={{
+      background: '#0a0f1d',
+      border: '1px solid var(--border-subtle)',
+      borderRadius: '6px',
+      padding: '16px',
+      fontFamily: 'monospace',
+      fontSize: '0.75rem',
+      height: '420px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px',
+      boxShadow: 'inset 0 0 10px rgba(0,0,0,0.5)'
+    }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        paddingBottom: '8px',
+        color: '#94a3b8',
+        fontSize: '0.7rem',
+        textTransform: 'uppercase',
+        letterSpacing: '1px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} className="animate-pulse" />
+          <span>Live Orchestration Trace</span>
+        </div>
+        <span>{events.length} LOGS</span>
+      </div>
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+        paddingRight: '4px'
+      }} ref={terminalRef}>
+        {events.length === 0 ? (
+          <div style={{ color: '#475569', fontStyle: 'italic', textAlign: 'center', marginTop: '120px' }}>
+            Awaiting active pipeline trace logs...
+          </div>
+        ) : (
+          events.map((e, idx) => {
+            let color = '#e2e8f0'; // default white
+            const type = e.event_type.toLowerCase();
+            const cat = e.event_category?.toLowerCase() || '';
+            const msg = e.message || '';
+            
+            if (cat === 'critical' || type.includes('fail') || msg.includes('fail') || msg.includes('error')) {
+              color = '#f87171'; // soft red
+            } else if (type.includes('retry') || type.includes('recover') || msg.includes('retry')) {
+              color = '#fbbf24'; // orange/yellow
+            } else if (type.includes('complete') || type.includes('success') || msg.includes('success') || msg.includes('completed')) {
+              color = '#34d399'; // green
+            } else if (type === 'task_trace' || type.includes('progress')) {
+              color = '#60a5fa'; // blue
+            } else if (type.includes('claim') || type.includes('start')) {
+              color = '#c084fc'; // purple
+            } else if (type.includes('create') || type.includes('queue')) {
+              color = '#94a3b8'; // slate
+            }
+
+            const timeStr = e.created_at ? new Date(e.created_at).toLocaleTimeString() : 'N/A';
+            const workerTag = e.worker_id ? `[${e.worker_id}] ` : '';
+
+            return (
+              <div key={e.id || idx} style={{ color, display: 'flex', gap: '8px', lineHeight: '1.4' }}>
+                <span style={{ color: '#475569', flexShrink: 0 }}>[{timeStr}]</span>
+                <span style={{ flex: 1, wordBreak: 'break-word' }}>
+                  {workerTag && <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>{workerTag}</span>}
+                  {msg}
+                </span>
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 };

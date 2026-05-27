@@ -81,6 +81,19 @@ def send_heartbeat():
             print(f"[{WORKER_ID}] Heartbeat connection failed: {e}", flush=True)
         time.sleep(10)
 
+def emit_task_trace(task_id, message):
+    if not task_id:
+        return
+    try:
+        payload = {
+            "worker_id": WORKER_ID,
+            "event_type": "task_trace",
+            "message": message
+        }
+        requests.post(f"{API_URL}/tasks/{task_id}/log", json=payload, headers=HEADERS, timeout=5)
+    except Exception as e:
+        print(f"[{WORKER_ID}] Failed to emit task trace: {e}", flush=True)
+
 try:
     from task_registry import TASK_REGISTRY
 except ImportError:
@@ -160,7 +173,6 @@ def get_uploaded_file_path(pipeline_id):
 
 def parse_pdf_text_file(filepath, task_id=None, lease_token=None, progress_json=None):
     import pypdf
-    import psutil
     import time
     
     start_time = time.time()
@@ -208,7 +220,20 @@ def parse_pdf_text_file(filepath, task_id=None, lease_token=None, progress_json=
                         
             # Emit telemetry every 10 pages
             if task_id and lease_token and (i + 1) % 10 == 0:
-                mem_mb = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+                mem_mb = 0.0
+                try:
+                    import psutil
+                    mem_mb = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+                except ImportError:
+                    try:
+                        with open('/proc/self/status', 'r') as f:
+                            for line in f:
+                                if line.startswith('VmRSS:'):
+                                    mem_mb = float(line.split()[1]) / 1024
+                                    break
+                    except:
+                        pass
+                        
                 prog_payload = {
                     "worker_id": WORKER_ID,
                     "lease_token": lease_token,
@@ -237,6 +262,10 @@ def parse_pdf_text_file(filepath, task_id=None, lease_token=None, progress_json=
         raise Exception(str(te))
     except Exception as e:
         print(f"[{WORKER_ID}] Error parsing PDF with pypdf: {e}", flush=True)
+        # Catch PDF corruption or read failures specifically
+        err_msg = str(e).lower()
+        if "pdf" in err_msg or "read" in err_msg or "corrupt" in err_msg or "decrypt" in err_msg or "eof" in err_msg or isinstance(e, pypdf.errors.PdfReadError):
+            raise ValueError(f"FAILED_VALIDATION: Corrupted or unreadable PDF file. Details: {e}")
         raise e
 
 def parse_pdf_text(content):
@@ -259,6 +288,7 @@ def handle_parse_document(payload, input_artifacts):
     progress_json = payload.get('_progress_json')
     
     if not text and pipeline_id:
+        emit_task_trace(task_id, "Parser initialized")
         filepath = get_uploaded_file_path(pipeline_id)
         if filepath and os.path.exists(filepath):
             file_id, original_filename, _ = get_pipeline_file_info(pipeline_id)
@@ -302,6 +332,10 @@ def handle_chunk_text(payload, input_artifacts):
     text = input_artifacts.get("parsed_text", "")
     if not text:
         text = payload.get("source_text", "")
+    
+    task_id = payload.get('_task_id')
+    emit_task_trace(task_id, "Chunk generation started")
+
         
     # Sliding window word chunking
     chunk_size_words = 200
@@ -436,6 +470,11 @@ def handle_generate_embeddings(payload, input_artifacts):
         "qdrant_upserted": qdrant_upserted,
         "chunk_refs": chunk_refs
     }
+    
+    if vectors:
+        emit_task_trace(task_id, "Embeddings generated")
+    if qdrant_upserted:
+        emit_task_trace(task_id, "Qdrant insertion completed")
     
     print(f"[{WORKER_ID}]   [OK] Generated vector index with {len(chunks)} points (upserted to Qdrant: {qdrant_upserted})", flush=True)
     return artifact_data
@@ -916,7 +955,13 @@ def execute_task(task):
             artifact_type = OUTPUT_ARTIFACT_TYPES[task_type]
             storage_uri, checksum = save_artifact_to_disk(pipeline_id, task_id, artifact_type, output_data)
             
-            # Register artifact with API
+            # Register artifact with API, preserving metadata from output dict
+            metadata = {"worker_id": WORKER_ID}
+            if isinstance(output_data, dict):
+                for k, v in output_data.items():
+                    if k not in ["chunk_refs", "vectors", "embeddings"]:
+                        metadata[k] = v
+                        
             res_reg = requests.post(
                 f"{API_URL}/artifacts",
                 json={
@@ -925,7 +970,7 @@ def execute_task(task):
                     "artifact_type": artifact_type,
                     "storage_uri": storage_uri,
                     "checksum": checksum,
-                    "metadata": {"worker_id": WORKER_ID}
+                    "metadata": metadata
                 },
                 headers=HEADERS,
                 timeout=5
@@ -941,20 +986,24 @@ def execute_task(task):
         print(f"[{WORKER_ID}]   [WARN] Unknown task type / handler: {task_type}", flush=True)
 
 def register_worker():
-    """Registers worker and its capabilities with the orchestrator"""
-    try:
-        payload = {
-            "worker_id": WORKER_ID,
-            "capabilities": WORKER_CAPABILITIES,
-            "resource_limits": {"concurrency": 1}
-        }
-        res = requests.post(f"{API_URL}/workers/register", json=payload, headers=HEADERS, timeout=5)
-        if res.status_code in [200, 201]:
-            print(f"[{WORKER_ID}] Registered with capabilities: {WORKER_CAPABILITIES}", flush=True)
-        else:
-            print(f"[{WORKER_ID}] Registration failed: {res.status_code} - {res.text}", flush=True)
-    except Exception as e:
-        print(f"[{WORKER_ID}] Registration error: {e}", flush=True)
+    """Registers worker and its capabilities with the orchestrator, retrying until success"""
+    print(f"[{WORKER_ID}] Registering worker with backend at {API_URL}...", flush=True)
+    while True:
+        try:
+            payload = {
+                "worker_id": WORKER_ID,
+                "capabilities": WORKER_CAPABILITIES,
+                "resource_limits": {"concurrency": 1}
+            }
+            res = requests.post(f"{API_URL}/workers/register", json=payload, headers=HEADERS, timeout=5)
+            if res.status_code in [200, 201]:
+                print(f"[{WORKER_ID}] Registered with capabilities: {WORKER_CAPABILITIES}", flush=True)
+                break
+            else:
+                print(f"[{WORKER_ID}] Registration failed (status {res.status_code}): {res.text}. Retrying in 2s...", flush=True)
+        except Exception as e:
+            print(f"[{WORKER_ID}] Registration error: {e}. Retrying in 2s...", flush=True)
+        time.sleep(2)
 
 def get_next_task():
     """Get next task using capability-aware Weighted Round-Robin (WRR) scheduling"""

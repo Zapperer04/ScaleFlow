@@ -1,6 +1,15 @@
 # Central Task Type Registry and Payload Validation for ScaleFlow
 
 TASK_REGISTRY = {
+    "test_isolated_task": {
+        "label": "Isolated Test Task",
+        "description": "Used for isolated integration tests.",
+        "required_fields": [],
+        "optional_fields": ["to", "subject", "body", "simulate_hang_seconds"],
+        "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 1,
+        "handler_name": "handle_test_isolated"
+    },
     "send_email": {
         "label": "Email Delivery",
         "description": "Simulates sending an email notification.",
@@ -211,6 +220,7 @@ def validate_task_payload(task_type, payload):
     return True, None
 
 CAPABILITY_MAPPINGS = {
+    "test_isolated_task": "test_isolated",
     "send_email": "io_heavy",
     "process_video": "cpu_heavy",
     "generate_report": "cpu_heavy",

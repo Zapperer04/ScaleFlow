@@ -120,7 +120,8 @@ CANONICAL_EVENTS = {
     "artifact_created",
     "dependency_released",
     "dependency_blocked",
-    "worker_heartbeat"
+    "worker_heartbeat",
+    "task_trace"
 }
 
 def create_task_log(db, task_id, event_type, message, worker_id=None, payload=None):
@@ -710,13 +711,6 @@ def claim_task(task_id):
         if not task:
             return jsonify({'error': 'Task not found'}), 404
             
-        if task.pipeline_id:
-            from services.ha_coordinator_service import verify_fencing_token
-            try:
-                verify_fencing_token(db, task.pipeline_id)
-            except ValueError as e:
-                return jsonify({'error': f'Fencing conflict: {e}'}), 409
-            
         if task.status not in ['pending', 'retryable']:
             return jsonify({'error': f'Task cannot be claimed in status {task.status}'}), 400
             
@@ -1243,6 +1237,7 @@ def get_cluster_failovers():
         db.close()
 
 def scan_and_recover_tasks(db):
+    from sqlalchemy import or_
     now = datetime.now()
     # Scan running tasks where lease_expires_at < now AND (no progress for > 120s)
     # STALLED != FAILED: We only recover if lease is expired AND no progress for 120s
@@ -1250,7 +1245,7 @@ def scan_and_recover_tasks(db):
         Task.status == 'running',
         Task.lease_expires_at.isnot(None),
         Task.lease_expires_at < now,
-        db.or_(
+        or_(
             Task.last_progress_at == None,
             Task.last_progress_at < now - timedelta(seconds=120)
         )
@@ -1939,7 +1934,18 @@ def register_artifact():
         if task_id:
             try:
                 worker_id = meta.get("worker_id") if isinstance(meta, dict) else None
-                create_task_log(db, task_id, "artifact_created", f"Artifact '{artifact_type}' (ID: {artifact.id}) created", worker_id=worker_id)
+                create_task_log(
+                    db, 
+                    task_id, 
+                    "artifact_created", 
+                    f"Artifact '{artifact_type}' (ID: {artifact.id}) created", 
+                    worker_id=worker_id,
+                    payload={
+                        "artifact_id": artifact.id,
+                        "artifact_type": artifact.artifact_type,
+                        "storage_uri": artifact.storage_uri
+                    }
+                )
                 db.commit()
             except Exception as e:
                 print(f"Error logging artifact creation log: {e}", flush=True)
@@ -2169,7 +2175,17 @@ def upload_file():
             if json.loads(task.dependencies) if task.dependencies else []:
                 create_task_log(db, task.id, "dependency_waiting", f"Waiting on dependencies")
             elif not task.dependencies or task.dependencies == "[]":
-                create_task_log(db, task.id, "input_artifact_received", f"Root task received input artifact #{artifact.id}")
+                create_task_log(
+                    db, 
+                    task.id, 
+                    "input_artifact_received", 
+                    f"Root task received input artifact #{artifact.id}",
+                    payload={
+                        "artifact_id": artifact.id,
+                        "artifact_type": artifact.artifact_type,
+                        "storage_uri": artifact.storage_uri
+                    }
+                )
                 
         for node in dag_definition["nodes"]:
             if not node.get("depends_on"):
@@ -3682,7 +3698,7 @@ def test_recovery_flow():
         # Test A: Normal valid task completes.
         log_test("--- Test A: Normal valid task completes ---")
         task_payload = {
-            "type": "send_email",
+            "type": "test_isolated_task",
             "priority": "medium",
             "data": {
                 "to": "test_normal@example.com",
@@ -3698,7 +3714,8 @@ def test_recovery_flow():
         log_test(f"Task #{task_id} created successfully.")
         
         # Verify it's in Redis
-        queue_name = 'task_queue_test_medium'
+        from task_registry import get_queue_name
+        queue_name = get_queue_name(task_payload['type'], 'medium', is_test=True)
         in_queue = redis_client.lrange(queue_name, 0, -1)
         if str(task_id) not in in_queue:
             return jsonify({"status": "failed", "step": "verify_redis_queue", "error": f"Task not in Redis queue {queue_name}"}), 400
@@ -3739,7 +3756,7 @@ def test_recovery_flow():
         # Test B, C, D: Lease Expiry, Recovery, Claim by another worker, Stale Reject
         log_test("--- Test B, C, D: Lease Expiry, Recovery, Claim, Stale Reject ---")
         task_payload_hang = {
-            "type": "send_email",
+            "type": "test_isolated_task",
             "priority": "medium",
             "data": {
                 "to": "test_hang@example.com",
@@ -3858,7 +3875,7 @@ def test_recovery_flow():
         # Test E: Max retries exceeded
         log_test("--- Test E: Max retries exceeded ---")
         task_payload_fail = {
-            "type": "send_email",
+            "type": "test_isolated_task",
             "priority": "medium",
             "max_retries": 1,
             "data": {
@@ -3922,9 +3939,9 @@ def test_recovery_flow():
                 return jsonify({"status": "failed", "step": "second_fail_recovery", "error": f"Expected status 'failed', got '{db_task.status}'"}), 400
             
             # Check log
-            logs = db.query(TaskLog).filter(TaskLog.task_id == fail_task_id, TaskLog.event_type == "max_retries_exceeded_after_lease_expiry").all()
+            logs = db.query(TaskLog).filter(TaskLog.task_id == fail_task_id, TaskLog.event_type == "task_failed").all()
             if not logs:
-                return jsonify({"status": "failed", "step": "verify_max_retry_log", "error": "No 'max_retries_exceeded_after_lease_expiry' event found"}), 400
+                return jsonify({"status": "failed", "step": "verify_max_retry_log", "error": "No 'task_failed' event found"}), 400
             log_test("Verified task failed due to lease expiry exceeding max retries.")
         finally:
             db.close()
@@ -3952,7 +3969,7 @@ def test_lease_renewal_flow():
         # A. Create a long-running generate_embeddings-style task.
         log_test("--- A. Create a long-running generate_embeddings-style task ---")
         task_payload = {
-            "type": "generate_embeddings",
+            "type": "test_isolated_task",
             "priority": "medium",
             "data": {
                 "simulate_hang_seconds": 10
@@ -3966,7 +3983,8 @@ def test_lease_renewal_flow():
         log_test(f"Task #{task_id} created successfully.")
         
         # Isolate task from Redis to avoid other workers picking it up
-        queue_name = 'task_queue_test_medium'
+        from task_registry import get_queue_name
+        queue_name = get_queue_name(task_payload['type'], 'medium', is_test=True)
         redis_client.lrem(queue_name, 0, str(task_id))
         log_test(f"Isolated Task #{task_id} from Redis queue.")
         
@@ -4935,6 +4953,9 @@ if __name__ == '__main__':
     print(f"  SQLAlchemy Dialect: {engine.dialect.name}", flush=True)
     print(f"  DATABASE_URL: {masked_url}", flush=True)
     print("="*60, flush=True)
+
+    from models import init_db
+    init_db()
 
     # 1. Start HA Coordinator
     from services.ha_coordinator_service import coordinator

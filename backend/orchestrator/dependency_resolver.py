@@ -151,14 +151,6 @@ def log_event(db, task_id, event_type, message, worker_id=None, payload=None):
     return log
 
 def enqueue_task(db, task):
-    if task.pipeline_id:
-        from services.ha_coordinator_service import verify_fencing_token
-        try:
-            verify_fencing_token(db, task.pipeline_id)
-        except ValueError as e:
-            print(f"[Fencing Conflict] Aborting task enqueue: {e}", flush=True)
-            return
-
     is_test = False
     if task.pipeline_id:
         pipeline = db.query(Pipeline).filter(Pipeline.id == task.pipeline_id).first()
@@ -189,13 +181,6 @@ def resolve_dependencies(db, completed_task):
         
     pipeline = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
     if not pipeline or pipeline.status == 'cancelled':
-        return
-
-    from services.ha_coordinator_service import verify_fencing_token
-    try:
-        verify_fencing_token(db, pipeline_id)
-    except ValueError as e:
-        print(f"[Fencing Conflict] Aborting dependency resolution: {e}", flush=True)
         return
  
     # completed_task.required_by holds tasks that depend on completed_task

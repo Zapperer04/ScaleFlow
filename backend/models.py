@@ -357,34 +357,35 @@ class WorkerRegistry(Base):
             'status': self.status
         }
 
-Base.metadata.create_all(engine)
+def init_db():
+    Base.metadata.create_all(engine)
 
-# Auto-migration for existing tables (dialect-safe try/except blocks in separate transactions)
-from sqlalchemy import text
+    # Auto-migration for existing tables (dialect-safe try/except blocks in separate transactions)
+    from sqlalchemy import text
 
-for table, col, ctype in [
-    ("tasks", "assigned_worker_id", "VARCHAR(100)"),
-    ("tasks", "lease_token", "VARCHAR(100)"),
-    ("tasks", "lease_expires_at", "TIMESTAMP"),
-    ("tasks", "recovered_count", "INTEGER DEFAULT 0"),
-    ("tasks", "lease_renewal_count", "INTEGER DEFAULT 0"),
-    ("tasks", "pipeline_id", "INTEGER"),
-    ("tasks", "input_artifact_ids", "TEXT"),
-    ("tasks", "output_artifact_ids", "TEXT"),
-    ("tasks", "blocked_reason", "TEXT"),
-    ("tasks", "deferred_at", "TIMESTAMP"),
-    
-    ("pipelines", "owner_instance_id", "VARCHAR(100)"),
-    ("pipelines", "owner_lease_expires_at", "TIMESTAMP"),
-    ("pipelines", "ownership_version", "INTEGER DEFAULT 0"),
-    ("pipelines", "is_critical", "BOOLEAN DEFAULT FALSE"),
-    
-    ("orchestration_events", "segment_index", "INTEGER DEFAULT 0"),
-    ("orchestration_snapshots", "segment_index", "INTEGER DEFAULT 0")
-]:
-    try:
-        with engine.begin() as conn:
-            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ctype}"))
-    except Exception:
-        pass
+    for table, col, ctype in [
+        ("tasks", "assigned_worker_id", "VARCHAR(100)"),
+        ("tasks", "lease_token", "VARCHAR(100)"),
+        ("tasks", "lease_expires_at", "TIMESTAMP"),
+        ("tasks", "recovered_count", "INTEGER DEFAULT 0"),
+        ("tasks", "lease_renewal_count", "INTEGER DEFAULT 0"),
+        ("tasks", "pipeline_id", "INTEGER"),
+        ("tasks", "input_artifact_ids", "TEXT"),
+        ("tasks", "output_artifact_ids", "TEXT"),
+        ("tasks", "blocked_reason", "TEXT"),
+        ("tasks", "deferred_at", "TIMESTAMP"),
+        
+        ("pipelines", "owner_instance_id", "VARCHAR(100)"),
+        ("pipelines", "owner_lease_expires_at", "TIMESTAMP"),
+        ("pipelines", "ownership_version", "INTEGER DEFAULT 0"),
+        ("pipelines", "is_critical", "BOOLEAN DEFAULT FALSE"),
+        
+        ("orchestration_events", "segment_index", "INTEGER DEFAULT 0"),
+        ("orchestration_snapshots", "segment_index", "INTEGER DEFAULT 0")
+    ]:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ctype}"))
+        except Exception:
+            pass
 
