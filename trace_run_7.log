@@ -1,0 +1,23 @@
+[2026-05-27T07:51:25.650898] Task 199 | Event: TASK_CREATED | Message: Task created as part of pipeline Ingestion Pipeline - test_document.txt | Worker: None
+[2026-05-27T07:51:25.667705] Task 199 | Event: ARTIFACT_CREATED | Message: Root task received input artifact #220 | Worker: None
+[2026-05-27T07:51:25.688776] Task 200 | Event: TASK_CREATED | Message: Task created as part of pipeline Ingestion Pipeline - test_document.txt | Worker: None
+[2026-05-27T07:51:25.702882] Task 200 | Event: TASK_BLOCKED | Message: Waiting on dependencies | Worker: None
+[2026-05-27T07:51:25.715155] Task 201 | Event: TASK_CREATED | Message: Task created as part of pipeline Ingestion Pipeline - test_document.txt | Worker: None
+[2026-05-27T07:51:25.724297] Task 201 | Event: TASK_BLOCKED | Message: Waiting on dependencies | Worker: None
+[2026-05-27T07:51:25.746685] Task 199 | Event: TASK_QUEUED | Message: Pushed to high priority queue (queue: task_queue_test_cpu_heavy_high) | Worker: None
+[2026-05-27T07:51:25.767567] Task 199 | Event: TASK_CLAIMED | Message: Worker claimed task | Worker: worker-2
+[2026-05-27T07:51:26.026487] Task 199 | Event: ARTIFACT_CREATED | Message: Artifact 'parsed_text' (ID: 221) created | Worker: worker-2
+[2026-05-27T07:51:26.066195] Task None | Event: PIPELINE_OWNERSHIP_TAKEN_OVER | Message: Orchestrator orchestrator-4cba6474 JIT claimed ownership. | Worker: orchestrator-4cba6474
+[2026-05-27T07:51:26.099527] Task 199 | Event: TASK_COMPLETED | Message: Execution finished successfully | Worker: worker-2
+[2026-05-27T07:51:26.255552] Task 200 | Event: DEPENDENCY_RELEASED | Message: All dependencies completed. Released into medium queue. | Worker: None
+[2026-05-27T07:51:26.271859] Task 200 | Event: TASK_QUEUED | Message: Pushed to medium priority queue (queue: task_queue_test_cpu_heavy_medium) | Worker: None
+[2026-05-27T07:51:26.491641] Task 200 | Event: TASK_CLAIMED | Message: Worker claimed task | Worker: worker-1
+[2026-05-27T07:51:26.575767] Task 200 | Event: ARTIFACT_CREATED | Message: Artifact 'text_chunks' (ID: 222) created | Worker: worker-1
+[2026-05-27T07:51:26.605018] Task 200 | Event: TASK_COMPLETED | Message: Execution finished successfully | Worker: worker-1
+[2026-05-27T07:51:26.750186] Task 201 | Event: DEPENDENCY_RELEASED | Message: All dependencies completed. Released into medium queue. | Worker: None
+[2026-05-27T07:51:26.764788] Task 201 | Event: TASK_QUEUED | Message: Pushed to medium priority queue (queue: task_queue_test_embedding_gpu_medium) | Worker: None
+[2026-05-27T07:51:26.990395] Task 201 | Event: TASK_CLAIMED | Message: Worker claimed task | Worker: worker-3
+[2026-05-27T07:51:27.209502] Task 201 | Event: ARTIFACT_CREATED | Message: Artifact 'vector_index' (ID: 223) created | Worker: worker-3
+[2026-05-27T07:51:27.247526] Task 201 | Event: TASK_COMPLETED | Message: Execution finished successfully | Worker: worker-3
+[2026-05-27T07:51:27.283686] Task None | Event: PIPELINE_OWNERSHIP_TAKEN_OVER | Message: Advanced pipeline segment to 1 | Worker: None
+[2026-05-27T07:51:27.308454] Task None | Event: PIPELINE_COMPLETED | Message: None | Worker: None

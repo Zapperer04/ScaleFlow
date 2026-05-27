@@ -444,10 +444,13 @@ const OverviewPage = ({
   const renderConsoleHeader = () => {
     if (!pipelineDetails) return null;
     const pipeline = pipelineDetails.pipeline;
-    const currentTask = pipelineDetails.tasks?.find(t => t.status !== 'completed');
-    const currentStageLabel = currentTask 
-      ? currentTask.type.replace('_', ' ').toUpperCase()
-      : 'COMPLETED';
+    const currentTask = pipelineDetails.tasks?.find(t => t.status !== 'completed' && t.status !== 'failed');
+    const failedTask = pipelineDetails.tasks?.find(t => t.status === 'failed');
+    const currentStageLabel = failedTask
+      ? `FAILED: ${failedTask.type.replace(/_/g, ' ').toUpperCase()}`
+      : currentTask 
+        ? currentTask.type.replace(/_/g, ' ').toUpperCase()
+        : 'COMPLETED';
       
     const getElapsedRuntime = () => {
       if (!pipeline) return '0s';
@@ -457,32 +460,54 @@ const OverviewPage = ({
       return `${diffSec}s`;
     };
     
-    const activeWorker = pipelineDetails.tasks?.find(t => t.status === 'running')?.assigned_worker_id || 'None';
+    const activeWorker = pipelineDetails.tasks?.find(t => t.status === 'running')?.assigned_worker_id
+      || failedTask?.assigned_worker_id
+      || 'None';
+
+    const isFailed = pipeline.status === 'failed' || !!failedTask;
     
     return (
-      <div className="panel" style={{ padding: '16px 20px', display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '6px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Pipeline ID</span>
-          <strong style={{ color: '#fff', fontSize: '1rem', fontFamily: 'monospace' }}>#{selectedPipelineId}</strong>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div className="panel" style={{ padding: '16px 20px', display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'space-between', alignItems: 'center', background: isFailed ? 'rgba(239, 68, 68, 0.04)' : 'rgba(30, 41, 59, 0.4)', border: isFailed ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid rgba(255,255,255,0.05)', borderRadius: '6px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Pipeline ID</span>
+            <strong style={{ color: '#fff', fontSize: '1rem', fontFamily: 'monospace' }}>#{selectedPipelineId}</strong>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Current Stage</span>
+            <strong style={{ color: isFailed ? 'var(--color-failure)' : 'var(--color-accent)', fontSize: '0.9rem' }}>{currentStageLabel}</strong>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Status</span>
+            <span className={`badge ${pipeline.status}`} style={{ fontSize: '0.7rem', padding: '2px 8px', textTransform: 'uppercase' }}>
+              {pipeline.status}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Elapsed Runtime</span>
+            <strong style={{ color: '#fff', fontSize: '0.9rem' }}>{getElapsedRuntime()}</strong>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Active Worker</span>
+            <strong style={{ color: '#cbd5e1', fontSize: '0.9rem', fontFamily: 'monospace' }}>{activeWorker}</strong>
+          </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Current Stage</span>
-          <strong style={{ color: 'var(--color-accent)', fontSize: '0.9rem' }}>{currentStageLabel}</strong>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Status</span>
-          <span className={`badge ${pipeline.status}`} style={{ fontSize: '0.7rem', padding: '2px 8px', textTransform: 'uppercase' }}>
-            {pipeline.status}
-          </span>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Elapsed Runtime</span>
-          <strong style={{ color: '#fff', fontSize: '0.9rem' }}>{getElapsedRuntime()}</strong>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Active Worker</span>
-          <strong style={{ color: '#cbd5e1', fontSize: '0.9rem', fontFamily: 'monospace' }}>{activeWorker}</strong>
-        </div>
+        {isFailed && failedTask?.error_message && (
+          <div style={{
+            padding: '10px 16px',
+            background: 'rgba(239, 68, 68, 0.06)',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+            borderRadius: '4px',
+            fontSize: '0.75rem',
+            color: '#fca5a5',
+            display: 'flex',
+            gap: '8px',
+            alignItems: 'flex-start'
+          }}>
+            <span style={{ color: 'var(--color-failure)', fontWeight: 'bold', flexShrink: 0 }}>FAILURE REASON:</span>
+            <span style={{ wordBreak: 'break-word' }}>{failedTask.error_message}</span>
+          </div>
+        )}
       </div>
     );
   };
@@ -633,6 +658,7 @@ const OverviewPage = ({
                   style={{ width: '100%' }}
                 >
                   <option value="document_processing_demo">Standard AI Document Ingestion (.txt)</option>
+                  <option value="document_processing_demo">PDF Document Ingestion (.pdf)</option>
                 </select>
               </div>
 

@@ -174,10 +174,19 @@ def get_uploaded_file_path(pipeline_id):
 def parse_pdf_text_file(filepath, task_id=None, lease_token=None, progress_json=None):
     import pypdf
     import time
-    
+
+    # Use an absolute, stable temp directory adjacent to the worker script.
+    # This prevents path ambiguity when the CWD differs from the worker install dir.
+    _worker_dir = os.path.dirname(os.path.abspath(__file__))
+    _temp_dir = os.path.join(_worker_dir, "storage", "temp")
+    try:
+        os.makedirs(_temp_dir, exist_ok=True)
+    except Exception:
+        _temp_dir = _worker_dir  # fallback to worker dir if storage/temp creation fails
+
     start_time = time.time()
-    MAX_PARSE_DURATION = 1800 # 30 mins limit
-    
+    MAX_PARSE_DURATION = 1800  # 30 min ceiling
+
     checkpoint_page = 0
     if progress_json:
         try:
@@ -186,30 +195,38 @@ def parse_pdf_text_file(filepath, task_id=None, lease_token=None, progress_json=
             checkpoint_page = prog.get('checkpoint_page', 0)
         except Exception:
             pass
-            
-    temp_cache_file = f"temp_parse_{task_id}.txt" if task_id else None
-    
+
+    # Always use absolute path for temp cache — never relative to CWD
+    temp_cache_file = os.path.join(_temp_dir, f"temp_parse_{task_id}.txt") if task_id else None
+
+    def _cleanup_cache():
+        if temp_cache_file and os.path.exists(temp_cache_file):
+            try:
+                os.remove(temp_cache_file)
+            except Exception:
+                pass
+
     try:
         reader = pypdf.PdfReader(filepath)
-        
-        # PDF Circuit Breaker
+
+        # PDF Circuit Breaker: reject structurally anomalous PDFs early
         file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
         page_count = len(reader.pages)
         if page_count > (file_size_mb * 500) + 100:
             raise ValueError(f"FAILED_VALIDATION: Anomaly detected! Page count ({page_count}) excessively high for file size ({file_size_mb:.2f} MB)")
-            
+
         text_parts = []
         if checkpoint_page > 0 and temp_cache_file and os.path.exists(temp_cache_file):
             print(f"[{WORKER_ID}] Resuming PDF parsing from checkpoint page {checkpoint_page}", flush=True)
             with open(temp_cache_file, "r", encoding="utf-8") as f:
                 text_parts.append(f.read())
         elif temp_cache_file and os.path.exists(temp_cache_file):
-            os.remove(temp_cache_file)
-            
+            _cleanup_cache()
+
         for i in range(checkpoint_page, page_count):
             if time.time() - start_time > MAX_PARSE_DURATION:
                 raise TimeoutError("Execution timeout exceeded (Parse duration > 30m)")
-                
+
             page = reader.pages[i]
             page_text = page.extract_text()
             if page_text:
@@ -217,7 +234,7 @@ def parse_pdf_text_file(filepath, task_id=None, lease_token=None, progress_json=
                 if temp_cache_file:
                     with open(temp_cache_file, "a", encoding="utf-8") as f:
                         f.write(page_text + "\n\n")
-                        
+
             # Emit telemetry every 10 pages
             if task_id and lease_token and (i + 1) % 10 == 0:
                 mem_mb = 0.0
@@ -226,14 +243,14 @@ def parse_pdf_text_file(filepath, task_id=None, lease_token=None, progress_json=
                     mem_mb = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
                 except ImportError:
                     try:
-                        with open('/proc/self/status', 'r') as f:
-                            for line in f:
+                        with open('/proc/self/status', 'r') as pf:
+                            for line in pf:
                                 if line.startswith('VmRSS:'):
                                     mem_mb = float(line.split()[1]) / 1024
                                     break
-                    except:
+                    except Exception:
                         pass
-                        
+
                 prog_payload = {
                     "worker_id": WORKER_ID,
                     "lease_token": lease_token,
@@ -246,21 +263,22 @@ def parse_pdf_text_file(filepath, task_id=None, lease_token=None, progress_json=
                     requests.patch(f"{API_URL}/tasks/{task_id}/progress", json=prog_payload, headers=HEADERS, timeout=5)
                 except Exception as ex:
                     print(f"[{WORKER_ID}] Failed to emit progress: {ex}", flush=True)
-                    
+
         full_text = "\n\n".join(text_parts)
-        if temp_cache_file and os.path.exists(temp_cache_file):
-            try:
-                os.remove(temp_cache_file)
-            except:
-                pass
+        _cleanup_cache()
         return full_text
+
     except ValueError as ve:
+        # Circuit breaker or validation error — always clean up cache
+        _cleanup_cache()
         print(f"[{WORKER_ID}] Circuit Breaker Triggered: {ve}", flush=True)
         raise ve
     except TimeoutError as te:
+        _cleanup_cache()
         print(f"[{WORKER_ID}] Timeout Triggered: {te}", flush=True)
         raise Exception(str(te))
     except Exception as e:
+        _cleanup_cache()
         print(f"[{WORKER_ID}] Error parsing PDF with pypdf: {e}", flush=True)
         # Catch PDF corruption or read failures specifically
         err_msg = str(e).lower()
