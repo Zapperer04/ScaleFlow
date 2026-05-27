@@ -11,3 +11,6 @@ numpy<2.0.0
 sentence-transformers==2.5.1
 pypdf==6.12.1
 waitress==3.0.1
+pdfplumber>=0.11.0
+pytesseract>=0.3.10
+pdf2image>=1.17.0

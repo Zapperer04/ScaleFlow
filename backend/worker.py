@@ -171,206 +171,227 @@ def get_uploaded_file_path(pipeline_id):
         print(f"[{WORKER_ID}] Error fetching uploaded file path: {e}", flush=True)
     return None
 
-def parse_pdf_text_file(filepath, task_id=None, lease_token=None, progress_json=None):
-    import pypdf
-    import time
-
-    # Use an absolute, stable temp directory adjacent to the worker script.
-    # This prevents path ambiguity when the CWD differs from the worker install dir.
-    _worker_dir = os.path.dirname(os.path.abspath(__file__))
-    _temp_dir = os.path.join(_worker_dir, "storage", "temp")
-    try:
-        os.makedirs(_temp_dir, exist_ok=True)
-    except Exception:
-        _temp_dir = _worker_dir  # fallback to worker dir if storage/temp creation fails
-
-    start_time = time.time()
-    MAX_PARSE_DURATION = 1800  # 30 min ceiling
-
-    checkpoint_page = 0
-    if progress_json:
-        try:
-            import json
-            prog = progress_json if isinstance(progress_json, dict) else json.loads(progress_json)
-            checkpoint_page = prog.get('checkpoint_page', 0)
-        except Exception:
-            pass
-
-    # Always use absolute path for temp cache — never relative to CWD
-    temp_cache_file = os.path.join(_temp_dir, f"temp_parse_{task_id}.txt") if task_id else None
-
-    def _cleanup_cache():
-        if temp_cache_file and os.path.exists(temp_cache_file):
-            try:
-                os.remove(temp_cache_file)
-            except Exception:
-                pass
-
-    try:
-        reader = pypdf.PdfReader(filepath)
-
-        # PDF Circuit Breaker: reject structurally anomalous PDFs early
-        file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
-        page_count = len(reader.pages)
-        if page_count > (file_size_mb * 500) + 100:
-            raise ValueError(f"FAILED_VALIDATION: Anomaly detected! Page count ({page_count}) excessively high for file size ({file_size_mb:.2f} MB)")
-
-        text_parts = []
-        if checkpoint_page > 0 and temp_cache_file and os.path.exists(temp_cache_file):
-            print(f"[{WORKER_ID}] Resuming PDF parsing from checkpoint page {checkpoint_page}", flush=True)
-            with open(temp_cache_file, "r", encoding="utf-8") as f:
-                text_parts.append(f.read())
-        elif temp_cache_file and os.path.exists(temp_cache_file):
-            _cleanup_cache()
-
-        for i in range(checkpoint_page, page_count):
-            if time.time() - start_time > MAX_PARSE_DURATION:
-                raise TimeoutError("Execution timeout exceeded (Parse duration > 30m)")
-
-            page = reader.pages[i]
-            page_text = page.extract_text()
-            if page_text:
-                text_parts.append(page_text)
-                if temp_cache_file:
-                    with open(temp_cache_file, "a", encoding="utf-8") as f:
-                        f.write(page_text + "\n\n")
-
-            # Emit telemetry every 10 pages
-            if task_id and lease_token and (i + 1) % 10 == 0:
-                mem_mb = 0.0
-                try:
-                    import psutil
-                    mem_mb = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
-                except ImportError:
-                    try:
-                        with open('/proc/self/status', 'r') as pf:
-                            for line in pf:
-                                if line.startswith('VmRSS:'):
-                                    mem_mb = float(line.split()[1]) / 1024
-                                    break
-                    except Exception:
-                        pass
-
-                prog_payload = {
-                    "worker_id": WORKER_ID,
-                    "lease_token": lease_token,
-                    "checkpoint_page": i + 1,
-                    "total_pages": page_count,
-                    "memory_mb": round(mem_mb, 2),
-                    "status": "parsing"
-                }
-                try:
-                    requests.patch(f"{API_URL}/tasks/{task_id}/progress", json=prog_payload, headers=HEADERS, timeout=5)
-                except Exception as ex:
-                    print(f"[{WORKER_ID}] Failed to emit progress: {ex}", flush=True)
-
-        full_text = "\n\n".join(text_parts)
-        _cleanup_cache()
-        return full_text
-
-    except ValueError as ve:
-        # Circuit breaker or validation error — always clean up cache
-        _cleanup_cache()
-        print(f"[{WORKER_ID}] Circuit Breaker Triggered: {ve}", flush=True)
-        raise ve
-    except TimeoutError as te:
-        _cleanup_cache()
-        print(f"[{WORKER_ID}] Timeout Triggered: {te}", flush=True)
-        raise Exception(str(te))
-    except Exception as e:
-        _cleanup_cache()
-        print(f"[{WORKER_ID}] Error parsing PDF with pypdf: {e}", flush=True)
-        # Catch PDF corruption or read failures specifically
-        err_msg = str(e).lower()
-        if "pdf" in err_msg or "read" in err_msg or "corrupt" in err_msg or "decrypt" in err_msg or "eof" in err_msg or isinstance(e, pypdf.errors.PdfReadError):
-            raise ValueError(f"FAILED_VALIDATION: Corrupted or unreadable PDF file. Details: {e}")
-        raise e
-
-def parse_pdf_text(content):
-    matches = re.findall(r'\(([^)]*)\)', content)
-    if matches:
-        cleaned = []
-        for m in matches:
-            m = m.replace(r'\(', '(').replace(r'\)', ')')
-            if m.strip():
-                cleaned.append(m)
-        return " ".join(cleaned)
-    clean_text = "".join(c for c in content if c.isprintable() or c in "\r\n\t")
-    return clean_text
-
+# ─────────────────────────────────────────────────────────────────────────────
+# PDF parsing delegated to services/pdf_parser.py (fallback chain)
+# ─────────────────────────────────────────────────────────────────────────────
 def handle_parse_document(payload, input_artifacts):
+    """
+    Parse uploaded document via a 3-tier fallback chain:
+    pypdf → pdfplumber → OCR (scanned/image pages only).
+    All parser decisions are emitted as task trace events.
+    """
     text = payload.get('source_text')
     pipeline_id = payload.get('_pipeline_id')
     task_id = payload.get('_task_id')
     lease_token = payload.get('_lease_token')
     progress_json = payload.get('_progress_json')
-    
+    parse_stats = {}
+
+    def _trace(msg: str):
+        print(f"[{WORKER_ID}] {msg}", flush=True)
+        emit_task_trace(task_id, msg)
+
     if not text and pipeline_id:
-        emit_task_trace(task_id, "Parser initialized")
+        _trace("[PARSER] Initializing document parser")
         filepath = get_uploaded_file_path(pipeline_id)
         if filepath and os.path.exists(filepath):
             file_id, original_filename, _ = get_pipeline_file_info(pipeline_id)
-            is_pdf = False
-            if original_filename and original_filename.lower().endswith(".pdf"):
-                is_pdf = True
-            elif filepath.lower().endswith(".pdf"):
-                is_pdf = True
-                
+            is_pdf = (
+                (original_filename and original_filename.lower().endswith(".pdf"))
+                or filepath.lower().endswith(".pdf")
+            )
+
             if is_pdf:
-                print(f"[{WORKER_ID}] Extraction: Parsing PDF via pypdf from {filepath}", flush=True)
-                text = parse_pdf_text_file(filepath, task_id=task_id, lease_token=lease_token, progress_json=progress_json)
-                if not text:
-                    print(f"[{WORKER_ID}] Extraction Warning: pypdf returned empty text, trying raw content fallback", flush=True)
+                _trace(f"[PARSER] PDF detected — starting fallback-chain parser")
+                try:
+                    from services.pdf_parser import parse_pdf
+                    result = parse_pdf(
+                        filepath=filepath,
+                        task_id=task_id,
+                        lease_token=lease_token,
+                        progress_json=progress_json if isinstance(progress_json, dict) else {},
+                        trace_fn=_trace,
+                        api_url=API_URL,
+                        api_headers=HEADERS,
+                    )
+                    text = result.text
+                    parse_stats = result.stats
+
+                    if not text:
+                        _trace("[PARSER] WARNING: All parsers returned empty text. Document may be fully graphical.")
+                except ValueError as ve:
+                    # Circuit-breaker / validation failure — surface clearly
+                    _trace(f"[PARSER] VALIDATION FAILURE: {ve}")
+                    raise
+                except TimeoutError as te:
+                    _trace(f"[PARSER] TIMEOUT: {te}")
+                    raise Exception(str(te))
+                except Exception as e:
+                    _trace(f"[PARSER] CRITICAL ERROR: {e}")
+                    raise
             else:
+                # Plain text / log file
+                _trace("[PARSER] Plain-text file detected — reading directly")
                 try:
                     with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                         text = f.read()
+                    _trace(f"[PARSER] Read {len(text)} chars from file")
                 except Exception as e:
-                    print(f"[{WORKER_ID}] Error reading non-PDF file: {e}", flush=True)
-                    
+                    _trace(f"[PARSER] ERROR reading file: {e}")
+        else:
+            if filepath:
+                _trace(f"[PARSER] ERROR: File not found at expected path: {filepath}")
+            else:
+                _trace("[PARSER] ERROR: Could not resolve file path from pipeline artifacts")
+
+    # Fallback to raw artifact content (used in unit tests / inline pipelines)
     if not text and input_artifacts:
         uploaded_file_data = input_artifacts.get("uploaded_file")
         if uploaded_file_data is not None:
-            if isinstance(uploaded_file_data, str) and (uploaded_file_data.startswith("%PDF") or "%PDF" in uploaded_file_data[:1024]):
-                text = parse_pdf_text(uploaded_file_data)
-            else:
-                text = str(uploaded_file_data)
-        else:
-            text = list(input_artifacts.values())[0]
-            if isinstance(text, dict) and "content" in text:
-                text = text["content"]
-                
+            text = str(uploaded_file_data)
+        elif input_artifacts:
+            first_val = list(input_artifacts.values())[0]
+            text = first_val.get("content", str(first_val)) if isinstance(first_val, dict) else str(first_val)
+
     if not text:
         text = ""
+
     normalized = text.strip()
-    print(f"[{WORKER_ID}]   [OK] Parsed document of length {len(normalized)}", flush=True)
-    return normalized
+    _trace(f"[PARSER] Complete — extracted {len(normalized):,} characters")
+    if parse_stats.get("ocr_pages", 0) > 0:
+        _trace(f"[PARSER] OCR was used on {parse_stats['ocr_pages']} page(s)")
+    if parse_stats.get("page_failures"):
+        for pf in parse_stats["page_failures"][:5]:   # surface first 5 only
+            _trace(f"[PARSER] Page {pf['page']} failure [{pf['parser']}]: {pf['reason'][:120]}")
+
+    # Return text with embedded parse stats so the artifact metadata carries them
+    return {"parsed_text": normalized, "parse_stats": parse_stats}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Semantic Chunker — paragraph-aware, sentence-boundary-preserving
+# ─────────────────────────────────────────────────────────────────────────────
+def _semantic_chunk(text: str, task_id=None) -> list:
+    """
+    Split text into coherent, retrieval-optimised chunks:
+    - Paragraph-aware: never splits a paragraph mid-sentence
+    - Heading-aware: detected headings start fresh chunks
+    - Target size: ~400 words with last-paragraph overlap
+    - Min chunk: 40 words (filters page headers / noise)
+    - Max chunks: 500 (resource guard for huge documents)
+    """
+    CHUNK_TARGET_WORDS = int(os.getenv("CHUNK_TARGET_WORDS", "400"))
+    CHUNK_MIN_WORDS    = int(os.getenv("CHUNK_MIN_WORDS",    "40"))
+    MAX_CHUNKS         = int(os.getenv("MAX_CHUNKS",         "500"))
+
+    def _is_heading(line: str) -> bool:
+        stripped = line.strip()
+        # Markdown-style headings
+        if re.match(r'^#{1,4}\s', stripped):
+            return True
+        # ALL CAPS lines of moderate length (section titles)
+        if (len(stripped) > 4 and len(stripped) < 80
+                and stripped == stripped.upper() and stripped.replace(" ", "").isalpha()):
+            return True
+        # Numbered sections like "1.2 Introduction" or "Chapter 3"
+        if re.match(r'^(chapter|section|appendix|part)?\s*\d+[.\d]*\s+\w', stripped, re.IGNORECASE):
+            return True
+        return False
+
+    def _words(s: str) -> int:
+        return len(s.split())
+
+    # ── step 1: split into paragraphs ────────────────────────────────────────
+    raw_paragraphs = re.split(r'\n{2,}', text)
+    paragraphs = []
+    for p in raw_paragraphs:
+        p = p.strip()
+        if not p:
+            continue
+        # Break at headings within a paragraph block
+        lines = p.splitlines()
+        current_block: list[str] = []
+        for line in lines:
+            if _is_heading(line) and current_block:
+                paragraphs.append(" ".join(current_block).strip())
+                current_block = [line]
+            else:
+                current_block.append(line)
+        if current_block:
+            paragraphs.append(" ".join(current_block).strip())
+
+    # ── step 2: accumulate paragraphs into chunks ─────────────────────────────
+    chunks: list[str] = []
+    current_chunk_parts: list[str] = []
+    current_word_count = 0
+    last_paragraph = ""   # kept for overlap bridge
+
+    for para in paragraphs:
+        para_words = _words(para)
+
+        # A heading or the addition of this paragraph would overflow — flush
+        if (_is_heading(para) or current_word_count + para_words > CHUNK_TARGET_WORDS) \
+                and current_chunk_parts:
+            chunk_text = "\n\n".join(current_chunk_parts).strip()
+            if _words(chunk_text) >= CHUNK_MIN_WORDS:
+                chunks.append(chunk_text)
+
+            # Overlap: carry last paragraph into next chunk for context continuity
+            current_chunk_parts = [last_paragraph] if last_paragraph and _words(last_paragraph) >= CHUNK_MIN_WORDS else []
+            current_word_count = _words(last_paragraph) if current_chunk_parts else 0
+
+        current_chunk_parts.append(para)
+        current_word_count += para_words
+        last_paragraph = para
+
+    # Flush final chunk
+    if current_chunk_parts:
+        chunk_text = "\n\n".join(current_chunk_parts).strip()
+        if _words(chunk_text) >= CHUNK_MIN_WORDS:
+            chunks.append(chunk_text)
+
+    # ── step 3: resource cap ─────────────────────────────────────────────────
+    if len(chunks) > MAX_CHUNKS:
+        emit_task_trace(task_id, f"[CHUNKER] WARNING: {len(chunks)} chunks exceeds limit of {MAX_CHUNKS}. Truncating.")
+        chunks = chunks[:MAX_CHUNKS]
+
+    return chunks
+
 
 def handle_chunk_text(payload, input_artifacts):
-    text = input_artifacts.get("parsed_text", "")
+    """
+    Paragraph-aware, sentence-boundary-preserving semantic chunker.
+    Replaces the old fixed sliding-window approach.
+    """
+    task_id = payload.get('_task_id')
+
+    # Input may be a dict (new format from handle_parse_document) or raw string
+    raw_input = input_artifacts.get("parsed_text", "")
+    if isinstance(raw_input, dict):
+        text = raw_input.get("parsed_text", "")
+    elif isinstance(raw_input, str):
+        text = raw_input
+    else:
+        text = payload.get("source_text", "")
+
     if not text:
         text = payload.get("source_text", "")
-    
-    task_id = payload.get('_task_id')
-    emit_task_trace(task_id, "Chunk generation started")
 
-        
-    # Sliding window word chunking
-    chunk_size_words = 200
-    overlap_words = 40
-    
-    words = text.split()
-    chunks = []
-    if words:
-        i = 0
-        while i < len(words):
-            chunk_words = words[i:i+chunk_size_words]
-            chunks.append(" ".join(chunk_words))
-            i += chunk_size_words - overlap_words
+    emit_task_trace(task_id, "[CHUNKER] Paragraph-aware semantic chunking started")
+
+    # Detect paragraph structure richness
+    paragraph_count = len([p for p in re.split(r'\n{2,}', text) if p.strip()])
+    emit_task_trace(task_id, f"[CHUNKER] Detected {paragraph_count} paragraphs in document")
+
+    chunks = _semantic_chunk(text, task_id=task_id)
+
+    if chunks:
+        avg_words = sum(len(c.split()) for c in chunks) // len(chunks)
     else:
-        chunks = [text]
-        
-    print(f"[{WORKER_ID}]   [OK] Chunked text into {len(chunks)} chunks with sliding window (size={chunk_size_words}, overlap={overlap_words})", flush=True)
+        avg_words = 0
+
+    emit_task_trace(task_id, f"[CHUNKER] Generated {len(chunks)} chunks (avg {avg_words} words/chunk)")
+    print(f"[{WORKER_ID}]   [OK] Chunked text into {len(chunks)} semantic chunks (avg {avg_words} words)", flush=True)
     return chunks
 
 def get_pipeline_file_info(pipeline_id):
@@ -428,39 +449,57 @@ def get_artifact_content_by_type(pipeline_id, artifact_type):
     return None
 
 def handle_generate_embeddings(payload, input_artifacts):
-    from services.embedding_service import embed_chunks
+    from services.embedding_service import embed_chunks_with_progress
     from services.vector_store import upsert_document_chunks
-    
-    # Read text_chunks or error_patterns
-    chunks = input_artifacts.get("text_chunks") or input_artifacts.get("error_patterns") or []
-    if isinstance(chunks, str):
-        chunks = [chunks]
-    elif isinstance(chunks, dict):
-        chunks = [json.dumps(chunks)]
-        
+
+    task_id     = payload.get('_task_id')
     pipeline_id = payload.get('_pipeline_id')
-    task_id = payload.get('_task_id')
-    
-    print(f"[{WORKER_ID}]   -> Generating real embeddings for {len(chunks)} chunks in pipeline {pipeline_id}...", flush=True)
-    
-    # Generate real embeddings (384-dimensional)
+
+    MAX_EMBED_CHUNKS = int(os.getenv("MAX_CHUNKS", "500"))
+
+    def _trace(msg: str):
+        print(f"[{WORKER_ID}] {msg}", flush=True)
+        emit_task_trace(task_id, msg)
+
+    # ── normalise input (text_chunks or error_patterns) ──────────────────────
+    raw = input_artifacts.get("text_chunks") or input_artifacts.get("error_patterns") or []
+    if isinstance(raw, str):
+        chunks = [raw]
+    elif isinstance(raw, dict):
+        chunks = [json.dumps(raw)]
+    elif isinstance(raw, list):
+        # Each element may itself be a string or dict
+        chunks = [c if isinstance(c, str) else json.dumps(c) for c in raw]
+    else:
+        chunks = []
+
+    # ── resource guard: cap chunk count ──────────────────────────────────────
+    if len(chunks) > MAX_EMBED_CHUNKS:
+        _trace(f"[EMBED] WARNING: {len(chunks)} chunks exceeds limit {MAX_EMBED_CHUNKS}. Truncating.")
+        chunks = chunks[:MAX_EMBED_CHUNKS]
+
+    _trace(f"[EMBED] Generating embeddings for {len(chunks)} chunks (model: all-MiniLM-L6-v2, dim=384)")
+
+    # ── generate embeddings with batch progress trace ─────────────────────────
     vectors = []
     if chunks:
-        vectors = embed_chunks(chunks)
-        
-    # Get context details via helper
-    file_id = None
-    original_filename = None
-    source_artifact_id = None
+        def _batch_trace(batch_num, total_batches, done, total):
+            _trace(f"[EMBED] Batch {batch_num}/{total_batches} — {done}/{total} chunks embedded")
+
+        vectors = embed_chunks_with_progress(chunks, progress_callback=_batch_trace)
+
+    # ── resolve pipeline context ──────────────────────────────────────────────
+    file_id = original_filename = source_artifact_id = None
     if pipeline_id:
         file_id, original_filename, source_artifact_id = get_pipeline_file_info(pipeline_id)
-        
-    # Upsert to Qdrant
+
+    # ── upsert to Qdrant ──────────────────────────────────────────────────────
     qdrant_upserted = False
     if chunks and vectors:
+        _trace(f"[QDRANT] Upserting {len(chunks)} vectors to collection 'scaleflow_chunks'...")
         meta_dict = {
             "source_artifact_id": source_artifact_id,
-            "original_filename": original_filename
+            "original_filename":  original_filename
         }
         qdrant_upserted = upsert_document_chunks(
             pipeline_id=pipeline_id,
@@ -470,31 +509,27 @@ def handle_generate_embeddings(payload, input_artifacts):
             vectors=vectors,
             metadata=meta_dict
         )
-        
-    # Build the chunk refs for the artifact
-    chunk_refs = []
-    for idx, chunk in enumerate(chunks):
-        chunk_refs.append({
-            "chunk_index": idx,
-            "chunk_text": chunk[:100] + "..." if len(chunk) > 100 else chunk
-        })
-        
-    # Create vector_index artifact data
+        if qdrant_upserted:
+            _trace(f"[QDRANT] Insertion complete — {len(chunks)} vectors indexed")
+        else:
+            _trace("[QDRANT] WARNING: Upsert returned False — check Qdrant connectivity")
+
+    # ── build artifact data ───────────────────────────────────────────────────
+    chunk_refs = [
+        {"chunk_index": idx, "chunk_text": (c[:120] + "...") if len(c) > 120 else c}
+        for idx, c in enumerate(chunks)
+    ]
+
     artifact_data = {
-        "collection": "scaleflow_chunks",
-        "vector_count": len(chunks),
+        "collection":      "scaleflow_chunks",
+        "vector_count":    len(chunks),
         "embedding_model": "all-MiniLM-L6-v2",
-        "dimension": 384,
+        "dimension":       384,
         "qdrant_upserted": qdrant_upserted,
-        "chunk_refs": chunk_refs
+        "chunk_refs":      chunk_refs
     }
-    
-    if vectors:
-        emit_task_trace(task_id, "Embeddings generated")
-    if qdrant_upserted:
-        emit_task_trace(task_id, "Qdrant insertion completed")
-    
-    print(f"[{WORKER_ID}]   [OK] Generated vector index with {len(chunks)} points (upserted to Qdrant: {qdrant_upserted})", flush=True)
+
+    _trace(f"[EMBED] Complete — {len(chunks)} vectors (qdrant_upserted={qdrant_upserted})")
     return artifact_data
 
 def handle_summarize_document(payload, input_artifacts):
@@ -521,6 +556,10 @@ def handle_summarize_document(payload, input_artifacts):
             text = input_artifacts.get("parsed_text", "")
             if not text and pipeline_id:
                 text = get_artifact_content_by_type(pipeline_id, "parsed_text")
+                
+            if isinstance(text, dict):
+                text = text.get("parsed_text", "")
+                
             if text:
                 chunks = [text]
             else:

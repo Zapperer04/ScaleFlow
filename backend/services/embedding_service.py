@@ -36,14 +36,24 @@ def embed_text(text: str) -> list[float]:
         raise RuntimeError(f"Text embedding generation failed: {e}") from e
 
 def embed_chunks(chunks: list[str]) -> list[list[float]]:
+    return embed_chunks_with_progress(chunks)
+
+def embed_chunks_with_progress(chunks: list[str], progress_callback=None) -> list[list[float]]:
     model = get_embedding_model()
     try:
         all_vectors = []
         batch_size = 64
+        total_batches = math.ceil(len(chunks) / batch_size) if chunks else 0
+        
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i:i + batch_size]
             vectors = model.encode(batch, convert_to_numpy=True).tolist()
             all_vectors.extend([[round(float(v), 6) for v in vector] for vector in vectors])
+            
+            if progress_callback:
+                batch_num = (i // batch_size) + 1
+                progress_callback(batch_num, total_batches, len(all_vectors), len(chunks))
+                
         return all_vectors
     except Exception as e:
         logger.critical(f"CRITICAL: Error during model batch encoding: {e}")
