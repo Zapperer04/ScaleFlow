@@ -399,6 +399,10 @@ def handle_validate_parse_quality(payload, input_artifacts):
         
     _trace("[QUALITY GATE] PASSED: Document parsing quality is within acceptable bounds.")
     
+    comparison_metrics = parse_stats.get("comparison_metrics", {})
+    ocr_attempted = parse_stats.get("ocr_attempted", False)
+    initial_parser = parse_stats.get("initial_parser", "pypdf")
+
     return {
         "parsed_text": text,
         "preview": text[:1000],
@@ -407,7 +411,13 @@ def handle_validate_parse_quality(payload, input_artifacts):
         "dict_word_ratio": dict_word_ratio,
         "coherence_score": coherence_score,
         "parser_used": parser_used,
-        "ocr_activated": ocr_pages > 0
+        "ocr_activated": ocr_pages > 0,
+        "ocr_attempted": ocr_attempted,
+        "initial_parser": initial_parser,
+        "pypdf_score": comparison_metrics.get("pypdf_score", 0.0),
+        "ocr_score": comparison_metrics.get("ocr_score", 0.0),
+        "selected_parser": comparison_metrics.get("selected_parser", parser_used),
+        "rejection_reason": comparison_metrics.get("rejection_reason", "")
     }
 
 

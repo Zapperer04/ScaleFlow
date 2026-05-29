@@ -672,6 +672,56 @@ const OverviewPage = ({
           </div>
         </div>
 
+        {/* OCR Rescue Recovery Trace */}
+        {isCompleted && metadata.ocr_attempted && (
+          <div style={{
+            background: 'rgba(59, 130, 246, 0.08)',
+            border: '1px solid rgba(59, 130, 246, 0.25)',
+            borderRadius: '4px',
+            padding: '12px 16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px'
+          }}>
+            <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              OCR Rescue Recovery Trace
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
+              <div style={{ background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>PARSER ATTEMPT #1</div>
+                <div style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', fontFamily: 'monospace', marginTop: '2px' }}>
+                  {String(metadata.initial_parser || 'PYPDF').toUpperCase()}
+                </div>
+                <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 'bold', marginTop: '6px' }}>QUALITY SCORE</div>
+                <div style={{ fontSize: '0.9rem', color: '#fca5a5', fontWeight: 'bold', marginTop: '2px' }}>
+                  {(metadata.pypdf_score || 0).toFixed(1)}
+                </div>
+              </div>
+              <div style={{ background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>PARSER ATTEMPT #2</div>
+                <div style={{ fontSize: '0.75rem', color: '#fff', fontWeight: 'bold', fontFamily: 'monospace', marginTop: '2px' }}>
+                  OCR FALLBACK
+                </div>
+                <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 'bold', marginTop: '6px' }}>QUALITY SCORE</div>
+                <div style={{ fontSize: '0.9rem', color: '#86efac', fontWeight: 'bold', marginTop: '2px' }}>
+                  {(metadata.ocr_score || 0).toFixed(1)}
+                </div>
+              </div>
+            </div>
+            <div style={{ fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Selected Result:</span>
+              <strong style={{ color: 'var(--color-success)', background: 'rgba(34, 197, 94, 0.15)', padding: '2px 6px', borderRadius: '3px', fontFamily: 'monospace' }}>
+                {String(metadata.selected_parser || 'OCR').toUpperCase()}
+              </strong>
+              {metadata.rejection_reason && (
+                <span style={{ color: '#fca5a5', marginLeft: 'auto', fontSize: '0.65rem' }}>
+                  Reason: {metadata.rejection_reason}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Text Preview */}
         {isCompleted && metadata.preview && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

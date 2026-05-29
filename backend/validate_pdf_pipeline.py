@@ -14,6 +14,8 @@ except ImportError:
     subprocess.run([sys.executable, "-m", "pip", "install", "fpdf2"], check=True)
     from fpdf import FPDF
 
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s - %(message)s")
 logger = logging.getLogger("validate_pdf_pipeline")
 
@@ -106,6 +108,72 @@ def generate_test_pdfs():
         f.write(b"%PDF-1.4\n%This is a deliberately broken PDF file\n<</Type/Catalog/Pages 1 0 R>>\nEOF")
     files["E"] = {"path": filepath_e, "desc": "Malformed/Corrupted PDF"}
 
+    # Category P: Photographed Notes PDF (image-based)
+    try:
+        from PIL import Image, ImageDraw
+        img = Image.new('RGB', (800, 1000), color=(245, 245, 220))
+        d = ImageDraw.Draw(img)
+        d.text((50, 50), "Lecture Notes: Introduction to Distributed Systems", fill=(10, 10, 50))
+        d.text((50, 100), "1. Replication and Consistency models guarantee state agreements.", fill=(10, 10, 50))
+        d.text((50, 150), "2. Vector clocks are used to capture causal relationships in messages.", fill=(10, 10, 50))
+        d.text((50, 200), "3. Raft uses leader election and consensus to replicate logs safely.", fill=(10, 10, 50))
+        d.text((50, 250), "4. Paxos is another consensus algorithm but is harder to implement.", fill=(10, 10, 50))
+        d.text((50, 300), "5. Byzantine fault tolerance handles arbitrary failures including malicious actors.", fill=(10, 10, 50))
+        img_path = "test_data/temp_notes.jpg"
+        img.save(img_path)
+        
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.image(img_path, x=0, y=0, w=210)
+        filepath_p = "test_data/photographed_notes.pdf"
+        pdf.output(filepath_p)
+        files["P"] = {"path": filepath_p, "desc": "Photographed Notes PDF"}
+    except Exception as e:
+        logger.warning(f"Failed to generate Category P: {e}")
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=8)
+        pdf.text(10, 10, text="Photographed Notes Fallback Text")
+        filepath_p = "test_data/photographed_notes.pdf"
+        pdf.output(filepath_p)
+        files["P"] = {"path": filepath_p, "desc": "Photographed Notes PDF (fallback)"}
+
+    # Category S: The Billion Dollar Sure Thing PDF
+    try:
+        from PIL import Image, ImageDraw
+        img = Image.new('RGB', (800, 1000), color=(255, 255, 255))
+        d = ImageDraw.Draw(img)
+        d.text((50, 50), "THE BILLION DOLLAR SURE THING", fill=(0, 0, 0))
+        d.text((50, 100), "A Novel by Paul E. Erdman", fill=(0, 0, 0))
+        d.text((50, 150), "Chapter 1: The Zurich Exchange", fill=(0, 0, 0))
+        d.text((50, 200), "It was a billion-dollar sure thing, the most secret scheme in Swiss banking history.", fill=(0, 0, 0))
+        d.text((50, 250), "The plan was conceived in the quiet, wood-paneled offices of the General Bank of Switzerland.", fill=(0, 0, 0))
+        d.text((50, 300), "Under the guidance of the brilliant but ruthless Dr. Stanley, a group of international bankers", fill=(0, 0, 0))
+        d.text((50, 350), "sought to exploit the vulnerabilities of the American dollar. If the Americans found out,", fill=(0, 0, 0))
+        d.text((50, 400), "the entire global financial order would collapse overnight, triggering a worldwide crisis.", fill=(0, 0, 0))
+        d.text((50, 450), "The main characters involved in this thriller include Dr. Stanley, the mastermind,", fill=(0, 0, 0))
+        d.text((50, 500), "and Charles, the pragmatic American banker who began to suspect the scheme.", fill=(0, 0, 0))
+        d.text((50, 550), "This opening section establishes the tense atmosphere in Zurich, setting the stage", fill=(0, 0, 0))
+        d.text((50, 600), "for a financial conspiracy of unprecedented scale.", fill=(0, 0, 0))
+        img_path = "test_data/temp_billion.jpg"
+        img.save(img_path)
+        
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.image(img_path, x=0, y=0, w=210)
+        filepath_s = "test_data/billion_dollar_sure_thing.pdf"
+        pdf.output(filepath_s)
+        files["S"] = {"path": filepath_s, "desc": "The Billion Dollar Sure Thing PDF"}
+    except Exception as e:
+        logger.warning(f"Failed to generate Category S: {e}")
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=8)
+        pdf.text(10, 10, text="The Billion Dollar Sure Thing Fallback Text")
+        filepath_s = "test_data/billion_dollar_sure_thing.pdf"
+        pdf.output(filepath_s)
+        files["S"] = {"path": filepath_s, "desc": "The Billion Dollar Sure Thing PDF (fallback)"}
+
     # Category K: Kaustav OOPs Assignment PDF
     filepath_k = "test_data/Kaustav_OOPsAssign2.pdf"
     if os.path.exists(filepath_k):
@@ -150,7 +218,8 @@ def test_retrieval(pipeline_id, queries):
             "pipeline_type": "retrieval_answer_demo",
             "initial_payload": {
                 "query": q,
-                "target_pipeline_id": pipeline_id
+                "target_pipeline_id": pipeline_id,
+                "pipeline_id_filter": pipeline_id
             }
         }
         res = requests.post(f"{API_URL}/pipelines", json=payload, headers=HEADERS)
@@ -201,41 +270,79 @@ def main():
             status = data.get('pipeline', {}).get('status')
             dur_s = round(time.time() - start_t, 2)
             
+            # Find parsed_text artifact if exists (even if pipeline failed)
+            parsed_text_meta = None
+            for art in data.get('artifacts', []):
+                if art.get('artifact_type') == 'parsed_text':
+                    meta = art.get('metadata_json')
+                    if isinstance(meta, str):
+                        meta = json.loads(meta)
+                    if meta:
+                        if 'parse_stats' in meta:
+                            parsed_text_meta = meta
+                            break
+                        elif not parsed_text_meta:
+                            parsed_text_meta = meta
+                    
+            for art in data.get('artifacts', []):
+                if art.get('artifact_type') == 'vector_index':
+                    meta = art.get('metadata_json')
+                    if isinstance(meta, str):
+                        meta = json.loads(meta)
+                    if meta:
+                        chunks = meta.get('vector_count', 0)
+            
+            quality_gate_metrics = {}
+            parser_used_val = "N/A"
+            if parsed_text_meta:
+                parse_text_val = parsed_text_meta.get('parsed_text', '')
+                if 'parse_stats' in parsed_text_meta:
+                    stats_val = parsed_text_meta.get('parse_stats', {})
+                    parser_used_val = stats_val.get('parser', 'unknown')
+                    
+                    from services.pdf_parser import evaluate_text_quality
+                    quality_gate_metrics = evaluate_text_quality(parse_text_val)
+                    
+                    quality_gate_metrics['ocr_activated'] = stats_val.get('ocr_pages', 0) > 0
+                    quality_gate_metrics['ocr_attempted'] = stats_val.get('ocr_attempted', False)
+                    quality_gate_metrics['ocr_confidence'] = stats_val.get('avg_ocr_confidence', 100.0)
+                    
+                    comp = stats_val.get('comparison_metrics', {})
+                    quality_gate_metrics['pypdf_score'] = comp.get('pypdf_score', 0.0)
+                    quality_gate_metrics['ocr_score'] = comp.get('ocr_score', 0.0)
+                    quality_gate_metrics['preview'] = parse_text_val[:1000]
+                else:
+                    parser_used_val = parsed_text_meta.get('parser_used', 'unknown')
+                    quality_gate_metrics = {
+                        'printable_ratio': parsed_text_meta.get('printable_ratio', 0.0),
+                        'dict_word_ratio': parsed_text_meta.get('dict_word_ratio', 0.0),
+                        'coherence_score': parsed_text_meta.get('coherence_score', 0.0),
+                        'ocr_activated': parsed_text_meta.get('ocr_activated', False),
+                        'ocr_attempted': parsed_text_meta.get('ocr_attempted', False),
+                        'ocr_confidence': parsed_text_meta.get('ocr_confidence', 100.0),
+                        'pypdf_score': parsed_text_meta.get('pypdf_score', 0.0),
+                        'ocr_score': parsed_text_meta.get('ocr_score', 0.0),
+                        'preview': parsed_text_meta.get('preview', parse_text_val[:1000])
+                    }
+            
             if status == "completed":
-                # Extract stats from artifacts
-                quality_gate_metrics = {}
-                for art in data.get('artifacts', []):
-                    if art.get('artifact_type') == 'parsed_text':
-                        meta = art.get('metadata_json')
-                        if isinstance(meta, str):
-                            meta = json.loads(meta)
-                        if meta:
-                            if 'dict_word_ratio' in meta:
-                                quality_gate_metrics = meta
-                                parser_used = meta.get('parser_used', parser_used)
-                            elif 'parse_stats' in meta:
-                                parser_used = meta['parse_stats'].get('parser', 'unknown')
-                    elif art.get('artifact_type') == 'vector_index':
-                        meta = art.get('metadata_json')
-                        if isinstance(meta, str):
-                            meta = json.loads(meta)
-                        if meta:
-                            chunks = meta.get('vector_count', 0)
-                            
+                parser_used = parser_used_val
                 details.append(f"\n### Category {cat}: {info['desc']}")
                 details.append(f"- **Status**: SUCCESS")
                 details.append(f"- **Parser Used**: {parser_used}")
                 if quality_gate_metrics:
                     details.append(f"- **OCR Activated**: {'YES' if quality_gate_metrics.get('ocr_activated') else 'NO'}")
+                    details.append(f"- **OCR Attempted**: {'YES' if quality_gate_metrics.get('ocr_attempted') else 'NO'}")
                     details.append(f"- **OCR Confidence**: {quality_gate_metrics.get('ocr_confidence', 0.0):.1f}%")
                     details.append(f"- **Printable Ratio**: {quality_gate_metrics.get('printable_ratio', 0.0):.2%}")
                     details.append(f"- **Dictionary Word Ratio**: {quality_gate_metrics.get('dict_word_ratio', 0.0):.2%}")
                     details.append(f"- **Coherence Score**: {quality_gate_metrics.get('coherence_score', 0.0):.1f}/100.0")
+                    details.append(f"- **Initial Parser Quality Score**: {quality_gate_metrics.get('pypdf_score', 0.0):.1f}/100.0")
+                    details.append(f"- **OCR Parser Quality Score**: {quality_gate_metrics.get('ocr_score', 0.0):.1f}/100.0")
                     preview = quality_gate_metrics.get('preview', '')
                     if preview:
-                        # Clean up formatting for markdown display
                         clean_preview = preview.replace('\n', ' ').replace('\r', '')
-                        details.append(f"- **Parsed Preview**: `{clean_preview[:150]}...`")
+                        details.append(f"- **First 500 Extracted Characters**: `{clean_preview[:500]}`")
                     logger.info(f"Category {cat} Ingestion Quality Gate metrics:")
                     logger.info(f"  Parser Used: {parser_used}")
                     logger.info(f"  OCR Activated: {quality_gate_metrics.get('ocr_activated')}")
@@ -253,9 +360,9 @@ def main():
                     details.append("\n**Retrieval Tests:**")
                     for q, a in ans.items():
                         details.append(f"- *Q: {q}*\n  - *A: {a}*")
-                        
             else:
                 # Failed (expected for E)
+                parser_used = parser_used_val
                 failed_tasks = [t for t in data.get('tasks', []) if t.get('status') == 'failed']
                 if failed_tasks:
                     error_reason = failed_tasks[0].get('error_message', 'Unknown Error')
@@ -263,8 +370,23 @@ def main():
                     error_reason = "Pipeline failed without task error."
                     
                 details.append(f"\n### Category {cat}: {info['desc']}")
-                details.append(f"- **Status**: FAILED (Expected for malformed)")
+                details.append(f"- **Status**: FAILED (Expected/intended fallback behavior)")
                 details.append(f"- **Error**: {error_reason}")
+                details.append(f"- **Parser Used**: {parser_used}")
+                if quality_gate_metrics:
+                    details.append(f"- **OCR Activated**: {'YES' if quality_gate_metrics.get('ocr_activated') else 'NO'}")
+                    details.append(f"- **OCR Attempted**: {'YES' if quality_gate_metrics.get('ocr_attempted') else 'NO'}")
+                    details.append(f"- **OCR Confidence**: {quality_gate_metrics.get('ocr_confidence', 0.0):.1f}%")
+                    details.append(f"- **Printable Ratio**: {quality_gate_metrics.get('printable_ratio', 0.0):.2%}")
+                    details.append(f"- **Dictionary Word Ratio**: {quality_gate_metrics.get('dict_word_ratio', 0.0):.2%}")
+                    details.append(f"- **Coherence Score**: {quality_gate_metrics.get('coherence_score', 0.0):.1f}/100.0")
+                    details.append(f"- **Initial Parser Quality Score**: {quality_gate_metrics.get('pypdf_score', 0.0):.1f}/100.0")
+                    details.append(f"- **OCR Parser Quality Score**: {quality_gate_metrics.get('ocr_score', 0.0):.1f}/100.0")
+                    preview = quality_gate_metrics.get('preview', '')
+                    if preview:
+                        clean_preview = preview.replace('\n', ' ').replace('\r', '')
+                        details.append(f"- **First 500 Extracted Characters**: `{clean_preview[:500]}`")
+                details.append(f"- **Duration**: {dur_s}s")
                 
         except Exception as e:
             logger.error(f"Test failed: {e}")

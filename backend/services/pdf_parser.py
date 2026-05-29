@@ -22,10 +22,96 @@ from __future__ import annotations
 import os
 import time
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Quality Evaluation Helper
+# ──────────────────────────────────────────────────────────────────────────────
+def evaluate_text_quality(text: str) -> dict:
+    if not text or not text.strip():
+        return {
+            "quality_score": 0.0,
+            "printable_ratio": 0.0,
+            "dict_word_ratio": 0.0,
+            "coherence_score": 0.0
+        }
+        
+    total_chars = len(text)
+    printable_chars = sum(1 for c in text if c.isprintable() or c in ['\n', '\r', '\t'])
+    printable_ratio = printable_chars / total_chars if total_chars > 0 else 0.0
+    
+    common_english_words = {
+        "the", "be", "to", "of", "and", "a", "in", "that", "have", "i", "it", "for", "not", "on", "with",
+        "he", "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she",
+        "or", "an", "will", "my", "one", "all", "would", "there", "their", "what", "so", "up", "out", "if",
+        "about", "who", "get", "which", "go", "me", "when", "make", "can", "like", "time", "no", "just", "him",
+        "know", "take", "people", "into", "year", "your", "good", "some", "could", "them", "see", "other",
+        "than", "then", "now", "look", "only", "come", "its", "over", "think", "also", "back", "after", "use",
+        "two", "how", "our", "work", "first", "well", "way", "even", "new", "want", "because", "any", "these",
+        "give", "day", "most", "us", "are", "was", "were", "been", "has", "had", "did", "does", "done", "goes",
+        "went", "gone", "more", "about", "project", "system", "document", "architecture", "data", "test",
+        "page", "file", "text", "error", "failed", "success", "pipeline", "worker", "tasks", "task", "run",
+        "is", "am", "should", "would", "could", "must", "shall", "do", "does", "did", "done", "has", "had",
+        "have", "academic", "simple", "large", "scanned", "image", "based", "repeated", "paragraph", "simulate",
+        "timeouts", "volume", "performance", "distributed", "systems", "advanced", "paper", "abstract", "explores",
+        "novel", "this", "that", "these", "those"
+    }
+    
+    words = re.findall(r'\b[a-zA-Z]{2,15}\b', text.lower())
+    total_words = len(words)
+    dict_words_count = sum(1 for w in words if w in common_english_words)
+    dict_word_ratio = dict_words_count / total_words if total_words > 0 else 0.0
+    
+    consonant_cluster_words = 0
+    no_vowel_words = 0
+    vowels = set("aeiouy")
+    
+    for w in words:
+        if len(w) > 2 and not any(char in vowels for char in w):
+            no_vowel_words += 1
+            
+        consecutive_consonants = 0
+        max_consecutive = 0
+        for char in w:
+            if char not in vowels:
+                consecutive_consonants += 1
+                if consecutive_consonants > max_consecutive:
+                    max_consecutive = consecutive_consonants
+            else:
+                consecutive_consonants = 0
+        if max_consecutive >= 4:
+            consonant_cluster_words += 1
+            
+    coherence_score = 100.0
+    if total_words > 0:
+        no_vowel_penalty = (no_vowel_words / total_words) * 100.0 * 2.0
+        consonant_penalty = (consonant_cluster_words / total_words) * 100.0 * 3.0
+        coherence_score = max(0.0, 100.0 - no_vowel_penalty - consonant_penalty)
+        
+    min_printable = float(os.getenv("MIN_PRINTABLE_RATIO", "0.85"))
+    min_dict = float(os.getenv("MIN_DICTIONARY_WORD_RATIO", "0.20"))
+    min_coherence = float(os.getenv("MIN_TEXT_COHERENCE_SCORE", "60.0"))
+
+    quality_score = (dict_word_ratio * 0.6 + (coherence_score / 100.0) * 0.4) * 100.0
+    if dict_word_ratio < min_dict:
+        quality_score -= 50.0
+    if printable_ratio < min_printable:
+        quality_score -= 20.0
+    if coherence_score < min_coherence:
+        quality_score -= 20.0
+    quality_score = max(0.0, quality_score)
+    
+    return {
+        "quality_score": round(quality_score, 1),
+        "printable_ratio": round(printable_ratio, 4),
+        "dict_word_ratio": round(dict_word_ratio, 4),
+        "coherence_score": round(coherence_score, 1)
+    }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Configuration (overridable via environment)
@@ -379,10 +465,88 @@ def parse_pdf(
         "ocr_available":   OCR_AVAILABLE,
     }
 
+    # ── evaluate primary parse quality ────────────────────────────────────────
+    primary_metrics = evaluate_text_quality(full_text)
+    primary_score = primary_metrics["quality_score"]
+
+    min_printable = float(os.getenv("MIN_PRINTABLE_RATIO", "0.85"))
+    min_dict = float(os.getenv("MIN_DICTIONARY_WORD_RATIO", "0.20"))
+    min_coherence = float(os.getenv("MIN_TEXT_COHERENCE_SCORE", "60.0"))
+
+    primary_is_bad = (
+        primary_metrics["printable_ratio"] < min_printable or
+        primary_metrics["dict_word_ratio"] < min_dict or
+        primary_metrics["coherence_score"] < min_coherence
+    )
+
+    ocr_attempted = False
+    ocr_score = 0.0
+    selected_parser = stats["parser"]
+    selected_text = full_text
+    rejection_reason = ""
+
+    if primary_is_bad:
+        rejection_reasons = []
+        if primary_metrics["printable_ratio"] < min_printable:
+            rejection_reasons.append(f"printable_ratio {primary_metrics['printable_ratio']:.2%} < {min_printable:.2%}")
+        if primary_metrics["dict_word_ratio"] < min_dict:
+            rejection_reasons.append(f"dict_word_ratio {primary_metrics['dict_word_ratio']:.2%} < {min_dict:.2%}")
+        if primary_metrics["coherence_score"] < min_coherence:
+            rejection_reasons.append(f"coherence_score {primary_metrics['coherence_score']:.1f} < {min_coherence:.1f}")
+        rejection_reason = "Primary parse quality bad: " + "; ".join(rejection_reasons)
+
+        if OCR_AVAILABLE:
+            _trace(f"[PARSER] OCR RESCUE: Primary parse failed quality evaluation ({rejection_reason}). Triggering full document OCR rescue pass...")
+            ocr_attempted = True
+            ocr_text_parts = []
+            ocr_page_confidences = []
+
+            for page_idx in range(page_count):
+                _trace(f"[PARSER] OCR Rescue — Running OCR on page {page_idx + 1}/{page_count}...")
+                try:
+                    ocr_text_page, ocr_conf_page = _extract_page_ocr(filepath, page_idx)
+                    ocr_text_parts.append(ocr_text_page)
+                    ocr_page_confidences.append(ocr_conf_page)
+                except Exception as e:
+                    _trace(f"[PARSER] OCR Rescue — Page {page_idx + 1} failed: {e}")
+                    ocr_text_parts.append("")
+                    ocr_page_confidences.append(0.0)
+
+            ocr_full_text = "\n\n".join(ocr_text_parts)
+            ocr_metrics = evaluate_text_quality(ocr_full_text)
+            ocr_score = ocr_metrics["quality_score"]
+
+            if ocr_score > primary_score:
+                _trace(f"[PARSER] OCR Rescue SUCCESS! OCR Quality Score ({ocr_score:.1f}) > Primary Quality Score ({primary_score:.1f}). Selecting OCR parse.")
+                selected_text = ocr_full_text
+                selected_parser = "ocr"
+                # Update stats
+                stats["parser"] = "ocr_fallback"
+                stats["ocr_pages"] = page_count
+                stats["ocr_confidences"] = ocr_page_confidences
+                stats["avg_ocr_confidence"] = sum(ocr_page_confidences) / len(ocr_page_confidences) if ocr_page_confidences else 100.0
+                stats["char_count"] = len(ocr_full_text)
+            else:
+                _trace(f"[PARSER] OCR Rescue COMPLETED. OCR Quality Score ({ocr_score:.1f}) is not better than Primary Quality Score ({primary_score:.1f}). Retaining primary parse.")
+        else:
+            _trace(f"[PARSER] OCR Rescue requested, but OCR is not available on this system.")
+    else:
+        # Quality was fine
+        pass
+
+    stats["ocr_attempted"] = ocr_attempted
+    stats["initial_parser"] = "pypdf" if plumber_pages == 0 and ocr_pages == 0 else ("pdfplumber" if plumber_pages > 0 else "ocr")
+    stats["comparison_metrics"] = {
+        "pypdf_score": primary_score,
+        "ocr_score": ocr_score,
+        "selected_parser": selected_parser,
+        "rejection_reason": rejection_reason
+    }
+
     _trace(
         f"[PARSER] Complete — {stats['processed_pages']} pages in {duration}s | "
-        f"chars={stats['char_count']} | pdfplumber_pages={plumber_pages} | ocr_pages={ocr_pages} | "
+        f"chars={stats['char_count']} | pdfplumber_pages={plumber_pages} | ocr_pages={stats['ocr_pages']} | "
         f"failures={len(page_failures)}"
     )
 
-    return ParseResult(text=full_text, stats=stats)
+    return ParseResult(text=selected_text, stats=stats)

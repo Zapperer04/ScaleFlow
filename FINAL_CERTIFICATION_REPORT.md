@@ -8,17 +8,19 @@
 
 ## 1. System Certification Results
 
-### A. Document Intelligence Ingestion Quality & Parse Quality Gate (6/6 Passed)
+### A. Document Intelligence Ingestion Quality & Parse Quality Gate (8/8 Passed)
 Validated via `validate_pdf_pipeline.py`. Includes a **Parse Quality Gate** evaluating character printability, dictionary word matches, and text coherence before chunking. Valid technical and scanned PDFs pass, while malformed/unreadable PDFs are rejected:
 
 | Category | Test File | Status | Core Parser Used | Duration | Chunks | Result |
 | :---: | :--- | :---: | :---: | :---: | :---: | :---: |
-| **A** | `category_A_simple.pdf` | **completed** | `pypdf` | 115.16s | 1 | **SUCCESS (PASSED GATE)** |
-| **B** | `category_B_academic.pdf` | **completed** | `pypdf` | 7.36s | 1 | **SUCCESS (PASSED GATE)** |
-| **C** | `category_C_large.pdf` | **completed** | `pypdf` | 156.56s | 200 | **SUCCESS (PASSED GATE)** |
-| **D** | `category_D_scanned.pdf` | **completed** | `ocr_fallback` | 58.78s | 0 | **SUCCESS (PASSED GATE)** |
-| **E** | `category_E_malformed.pdf` | **failed** | `N/A` | 33.72s | 0 | **EXPECTED FAILURE (BAD STREAM)** |
-| **K** | `Kaustav_OOPsAssign2.pdf` | **failed** | `pypdf` | 31.29s | 0 | **EXPECTED FAILURE (UNREADABLE GATE)** |
+| **A** | `category_A_simple.pdf` | **completed** | `pypdf` | 7.10s | 1 | **SUCCESS (PASSED GATE)** |
+| **B** | `category_B_academic.pdf` | **completed** | `pypdf` | 2.24s | 1 | **SUCCESS (PASSED GATE)** |
+| **C** | `category_C_large.pdf` | **completed** | `pypdf` | 31.42s | 200 | **SUCCESS (PASSED GATE)** |
+| **D** | `category_D_scanned.pdf` | **completed** | `ocr_fallback` | 8.65s | 0 | **SUCCESS (PASSED GATE)** |
+| **E** | `category_E_malformed.pdf` | **failed** | `N/A` | 28.87s | 0 | **EXPECTED FAILURE (BAD STREAM)** |
+| **P** | `photographed_notes.pdf` | **completed** | `ocr_fallback` | 8.40s | 0 | **SUCCESS (PASSED GATE)** |
+| **S** | `billion_dollar_sure_thing.pdf` | **completed** | `ocr_fallback` | 6.45s | 0 | **SUCCESS (PASSED GATE)** |
+| **K** | `Kaustav_OOPsAssign2.pdf` | **failed** | `pypdf` | 149.44s | 0 | **EXPECTED FAILURE (UNREADABLE GATE)** |
 
 *   **Parse Quality Gate Protection:** If the extracted text has a dictionary-word ratio below `20%` or printable ratio below `85%`, the pipeline fails with `"Document unreadable / OCR quality too low"`.
 *   **Kaustav Assignment (Category K) Evaluation:** The scanned handwritten Java assignment contains highly corrupted extracted text (dictionary ratio of only `6.40%`). The Quality Gate successfully blocked it from entering the chunking/embeddings phase.

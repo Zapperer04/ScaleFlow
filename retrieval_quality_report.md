@@ -1,6 +1,6 @@
 # Retrieval Quality Evaluation Report
-**Date:** 2026-05-29T08:01:11.357011Z
-**Pipeline ID:** 76
+**Date:** 2026-05-29T12:33:05.452514Z
+**Pipeline ID:** 268
 ---
 ### Query Type: Factual
 **Question:** What is the monthly budget for Project TITAN?

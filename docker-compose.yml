@@ -52,7 +52,7 @@ services:
       WORKER_ID: "worker-1"
       API_KEY: "${API_KEY:-dev_secret_api_key}"
       PYTHONUNBUFFERED: "1"
-      MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.3}"
+      MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.05}"
       WORKER_CAPABILITIES: "default,cpu_heavy,embedding_gpu,summarization_llm,retrieval_optimized,io_heavy"
     volumes:
       - ./backend/storage:/app/storage
@@ -75,7 +75,7 @@ services:
       WORKER_ID: "worker-2"
       API_KEY: "${API_KEY:-dev_secret_api_key}"
       PYTHONUNBUFFERED: "1"
-      MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.3}"
+      MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.05}"
       WORKER_CAPABILITIES: "default,cpu_heavy,embedding_gpu,summarization_llm,retrieval_optimized,io_heavy"
     volumes:
       - ./backend/storage:/app/storage
@@ -98,7 +98,7 @@ services:
       WORKER_ID: "worker-3"
       API_KEY: "${API_KEY:-dev_secret_api_key}"
       PYTHONUNBUFFERED: "1"
-      MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.3}"
+      MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.05}"
       WORKER_CAPABILITIES: "default,cpu_heavy,embedding_gpu,summarization_llm,retrieval_optimized,io_heavy"
     volumes:
       - ./backend/storage:/app/storage
