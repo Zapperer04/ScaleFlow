@@ -2376,6 +2376,34 @@ def test_ingestion_flow():
             return jsonify({"status": "failed", "step": "complete_parse", "error": res_patch.json}), 400
         log_test("Completed parse_document task.")
         
+        # If validate_parse_quality is present in tasks_created, claim and execute it
+        val_task = next((t for t in tasks_created if t['type'] == 'validate_parse_quality'), None)
+        if val_task:
+            val_task_id = val_task['id']
+            res_claim = client.post(f'/tasks/{val_task_id}/claim', json={"worker_id": "test-worker"}, headers=headers)
+            if res_claim.status_code != 200:
+                return jsonify({"status": "failed", "step": "claim_validate_parse_quality", "error": res_claim.json}), 400
+            val_lease_token = res_claim.json['lease_token']
+            redis_client.lrem('task_queue_test_high', 0, str(val_task_id))
+            from worker import handle_validate_parse_quality
+            parsed_output = handle_validate_parse_quality({"_pipeline_id": pipeline_id, "_task_id": val_task_id}, {"parsed_text": parsed_output})
+            v_storage_uri, v_checksum = save_artifact_to_disk(pipeline_id, val_task_id, "parsed_text", parsed_output)
+            res_art = client.post('/artifacts', json={
+                "pipeline_id": pipeline_id,
+                "task_id": val_task_id,
+                "artifact_type": "parsed_text",
+                "storage_uri": v_storage_uri,
+                "checksum": v_checksum
+            }, headers=headers)
+            parsed_text_art_id = res_art.json['id']
+            client.patch(f'/tasks/{val_task_id}', json={
+                "status": "completed",
+                "worker_id": "test-worker",
+                "lease_token": val_lease_token,
+                "output_artifact_ids": [parsed_text_art_id]
+            }, headers=headers)
+            log_test("Completed validate_parse_quality task.")
+            
         # 2. Claim and execute chunk_text
         chunk_task = next(t for t in tasks_created if t['type'] == 'chunk_text')
         chunk_task_id = chunk_task['id']
@@ -3147,6 +3175,20 @@ def test_retrieval_flow():
         res_art = client.post('/artifacts', json={"pipeline_id": doc_pipeline_id, "task_id": task["id"], "artifact_type": "parsed_text", "storage_uri": uri, "checksum": chk}, headers=headers)
         client.patch(f'/tasks/{task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
         
+        # 1.5 validate_parse_quality
+        val_task = next((t for t in doc_tasks if t['type'] == 'validate_parse_quality'), None)
+        if val_task:
+            res_claim = client.post(f'/tasks/{val_task["id"]}/claim', json={"worker_id": "test-worker"}, headers=headers)
+            if res_claim.status_code != 200:
+                return jsonify({"status": "failed", "step": "claim_val", "error": res_claim.json}), 400
+            redis_client.lrem('task_queue_test_high', 0, str(val_task["id"]))
+            from worker import handle_validate_parse_quality
+            parsed_out = handle_validate_parse_quality({"_pipeline_id": doc_pipeline_id, "_task_id": val_task["id"]}, {"parsed_text": parsed_out})
+            uri, chk = save_artifact_to_disk(doc_pipeline_id, val_task["id"], "parsed_text", parsed_out)
+            res_art = client.post('/artifacts', json={"pipeline_id": doc_pipeline_id, "task_id": val_task["id"], "artifact_type": "parsed_text", "storage_uri": uri, "checksum": chk}, headers=headers)
+            client.patch(f'/tasks/{val_task["id"]}', json={"status": "completed", "worker_id": "test-worker", "lease_token": res_claim.json['lease_token'], "output_artifact_ids": [res_art.json['id']]}, headers=headers)
+            log_test("Completed validate_parse_quality task.")
+            
         # 2. chunk_text
         task = next(t for t in doc_tasks if t['type'] == 'chunk_text')
         res_claim = client.post(f'/tasks/{task["id"]}/claim', json={"worker_id": "test-worker"}, headers=headers)
@@ -3499,6 +3541,44 @@ def test_dag_flow():
         }, headers=headers)
         if res_patch.status_code != 200:
             return jsonify({"status": "failed", "step": "complete_parse_task", "error": res_patch.json}), 400
+            
+        # If validate_parse_quality is present in tasks_created, claim and execute it
+        val_task = next((t for t in tasks_created if t['type'] == 'validate_parse_quality'), None)
+        if val_task:
+            val_task_id = val_task['id']
+            # verify it is pending
+            db = SessionLocal()
+            try:
+                db_val = db.query(Task).filter(Task.id == val_task_id).first()
+                if db_val.status != 'pending':
+                    return jsonify({"status": "failed", "step": "verify_val_pending", "error": f"Expected validate_parse_quality pending, got {db_val.status}"}), 400
+                input_ids = json.loads(db_val.input_artifact_ids) if db_val.input_artifact_ids else []
+                if parsed_artifact_id not in input_ids:
+                    return jsonify({"status": "failed", "step": "verify_val_artifact_passing", "error": f"Expected input_artifact_ids to contain {parsed_artifact_id}, got {input_ids}"}), 400
+            finally:
+                db.close()
+                
+            res_claim = client.post(f'/tasks/{val_task_id}/claim', json={"worker_id": "test-worker"}, headers=headers)
+            val_lease_token = res_claim.json['lease_token']
+            
+            from worker import handle_validate_parse_quality
+            val_output = handle_validate_parse_quality({"_pipeline_id": pipeline_id, "_task_id": val_task_id}, {"parsed_text": "normalized sample document content."})
+            v_storage_uri, v_checksum = save_artifact_to_disk(pipeline_id, val_task_id, "parsed_text", val_output)
+            res_art = client.post('/artifacts', json={
+                "pipeline_id": pipeline_id,
+                "task_id": val_task_id,
+                "artifact_type": "parsed_text",
+                "storage_uri": v_storage_uri,
+                "checksum": v_checksum
+            }, headers=headers)
+            parsed_artifact_id = res_art.json['id']
+            client.patch(f'/tasks/{val_task_id}', json={
+                "status": "completed",
+                "worker_id": "test-worker",
+                "lease_token": val_lease_token,
+                "output_artifact_ids": [parsed_artifact_id]
+            }, headers=headers)
+            log_test("Completed validate_parse_quality task.")
             
         chunk_task = next(t for t in tasks_created if t['type'] == 'chunk_text')
         chunk_task_id = chunk_task['id']

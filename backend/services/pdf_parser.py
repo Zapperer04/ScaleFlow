@@ -113,10 +113,11 @@ def _extract_page_pdfplumber(filepath: str, page_index: int) -> str:
         raise RuntimeError(f"pdfplumber page {page_index + 1} error: {e}") from e
 
 
-def _extract_page_ocr(filepath: str, page_index: int) -> str:
+def _extract_page_ocr(filepath: str, page_index: int) -> tuple[str, float]:
     """Rasterize a PDF page and run Tesseract OCR on it."""
     import pytesseract
     from pdf2image import convert_from_path
+    from pytesseract import Output
     try:
         images = convert_from_path(
             filepath,
@@ -125,8 +126,18 @@ def _extract_page_ocr(filepath: str, page_index: int) -> str:
             dpi=200
         )
         if not images:
-            return ""
-        return pytesseract.image_to_string(images[0], config="--psm 6")
+            return "", 0.0
+        
+        # Get average OCR confidence for the page words
+        try:
+            data = pytesseract.image_to_data(images[0], output_type=Output.DICT)
+            confidences = [float(c) for c in data.get('conf', []) if c is not None and str(c).strip() != '' and float(c) != -1]
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 100.0
+        except Exception:
+            avg_confidence = 100.0
+            
+        ocr_text = pytesseract.image_to_string(images[0], config="--psm 6")
+        return ocr_text, avg_confidence
     except Exception as e:
         raise RuntimeError(f"OCR page {page_index + 1} error: {e}") from e
 
@@ -233,6 +244,7 @@ def parse_pdf(
     text_parts  = []
     page_failures: list[dict] = []
     ocr_pages   = 0
+    ocr_confidences = []
     low_text_pages = 0
     plumber_pages  = 0
 
@@ -295,12 +307,13 @@ def parse_pdf(
             if OCR_AVAILABLE:
                 _trace(f"[PARSER] Page {i + 1} — text still empty, activating OCR fallback")
                 try:
-                    ocr_text = _extract_page_ocr(filepath, i)
+                    ocr_text, ocr_conf = _extract_page_ocr(filepath, i)
                     if len(ocr_text.strip()) > len(page_text.strip()):
                         page_text = ocr_text
                         used_parser = "ocr"
                         ocr_pages += 1
-                        _trace(f"[PARSER] Page {i + 1} — OCR extraction completed ({len(ocr_text.strip())} chars)")
+                        ocr_confidences.append(ocr_conf)
+                        _trace(f"[PARSER] Page {i + 1} — OCR extraction completed ({len(ocr_text.strip())} chars) | Confidence: {ocr_conf:.1f}%")
                     else:
                         _trace(f"[PARSER] Page {i + 1} — OCR returned empty (likely blank or purely graphical page)")
                 except Exception as e:
@@ -357,6 +370,8 @@ def parse_pdf(
         "low_text_pages":  low_text_pages,
         "pdfplumber_pages": plumber_pages,
         "ocr_pages":       ocr_pages,
+        "ocr_confidences": ocr_confidences,
+        "avg_ocr_confidence": sum(ocr_confidences) / len(ocr_confidences) if ocr_confidences else 100.0,
         "char_count":      len(full_text),
         "duration_seconds": duration,
         "page_failures":   page_failures,

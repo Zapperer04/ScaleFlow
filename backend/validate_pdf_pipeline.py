@@ -106,6 +106,11 @@ def generate_test_pdfs():
         f.write(b"%PDF-1.4\n%This is a deliberately broken PDF file\n<</Type/Catalog/Pages 1 0 R>>\nEOF")
     files["E"] = {"path": filepath_e, "desc": "Malformed/Corrupted PDF"}
 
+    # Category K: Kaustav OOPs Assignment PDF
+    filepath_k = "test_data/Kaustav_OOPsAssign2.pdf"
+    if os.path.exists(filepath_k):
+        files["K"] = {"path": filepath_k, "desc": "Kaustav OOPs Assignment 2 PDF"}
+
     return files
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -198,13 +203,18 @@ def main():
             
             if status == "completed":
                 # Extract stats from artifacts
+                quality_gate_metrics = {}
                 for art in data.get('artifacts', []):
                     if art.get('artifact_type') == 'parsed_text':
                         meta = art.get('metadata_json')
                         if isinstance(meta, str):
                             meta = json.loads(meta)
-                        if meta and 'parse_stats' in meta:
-                            parser_used = meta['parse_stats'].get('parser', 'unknown')
+                        if meta:
+                            if 'dict_word_ratio' in meta:
+                                quality_gate_metrics = meta
+                                parser_used = meta.get('parser_used', parser_used)
+                            elif 'parse_stats' in meta:
+                                parser_used = meta['parse_stats'].get('parser', 'unknown')
                     elif art.get('artifact_type') == 'vector_index':
                         meta = art.get('metadata_json')
                         if isinstance(meta, str):
@@ -215,6 +225,24 @@ def main():
                 details.append(f"\n### Category {cat}: {info['desc']}")
                 details.append(f"- **Status**: SUCCESS")
                 details.append(f"- **Parser Used**: {parser_used}")
+                if quality_gate_metrics:
+                    details.append(f"- **OCR Activated**: {'YES' if quality_gate_metrics.get('ocr_activated') else 'NO'}")
+                    details.append(f"- **OCR Confidence**: {quality_gate_metrics.get('ocr_confidence', 0.0):.1f}%")
+                    details.append(f"- **Printable Ratio**: {quality_gate_metrics.get('printable_ratio', 0.0):.2%}")
+                    details.append(f"- **Dictionary Word Ratio**: {quality_gate_metrics.get('dict_word_ratio', 0.0):.2%}")
+                    details.append(f"- **Coherence Score**: {quality_gate_metrics.get('coherence_score', 0.0):.1f}/100.0")
+                    preview = quality_gate_metrics.get('preview', '')
+                    if preview:
+                        # Clean up formatting for markdown display
+                        clean_preview = preview.replace('\n', ' ').replace('\r', '')
+                        details.append(f"- **Parsed Preview**: `{clean_preview[:150]}...`")
+                    logger.info(f"Category {cat} Ingestion Quality Gate metrics:")
+                    logger.info(f"  Parser Used: {parser_used}")
+                    logger.info(f"  OCR Activated: {quality_gate_metrics.get('ocr_activated')}")
+                    logger.info(f"  OCR Confidence: {quality_gate_metrics.get('ocr_confidence', 0.0):.1f}%")
+                    logger.info(f"  Printable Ratio: {quality_gate_metrics.get('printable_ratio', 0.0):.2%}")
+                    logger.info(f"  Dict Word Ratio: {quality_gate_metrics.get('dict_word_ratio', 0.0):.2%}")
+                    logger.info(f"  Coherence Score: {quality_gate_metrics.get('coherence_score', 0.0):.1f}")
                 details.append(f"- **Chunks Generated**: {chunks}")
                 details.append(f"- **Duration**: {dur_s}s")
                 

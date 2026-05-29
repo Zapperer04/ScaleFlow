@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Upload, Activity, Database, Search, Sparkles, Loader2, ChevronDown, ChevronUp, FileText, BookOpen
+  Upload, Activity, Database, Search, Sparkles, Loader2, ChevronDown, ChevronUp, FileText, BookOpen, ShieldCheck, ShieldAlert
 } from 'lucide-react';
 import { 
   createRetrievalPipeline, fetchRetrievalPipelineAnswer, fetchPipelineDetails, fetchPipelineEvents
@@ -185,6 +185,7 @@ const OverviewPage = ({
   const isLogPipeline = pipelineDetails?.pipeline?.pipeline_type === 'log_analysis_demo';
   
   const parseTask = getTaskByAction(isLogPipeline ? 'parse_logs' : 'parse_document');
+  const qualityGateTask = getTaskByAction('validate_parse_quality');
   const chunkTask = getTaskByAction(isLogPipeline ? 'detect_error_patterns' : 'chunk_text');
   const embedTask = getTaskByAction('generate_embeddings');
   const indexTask = getTaskByAction(isLogPipeline ? 'summarize_logs' : 'summarize_document');
@@ -385,6 +386,7 @@ const OverviewPage = ({
     const task = pipelineDetails?.tasks?.find(t => t.type === taskType);
     const artifactType = {
       'parse_document': 'parsed_text',
+      'validate_parse_quality': 'parsed_text',
       'chunk_text': 'text_chunks',
       'generate_embeddings': 'vector_index',
       'summarize_document': 'summary',
@@ -393,7 +395,9 @@ const OverviewPage = ({
       'summarize_logs': 'log_summary'
     }[taskType];
     
-    const art = pipelineDetails?.artifacts?.find(a => a.artifact_type === artifactType);
+    const art = task 
+      ? pipelineDetails?.artifacts?.find(a => a.task_id === task.id)
+      : pipelineDetails?.artifacts?.find(a => a.artifact_type === artifactType);
     let artifactDisplay = 'None';
     if (art) {
       const sizeKB = art.metadata_json?.size_bytes ? ` (${(art.metadata_json.size_bytes / 1024).toFixed(1)} KB)` : '';
@@ -446,6 +450,7 @@ const OverviewPage = ({
     { type: 'summarize_logs', label: 'Summarize Logs' }
   ] : [
     { type: 'parse_document', label: 'Parse Document' },
+    { type: 'validate_parse_quality', label: 'Parse Quality Gate' },
     { type: 'chunk_text', label: 'Chunk Text' },
     { type: 'generate_embeddings', label: 'Generate Embeddings' },
     { type: 'summarize_document', label: 'Summarize Document' }
@@ -601,6 +606,113 @@ const OverviewPage = ({
     );
   };
 
+  const renderQualityGatePanel = () => {
+    if (!qualityGateTask) return null;
+
+    const art = pipelineDetails?.artifacts?.find(a => a.task_id === qualityGateTask.id);
+    const metadata = art?.metadata_json || {};
+    
+    // Status
+    const isCompleted = qualityGateTask.status === 'completed';
+    const isFailed = qualityGateTask.status === 'failed';
+
+    return (
+      <div className="panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', borderRadius: '6px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ fontSize: '0.85rem', fontWeight: '800', color: '#fff', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {isFailed ? (
+              <ShieldAlert size={16} style={{ color: 'var(--color-failure)' }} />
+            ) : (
+              <ShieldCheck size={16} style={{ color: isCompleted ? 'var(--color-success)' : 'var(--text-muted)' }} />
+            )}
+            Ingestion Parse Quality Gate
+          </h3>
+          <span className={`badge ${qualityGateTask.status}`} style={{ fontSize: '0.65rem', textTransform: 'uppercase' }}>
+            {qualityGateTask.status}
+          </span>
+        </div>
+
+        {/* Metrics Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
+          <div style={{ background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>PARSER USED</div>
+            <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', fontFamily: 'monospace', marginTop: '4px' }}>
+              {isCompleted ? String(metadata.parser_used || 'N/A').toUpperCase() : 'PENDING'}
+            </div>
+          </div>
+          <div style={{ background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>OCR ACTIVATED</div>
+            <div style={{ fontSize: '0.9rem', color: metadata.ocr_activated ? 'var(--color-warning)' : '#fff', fontWeight: 'bold', marginTop: '4px' }}>
+              {isCompleted ? (metadata.ocr_activated ? 'YES' : 'NO') : 'PENDING'}
+            </div>
+          </div>
+          <div style={{ background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>OCR CONFIDENCE</div>
+            <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginTop: '4px' }}>
+              {isCompleted ? (metadata.ocr_activated ? `${(metadata.ocr_confidence || 0).toFixed(1)}%` : 'N/A') : 'PENDING'}
+            </div>
+          </div>
+          <div style={{ background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>PRINTABLE CHAR RATIO</div>
+            <div style={{ fontSize: '0.9rem', color: isCompleted && metadata.printable_ratio < 0.85 ? 'var(--color-failure)' : '#fff', fontWeight: 'bold', marginTop: '4px' }}>
+              {isCompleted ? `${((metadata.printable_ratio || 0) * 100).toFixed(1)}%` : 'PENDING'}
+            </div>
+          </div>
+          <div style={{ background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>DICTIONARY-WORD RATIO</div>
+            <div style={{ fontSize: '0.9rem', color: isCompleted && metadata.dict_word_ratio < 0.40 ? 'var(--color-failure)' : '#fff', fontWeight: 'bold', marginTop: '4px' }}>
+              {isCompleted ? `${((metadata.dict_word_ratio || 0) * 100).toFixed(1)}%` : 'PENDING'}
+            </div>
+          </div>
+          <div style={{ background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>TEXT COHERENCE SCORE</div>
+            <div style={{ fontSize: '0.9rem', color: isCompleted && metadata.coherence_score < 60.0 ? 'var(--color-failure)' : '#fff', fontWeight: 'bold', marginTop: '4px' }}>
+              {isCompleted ? `${(metadata.coherence_score || 0).toFixed(1)}/100` : 'PENDING'}
+            </div>
+          </div>
+        </div>
+
+        {/* Text Preview */}
+        {isCompleted && metadata.preview && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Parsed Text Preview (First 1,000 Characters)</div>
+            <pre style={{
+              background: 'rgba(0,0,0,0.25)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '4px',
+              padding: '12px',
+              margin: 0,
+              fontSize: '0.7rem',
+              color: '#cbd5e1',
+              fontFamily: 'monospace',
+              whiteSpace: 'pre-wrap',
+              maxHeight: '180px',
+              overflowY: 'auto',
+              lineHeight: '1.4'
+            }}>
+              {metadata.preview}
+            </pre>
+          </div>
+        )}
+
+        {isFailed && (
+          <div style={{
+            padding: '10px 16px',
+            background: 'rgba(239, 68, 68, 0.06)',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+            borderRadius: '4px',
+            fontSize: '0.75rem',
+            color: '#fca5a5',
+            lineHeight: 1.4
+          }}>
+            <strong style={{ color: 'var(--color-failure)' }}>GATE BLOCKED: </strong>
+            <span>{qualityGateTask.error_message || 'Document quality is below readable thresholds.'}</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
@@ -660,6 +772,7 @@ const OverviewPage = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }} className="fade-in">
               {renderConsoleHeader()}
               {renderStagesTable()}
+              {renderQualityGatePanel()}
             </div>
           )}
 

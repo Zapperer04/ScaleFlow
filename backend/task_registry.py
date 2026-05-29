@@ -67,6 +67,16 @@ TASK_REGISTRY = {
         "estimated_runtime_seconds": 2,
         "handler_name": "handle_parse_document"
     },
+    "validate_parse_quality": {
+        "label": "Validate Parse Quality",
+        "description": "Evaluates parser extraction quality against dictionary and character thresholds.",
+        "required_fields": [],
+        "optional_fields": ["simulate_hang_seconds"],
+        "frontend_fields": [],
+        "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 2,
+        "handler_name": "handle_validate_parse_quality"
+    },
     "chunk_text": {
         "label": "Chunk Text",
         "description": "Splits text into chunks.",
@@ -234,7 +244,8 @@ CAPABILITY_MAPPINGS = {
     "final_report": "cpu_heavy",
     "embed_query": "embedding_gpu",
     "retrieve_context": "retrieval_optimized",
-    "generate_answer_report": "summarization_llm"
+    "generate_answer_report": "summarization_llm",
+    "validate_parse_quality": "cpu_heavy"
 }
 
 def get_task_capability(task_type):

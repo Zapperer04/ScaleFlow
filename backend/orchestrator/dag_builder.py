@@ -15,10 +15,20 @@ TEMPLATES = {
                 "payload": {}
             },
             {
+                "id": "validate_parse_quality",
+                "task_type": "validate_parse_quality",
+                "display_name": "Validate Parse Quality",
+                "depends_on": ["parse_document"],
+                "priority": "high",
+                "expected_input_artifacts": ["parsed_text"],
+                "output_artifact_type": "parsed_text",
+                "payload": {}
+            },
+            {
                 "id": "chunk_text",
                 "task_type": "chunk_text",
                 "display_name": "Chunk Text",
-                "depends_on": ["parse_document"],
+                "depends_on": ["validate_parse_quality"],
                 "priority": "medium",
                 "expected_input_artifacts": ["parsed_text"],
                 "output_artifact_type": "text_chunks",
@@ -60,10 +70,20 @@ TEMPLATES = {
                 "payload": {}
             },
             {
+                "id": "validate_parse_quality",
+                "task_type": "validate_parse_quality",
+                "display_name": "Validate Parse Quality",
+                "depends_on": ["parse_document"],
+                "priority": "high",
+                "expected_input_artifacts": ["parsed_text"],
+                "output_artifact_type": "parsed_text",
+                "payload": {}
+            },
+            {
                 "id": "chunk_text",
                 "task_type": "chunk_text",
                 "display_name": "Chunk Text",
-                "depends_on": ["parse_document"],
+                "depends_on": ["validate_parse_quality"],
                 "priority": "medium",
                 "expected_input_artifacts": ["parsed_text"],
                 "output_artifact_type": "text_chunks",

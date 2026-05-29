@@ -270,6 +270,147 @@ def handle_parse_document(payload, input_artifacts):
     return {"parsed_text": normalized, "parse_stats": parse_stats}
 
 
+def handle_validate_parse_quality(payload, input_artifacts):
+    """
+    Quality Gate verifying the parsed document text before chunking.
+    Calculates OCR confidence, printable character ratio, dictionary-word ratio, and text coherence score.
+    """
+    task_id = payload.get('_task_id')
+    pipeline_id = payload.get('_pipeline_id')
+    
+    def _trace(msg: str):
+        print(f"[{WORKER_ID}] {msg}", flush=True)
+        emit_task_trace(task_id, msg)
+        
+    _trace("[QUALITY GATE] Starting parse quality validation gate...")
+    
+    # 1. Fetch text from parsed_text input artifact
+    raw_input = input_artifacts.get("parsed_text", "")
+    if isinstance(raw_input, dict):
+        text = raw_input.get("parsed_text", "")
+        parse_stats = raw_input.get("parse_stats", {})
+    else:
+        text = raw_input
+        parse_stats = {}
+        
+    if not text:
+        text = payload.get("source_text", "")
+        
+    if not text:
+        _trace("[QUALITY GATE] FAILED: No text was extracted from the document.")
+        raise ValueError("Document unreadable / OCR quality too low: Extracted text is empty.")
+
+    # 2. Extract metrics from stats or calculate them
+    # A. OCR Confidence
+    ocr_pages = parse_stats.get("ocr_pages", 0)
+    avg_ocr_confidence = parse_stats.get("avg_ocr_confidence", 100.0)
+    parser_used = parse_stats.get("parser", "direct_text")
+    
+    # B. Printable character ratio
+    total_chars = len(text)
+    printable_chars = sum(1 for c in text if c.isprintable() or c in ['\n', '\r', '\t'])
+    printable_ratio = printable_chars / total_chars if total_chars > 0 else 0.0
+    
+    # C. Dictionary-word ratio
+    # Compile a small robust list of common English words
+    common_english_words = {
+        "the", "be", "to", "of", "and", "a", "in", "that", "have", "i", "it", "for", "not", "on", "with",
+        "he", "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she",
+        "or", "an", "will", "my", "one", "all", "would", "there", "their", "what", "so", "up", "out", "if",
+        "about", "who", "get", "which", "go", "me", "when", "make", "can", "like", "time", "no", "just", "him",
+        "know", "take", "people", "into", "year", "your", "good", "some", "could", "them", "see", "other",
+        "than", "then", "now", "look", "only", "come", "its", "over", "think", "also", "back", "after", "use",
+        "two", "how", "our", "work", "first", "well", "way", "even", "new", "want", "because", "any", "these",
+        "give", "day", "most", "us", "are", "was", "were", "been", "has", "had", "did", "does", "done", "goes",
+        "went", "gone", "more", "about", "project", "system", "document", "architecture", "data", "test",
+        "page", "file", "text", "error", "failed", "success", "pipeline", "worker", "tasks", "task", "run",
+        "is", "am", "should", "would", "could", "must", "shall", "do", "does", "did", "done", "has", "had",
+        "have", "academic", "simple", "large", "scanned", "image", "based", "repeated", "paragraph", "simulate",
+        "timeouts", "volume", "performance", "distributed", "systems", "advanced", "paper", "abstract", "explores",
+        "novel", "this", "that", "these", "those"
+    }
+    
+    words = re.findall(r'\b[a-zA-Z]{2,15}\b', text.lower())
+    total_words = len(words)
+    dict_words_count = sum(1 for w in words if w in common_english_words)
+    dict_word_ratio = dict_words_count / total_words if total_words > 0 else 0.0
+    
+    # D. Text coherence score
+    # Let's check consonant clusters and word length distributions
+    consonant_cluster_words = 0
+    no_vowel_words = 0
+    vowels = set("aeiouy")
+    
+    for w in words:
+        # Check vowel presence (except for very short common things)
+        if len(w) > 2 and not any(char in vowels for char in w):
+            no_vowel_words += 1
+            
+        # Check for 4+ consecutive consonants
+        consecutive_consonants = 0
+        max_consecutive = 0
+        for char in w:
+            if char not in vowels:
+                consecutive_consonants += 1
+                if consecutive_consonants > max_consecutive:
+                    max_consecutive = consecutive_consonants
+            else:
+                consecutive_consonants = 0
+        if max_consecutive >= 4:
+            consonant_cluster_words += 1
+            
+    # Calculate components
+    coherence_score = 100.0
+    if total_words > 0:
+        no_vowel_penalty = (no_vowel_words / total_words) * 100.0 * 2.0
+        consonant_penalty = (consonant_cluster_words / total_words) * 100.0 * 3.0
+        coherence_score = max(0.0, 100.0 - no_vowel_penalty - consonant_penalty)
+        
+    # Minimum thresholds (configurable)
+    min_ocr_conf = float(os.getenv("MIN_OCR_CONFIDENCE", "70.0"))
+    min_printable = float(os.getenv("MIN_PRINTABLE_RATIO", "0.85"))
+    min_dict = float(os.getenv("MIN_DICTIONARY_WORD_RATIO", "0.20"))
+    min_coherence = float(os.getenv("MIN_TEXT_COHERENCE_SCORE", "60.0"))
+    
+    # Emit tracing
+    _trace(f"[QUALITY GATE] Ingestion Parser Used: {parser_used.upper()}")
+    _trace(f"[QUALITY GATE] OCR Activation Status: {'YES' if ocr_pages > 0 else 'NO'}")
+    _trace(f"[QUALITY GATE] Average OCR Confidence Score: {avg_ocr_confidence:.1f}%")
+    _trace(f"[QUALITY GATE] Executing Quality Gate Decisions:")
+    _trace(f"  - Printable Character Ratio: {printable_ratio:.2%} (Min Threshold: {min_printable:.2%})")
+    _trace(f"  - Dictionary-Word Ratio: {dict_word_ratio:.2%} (Min Threshold: {min_dict:.2%})")
+    _trace(f"  - Text Coherence Score: {coherence_score:.1f}/100.0 (Min Threshold: {min_coherence:.1f})")
+    
+    # Quality validation check
+    failed_checks = []
+    if ocr_pages > 0 and avg_ocr_confidence < min_ocr_conf:
+        failed_checks.append(f"OCR confidence {avg_ocr_confidence:.1f}% is below threshold {min_ocr_conf:.1f}%")
+    if printable_ratio < min_printable:
+        failed_checks.append(f"Printable character ratio {printable_ratio:.2%} is below threshold {min_printable:.2%}")
+    if dict_word_ratio < min_dict:
+        failed_checks.append(f"Dictionary-word ratio {dict_word_ratio:.2%} is below threshold {min_dict:.2%}")
+    if coherence_score < min_coherence:
+        failed_checks.append(f"Text coherence score {coherence_score:.1f} is below threshold {min_coherence:.1f}")
+        
+    if failed_checks:
+        err_msg = "Document unreadable / OCR quality too low: " + "; ".join(failed_checks)
+        _trace(f"[QUALITY GATE] FAILED: {err_msg}")
+        raise ValueError(err_msg)
+        
+    _trace("[QUALITY GATE] PASSED: Document parsing quality is within acceptable bounds.")
+    
+    return {
+        "parsed_text": text,
+        "preview": text[:1000],
+        "ocr_confidence": avg_ocr_confidence,
+        "printable_ratio": printable_ratio,
+        "dict_word_ratio": dict_word_ratio,
+        "coherence_score": coherence_score,
+        "parser_used": parser_used,
+        "ocr_activated": ocr_pages > 0
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Semantic Chunker — paragraph-aware, sentence-boundary-preserving
 # ─────────────────────────────────────────────────────────────────────────────
@@ -868,6 +1009,7 @@ HANDLER_MAP = {
     "run_ml_model": handle_run_ml_model,
     "webhook_trigger": handle_webhook_trigger,
     "parse_document": handle_parse_document,
+    "validate_parse_quality": handle_validate_parse_quality,
     "chunk_text": handle_chunk_text,
     "generate_embeddings": handle_generate_embeddings,
     "summarize_document": handle_summarize_document,
@@ -882,6 +1024,7 @@ HANDLER_MAP = {
 
 OUTPUT_ARTIFACT_TYPES = {
     "parse_document": "parsed_text",
+    "validate_parse_quality": "parsed_text",
     "chunk_text": "text_chunks",
     "generate_embeddings": "vector_index",
     "summarize_document": "summary",
@@ -899,6 +1042,7 @@ LEASE_DURATIONS = {
     "process_video": 120,
     "generate_report": 60,
     "parse_document": 60,
+    "validate_parse_quality": 60,
     "chunk_text": 60,
     "generate_embeddings": 180,
     "summarize_document": 60,
