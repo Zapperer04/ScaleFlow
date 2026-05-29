@@ -3,15 +3,15 @@ import time
 import requests
 import json
 import logging
-from fpdf import FPDF
 import uuid
+import sys
 
 # We will need to make sure FPDF is available for generation
 try:
     from fpdf import FPDF
 except ImportError:
     import subprocess
-    subprocess.run(["python", "-m", "pip", "install", "fpdf2"], check=True)
+    subprocess.run([sys.executable, "-m", "pip", "install", "fpdf2"], check=True)
     from fpdf import FPDF
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s - %(message)s")
@@ -131,8 +131,8 @@ def wait_for_pipeline(pipeline_id, timeout=300):
         res = requests.get(f"{API_URL}/pipelines/{pipeline_id}", headers=HEADERS)
         if res.status_code == 200:
             data = res.json()
-            status = data.get('status')
-            if status in ('completed', 'failed'):
+            status = data.get('pipeline', {}).get('status')
+            if status in ('completed', 'failed', 'cancelled'):
                 return data
         time.sleep(2)
     raise TimeoutError("Pipeline polling timed out")
@@ -141,6 +141,7 @@ def test_retrieval(pipeline_id, queries):
     results = {}
     for q in queries:
         payload = {
+            "name": f"Retrieval: {q[:30]}",
             "pipeline_type": "retrieval_answer_demo",
             "initial_payload": {
                 "query": q,
@@ -151,7 +152,7 @@ def test_retrieval(pipeline_id, queries):
         if res.status_code == 201:
             q_pid = res.json().get('pipeline_id')
             data = wait_for_pipeline(q_pid)
-            if data['status'] == 'completed':
+            if data.get('pipeline', {}).get('status') == 'completed':
                 for art in data.get('artifacts', []):
                     if art.get('artifact_type') == 'final_answer':
                         answer_data = art.get('metadata_json', {})
@@ -192,7 +193,7 @@ def main():
         try:
             pid = upload_and_run(info['path'])
             data = wait_for_pipeline(pid, timeout=600)
-            status = data.get('status')
+            status = data.get('pipeline', {}).get('status')
             dur_s = round(time.time() - start_t, 2)
             
             if status == "completed":

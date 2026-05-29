@@ -126,6 +126,25 @@ const OverviewPage = ({
         pipelinePayload.pipeline_id = selectedPipelineId;
       }
       
+      let document_id = "N/A";
+      let filename = "N/A";
+      if (pipelineDetails && pipelineDetails.artifacts) {
+        const uploadedFile = pipelineDetails.artifacts.find(art => art.artifact_type === 'uploaded_file');
+        if (uploadedFile) {
+          document_id = uploadedFile.id;
+          const meta = typeof uploadedFile.metadata_json === 'string' ? JSON.parse(uploadedFile.metadata_json) : (uploadedFile.metadata_json || {});
+          filename = meta.original_filename || "N/A";
+        }
+      }
+      const activeState = pipelineDetails?.pipeline?.status || "N/A";
+
+      console.log("CHAT REQUEST PAYLOAD", pipelinePayload);
+      console.log("QUERY:", query);
+      console.log("PIPELINE_ID:", selectedPipelineId || "N/A");
+      console.log("DOCUMENT_ID:", document_id);
+      console.log("FILENAME:", filename);
+      console.log("ACTIVE PIPELINE STATE:", activeState);
+
       const response = await createRetrievalPipeline(pipelinePayload);
       const queryPipelineId = response.pipeline_id;
 
@@ -405,7 +424,7 @@ const OverviewPage = ({
     
     const formatTime = (timeStr) => {
       if (!timeStr) return 'N/A';
-      return new Date(timeStr).toLocaleTimeString();
+      return new Date(timeStr).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
     };
     
     return {
@@ -586,7 +605,7 @@ const OverviewPage = ({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
       {/* 2. SPLIT LAYOUT */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1.2fr', gap: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 1.8fr) minmax(220px, 1.2fr)', gap: '20px' }}>
         
         {/* LEFT COLUMN: UPLOAD, CONSOLE HEADER, STAGES TABLE, & RAG CHAT */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -608,14 +627,14 @@ const OverviewPage = ({
                 <select 
                   value={fileType}
                   onChange={(e) => setFileType(e.target.value)}
-                  style={{ width: '100%' }}
+                  style={{ width: '100%', maxWidth: '420px', boxSizing: 'border-box' }}
                 >
                   <option value="document_processing_demo">Standard AI Document Ingestion (.txt)</option>
                   <option value="document_processing_demo">PDF Document Ingestion (.pdf)</option>
                 </select>
               </div>
 
-              <label className="btn btn-primary" style={{ height: '28px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: uploading ? 'not-allowed' : 'pointer' }}>
+              <label className="btn btn-primary" style={{ height: '28px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: uploading ? 'not-allowed' : 'pointer', boxSizing: 'border-box' }}>
                 {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                 <span>{uploading ? 'Processing...' : 'Upload File'}</span>
                 <input type="file" onChange={handleFileChange} disabled={uploading} style={{ display: 'none' }} />
@@ -675,7 +694,7 @@ const OverviewPage = ({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 disabled={ragLoading}
-                style={{ flex: 1, height: '28px' }}
+                style={{ flex: 1, height: '28px', maxWidth: '100%', boxSizing: 'border-box', padding: '6px 8px' }}
               />
               <button 
                 type="submit" 
@@ -788,12 +807,13 @@ const OverviewPage = ({
                       border: selectedPipelineId === p.id ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid var(--border-subtle)', 
                       borderRadius: '4px',
                       cursor: 'pointer',
-                      transition: 'all 0.2s'
+                      transition: 'all 0.2s',
+                      wordBreak: 'break-word'
                     }}
                     className="pipeline-stage-item"
                   >
-                    <span style={{ fontSize: '0.75rem', fontWeight: '600', color: selectedPipelineId === p.id ? '#5B8CFF' : '#fff' }}>
-                      {p.name.replace("Ingestion Pipeline - ", "")} (ID: #{p.id})
+                    <span style={{ fontSize: '0.75rem', fontWeight: '600', color: selectedPipelineId === p.id ? '#5B8CFF' : '#fff', maxWidth: '75%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {(p.name || String(p.id)).replace?.("Ingestion Pipeline - ", "") || `Pipeline ${p.id}`} (ID: #{p.id})
                     </span>
                     <span className={`badge ${p.status}`} style={{ fontSize: '0.65rem', padding: '2px 6px', textTransform: 'uppercase' }}>
                       {p.status}

@@ -2885,8 +2885,18 @@ def create_query_pipeline():
             return jsonify({"error": "Missing 'query' field"}), 400
             
         top_k = data.get("top_k", 5)
-        pipeline_id_filter = data.get("pipeline_id_filter")
-        file_id_filter = data.get("file_id_filter")
+        pipeline_id_filter = data.get("pipeline_id_filter") or data.get("pipeline_id")
+        file_id_filter = data.get("file_id_filter") or data.get("file_id")
+        
+        print("=" * 80, flush=True)
+        print("RETRIEVAL REQUEST (ENTRYPOINT)", flush=True)
+        print("INCOMING PAYLOAD:", data, flush=True)
+        print("QUERY:", query, flush=True)
+        print("PIPELINE ID FILTER:", pipeline_id_filter, flush=True)
+        print("FILE ID FILTER:", file_id_filter, flush=True)
+        print("COLLECTION NAME: scaleflow_chunks", flush=True)
+        print("RETRIEVAL FILTER:", {"pipeline_id": pipeline_id_filter} if pipeline_id_filter else "None", flush=True)
+        print("=" * 80, flush=True)
         
         initial_payload = {
             "query": query,

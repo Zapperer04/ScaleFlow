@@ -1632,9 +1632,9 @@ const PipelineDashboard = () => {
                     </h2>
                     <div style={{ display: 'flex', gap: '16px', marginTop: '6px', fontSize: '0.8rem', color: '#94a3b8' }}>
                       <span><strong>Type:</strong> {selectedPipelineData.pipeline.pipeline_type}</span>
-                      <span><strong>Launched:</strong> {new Date(selectedPipelineData.pipeline.created_at).toLocaleTimeString()}</span>
+                      <span><strong>Launched:</strong> {new Date(selectedPipelineData.pipeline.created_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                       {selectedPipelineData.pipeline.completed_at && (
-                        <span><strong>Finished:</strong> {new Date(selectedPipelineData.pipeline.completed_at).toLocaleTimeString()}</span>
+                        <span><strong>Finished:</strong> {new Date(selectedPipelineData.pipeline.completed_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                       )}
                     </div>
                   </div>
@@ -2027,7 +2027,7 @@ const PipelineDashboard = () => {
                                     </span>
                                   </div>
                                   <span style={{ fontSize: '0.65rem', color: '#64748b' }}>
-                                    {new Date(log.created_at).toLocaleTimeString()}
+                                    {new Date(log.created_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                                   </span>
                                 </div>
 
@@ -2899,7 +2899,7 @@ const PipelineDashboard = () => {
                             <div>
                               <span style={{ fontWeight: 'bold', color: '#ffffff', fontSize: '0.9rem' }}>{inst.instance_id}</span>
                               <span style={{ display: 'block', fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>
-                                Heartbeat: {inst.last_heartbeat ? new Date(inst.last_heartbeat).toLocaleTimeString() : 'N/A'}
+                                Heartbeat: {inst.last_heartbeat ? new Date(inst.last_heartbeat).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'N/A'}
                               </span>
                             </div>
                           </div>
@@ -2953,7 +2953,7 @@ const PipelineDashboard = () => {
                           <div>Owner: <span style={{ color: '#a78bfa', fontWeight: 'bold' }}>{lease.owner_instance_id || 'unassigned'}</span></div>
                           <div>Fencing Token (version): <span style={{ color: '#60a5fa' }}>{lease.ownership_version}</span></div>
                           {lease.owner_lease_expires_at && (
-                            <div>Lease Expires: <span style={{ color: '#cbd5e1' }}>{new Date(lease.owner_lease_expires_at).toLocaleTimeString()}</span></div>
+                            <div>Lease Expires: <span style={{ color: '#cbd5e1' }}>{new Date(lease.owner_lease_expires_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span></div>
                           )}
                         </div>
                       </div>
@@ -3041,7 +3041,7 @@ const PipelineDashboard = () => {
                       
                       {/* Details */}
                       <div style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <div>Last Seen: {lastSeenDate.toLocaleTimeString()}</div>
+                        <div>Last Seen: {lastSeenDate.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
                         {w.resource_limits && Object.keys(w.resource_limits).length > 0 && (
                           <div style={{ display: 'flex', gap: '10px', marginTop: '4px', borderTop: '1px solid var(--border-subtle)', paddingTop: '4px' }}>
                             <span>CPU: {w.resource_limits.cpu_cores || 'N/A'} cores</span>
@@ -3089,7 +3089,7 @@ const PipelineDashboard = () => {
                     </div>
                     <div style={{ fontSize: '0.75rem', color: '#94a3b8', textAlign: 'right' }}>
                       <div>{new Date(fail.timestamp).toLocaleDateString()}</div>
-                      <div>{new Date(fail.timestamp).toLocaleTimeString()}</div>
+                      <div>{new Date(fail.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
                     </div>
                   </div>
                 ))
@@ -3438,7 +3438,7 @@ const PipelineDashboard = () => {
                             <span style={{ fontWeight: 'bold', color: '#f1f5f9' }}>{evt.event_type}</span>
                             <span style={{ color: '#94a3b8', fontSize: '0.7rem' }}>— {evt.message}</span>
                           </div>
-                          <span style={{ color: '#64748b', fontSize: '0.65rem' }}>{new Date(evt.created_at).toLocaleTimeString()}</span>
+                          <span style={{ color: '#64748b', fontSize: '0.65rem' }}>{new Date(evt.created_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                         </div>
                       );
                     })}

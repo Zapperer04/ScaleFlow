@@ -93,7 +93,7 @@ export default function ValidationLab() {
 
   // Helper to add log to Chaos Console
   const addChaosLog = (msg) => {
-    const timestamp = new Date().toLocaleTimeString();
+    const timestamp = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setChaosLog(prev => [`[${timestamp}] ${msg}`, ...prev].slice(0, 50));
   };
 

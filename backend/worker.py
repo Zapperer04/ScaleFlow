@@ -1,6 +1,8 @@
 import time
 import requests
 import redis
+from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
+from typing import Any
 import json
 import os
 import random
@@ -53,7 +55,7 @@ for p in ['high', 'medium', 'low']:
         ALL_WORKER_QUEUES.append(f"task_queue_test_{cap}_{p}")
         ALL_WORKER_QUEUES.append(f"task_queue_{cap}_{p}")
 
-worker_state = {
+worker_state: dict[str, Any] = {
     'status': 'idle',
     'current_task_id': None,
     'tasks_completed': 0,
@@ -584,6 +586,8 @@ def handle_parse_logs(payload, input_artifacts):
             if isinstance(text, dict) and "content" in text:
                 text = text["content"]
         
+    if not isinstance(text, str):
+        text = str(text)
     lines = text.splitlines()
     parsed = [line.strip() for line in lines if line.strip()]
     print(f"[{WORKER_ID}]   [OK] Parsed {len(parsed)} log lines", flush=True)
@@ -640,6 +644,13 @@ def handle_embed_query(payload, input_artifacts):
         raise ValueError("Missing 'query' in embed_query task payload")
     
     vector = embed_text(query)
+    
+    print("=" * 80, flush=True)
+    print("EMBEDDING QUERY", flush=True)
+    print(f"QUERY: {query}", flush=True)
+    print(f"GENERATED EMBEDDING SIZE: {len(vector)}", flush=True)
+    print("=" * 80, flush=True)
+
     artifact_data = {
         "query": query,
         "embedding_model": "all-MiniLM-L6-v2",
@@ -696,16 +707,31 @@ def handle_retrieve_context(payload, input_artifacts):
         except (ValueError, TypeError):
             top_k = 5
             
-    filters = {}
     p_id = to_int_or_none(pipeline_id_filter)
-    if p_id is not None:
-        filters["pipeline_id"] = p_id
+    if p_id is None:
+        raise ValueError("Document-scoped retrieval failed: 'pipeline_id_filter' is missing or invalid.")
+        
+    filters = {}
+    filters["pipeline_id"] = p_id
     f_id = to_int_or_none(file_id_filter)
     if f_id is not None:
         filters["file_id"] = f_id
         
+    print("=" * 80, flush=True)
+    print("RETRIEVAL TASK INITIATED", flush=True)
+    print(f"QUERY: {query}", flush=True)
+    print(f"COLLECTION NAME (RETRIEVAL): scaleflow_chunks", flush=True)
+    print(f"PIPELINE FILTER: {p_id}", flush=True)
+    print(f"FILTERS: {filters}", flush=True)
+    print(f"TOP-K: {top_k}", flush=True)
+    print("=" * 80, flush=True)
+        
     print(f"[{WORKER_ID}] Searching Qdrant collection scaleflow_chunks with top_k={top_k}, filters={filters}", flush=True)
-    results = search_similar("scaleflow_chunks", vector, top_k=top_k, filters=filters)
+    results: list[Any] = search_similar("scaleflow_chunks", vector, top_k=top_k, filters=filters)
+    
+    print("=" * 80, flush=True)
+    print(f"RETRIEVAL COMPLETE: RETURNED {len(results)} CHUNKS", flush=True)
+    print("=" * 80, flush=True)
     
     pipeline_id = p_id or to_int_or_none(payload.get("_pipeline_id"))
     
@@ -726,7 +752,7 @@ def handle_retrieve_context(payload, input_artifacts):
             
     # Filter results by MIN_RETRIEVAL_SCORE
     min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
-    filtered_results = [r for r in results if r.get("score", 0.0) >= min_score or r.get("chunk_index") == -1]
+    filtered_results = [r for r in results if float(r.get("score") or 0.0) >= min_score or r.get("chunk_index") == -1]
     
     # Fallback 1: If isolated to a specific document/pipeline and nothing passed, bypass threshold
     if not filtered_results and results and ("pipeline_id" in filters or "file_id" in filters):
@@ -761,12 +787,26 @@ def handle_generate_answer_report(payload, input_artifacts):
         raise ValueError("Missing 'retrieved_context' in generate_answer_report input artifacts")
         
     query = context_data.get("query", "")
-    results = context_data.get("results", [])
+    results: list[Any] = context_data.get("results", [])
     
     # Verify score threshold or summary chunk
     min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
-    valid_results = [r for r in results if r.get("score", 0.0) >= min_score or r.get("chunk_index") == -1]
+    valid_results = [r for r in results if float(r.get("score") or 0.0) >= min_score or r.get("chunk_index") == -1]
     
+    print("=" * 80, flush=True)
+    print("TOP MATCHES (BEFORE ANSWER SYNTHESIS):", flush=True)
+    for idx, hit in enumerate(valid_results):
+        score = hit.get("score")
+        p_id = hit.get("pipeline_id")
+        text_snippet = hit.get("chunk_text") or hit.get("text") or ""
+        c_id = hit.get("chunk_index") or hit.get("chunk_id") or -1
+        print(f"Match {idx+1}:", flush=True)
+        print(f"  Score: {score}", flush=True)
+        print(f"  Pipeline ID: {p_id}", flush=True)
+        print(f"  Chunk ID: {c_id}", flush=True)
+        print(f"  Snippet: {text_snippet[:300]}...", flush=True)
+    print("=" * 80, flush=True)
+
     confidence = "low"
     if valid_results:
         top_score = valid_results[0].get("score", 0.0)
@@ -916,7 +956,7 @@ class LeaseRenewer(threading.Thread):
     def stop(self):
         self.stop_event.set()
 
-def execute_task(task):
+def execute_task(task: Any):
     """Simulate doing the actual work - with random failures for testing retry"""
     from context.artifact_store import load_artifact_from_disk, save_artifact_to_disk
     task_type = task['type']
@@ -962,11 +1002,11 @@ def execute_task(task):
         raise Exception(f"Simulated failure for task {task_id}")
     
     # Check in handler map
-    handler = HANDLER_MAP.get(task_type)
+    handler: Any = HANDLER_MAP.get(task_type)
     if not handler:
         registry_info = TASK_REGISTRY.get(task_type, {})
         handler_name = registry_info.get("handler_name")
-        if handler_name:
+        if handler_name and isinstance(handler_name, str):
             handler = globals().get(handler_name)
             
     if handler:
@@ -997,7 +1037,8 @@ def execute_task(task):
                 
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(handler, task_data, input_artifacts)
+                handler_any: Any = handler
+                future = executor.submit(handler_any, task_data, input_artifacts)
                 try:
                     output_data = future.result(timeout=300)
                 except concurrent.futures.TimeoutError:
@@ -1066,14 +1107,20 @@ def get_next_task():
     """Get next task using capability-aware Weighted Round-Robin (WRR) scheduling"""
     try:
         try:
-            paused_queues = redis_client.smembers("scaleflow:paused_queues") or set()
-            paused_queues = {q.decode() if isinstance(q, bytes) else str(q) for q in paused_queues}
+            paused_queues_raw = redis_client.smembers("scaleflow:paused_queues")
+            paused_queues_raw_any: Any = paused_queues_raw
+            if not paused_queues_raw_any:
+                paused_queues = set()
+            else:
+                paused_queues = {q.decode() if isinstance(q, bytes) else str(q) for q in paused_queues_raw_any}
         except Exception:
             paused_queues = set()
 
         cycle_priorities = ['high', 'high', 'high', 'high', 'high', 'high', 'medium', 'medium', 'medium', 'low']
         # Atomic increment wrr_index in Redis
-        wrr_idx = redis_client.incr('wrr_index') % len(cycle_priorities)
+        wrr_val_raw = redis_client.incr('wrr_index')
+        wrr_val: Any = wrr_val_raw
+        wrr_idx = int(wrr_val) % len(cycle_priorities)
         target_priority = cycle_priorities[wrr_idx]
         
         # 1. Try to pop from target priority queues matching capabilities (test first, then prod)
@@ -1105,10 +1152,10 @@ def get_next_task():
             result = redis_client.brpop(active_queues, timeout=5)
             if result:
                 return result
-    except redis.exceptions.ConnectionError as ce:
+    except RedisConnectionError as ce:
         print(f"[{WORKER_ID}] Redis connection error during task pop: {ce}", flush=True)
         raise ce
-    except redis.exceptions.TimeoutError:
+    except RedisTimeoutError:
         pass
     except Exception as e:
         print(f"[{WORKER_ID}] Error in get_next_task: {e}", flush=True)

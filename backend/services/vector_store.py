@@ -33,6 +33,11 @@ def ensure_collection(collection_name="scaleflow_chunks", vector_size=384):
 
 def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metadata=None):
     collection_name = "scaleflow_chunks"
+    
+    print("=" * 80, flush=True)
+    print("QDRANT INSERTION COLLECTION NAME:", collection_name, flush=True)
+    print("=" * 80, flush=True)
+
     if not ensure_collection(collection_name, 384):
         logger.error("Could not ensure collection exists in Qdrant. Aborting upsert.")
         return False
@@ -50,7 +55,13 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             "chunk_text": chunk_text,
             "source_artifact_id": metadata.get("source_artifact_id") if metadata else None,
             "original_filename": metadata.get("original_filename") if metadata else None,
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.utcnow().isoformat(),
+            
+            # Compatibility keys for step 3
+            "document_id": file_id,
+            "filename": metadata.get("original_filename") if metadata else None,
+            "chunk_id": i,
+            "text": chunk_text
         }
         
         points.append(
@@ -61,6 +72,14 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             )
         )
         
+    print("=" * 80, flush=True)
+    print("INSERTING VECTOR PAYLOADS TO QDRANT (EXAMPLES):", flush=True)
+    for idx, pt in enumerate(points[:5]):
+        print(f"Point {idx}: {pt.payload}", flush=True)
+    if len(points) > 5:
+        print(f"... and {len(points) - 5} more points.", flush=True)
+    print("=" * 80, flush=True)
+
     try:
         client.upsert(
             collection_name=collection_name,
@@ -73,6 +92,9 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
         return False
 
 def search_similar(collection_name, query_vector, top_k=5, filters=None):
+    print("=" * 80, flush=True)
+    print("QDRANT RETRIEVAL COLLECTION NAME:", collection_name, flush=True)
+    print("=" * 80, flush=True)
     try:
         # Build filter if present
         q_filter = None

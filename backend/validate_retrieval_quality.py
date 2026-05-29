@@ -6,6 +6,8 @@ import json
 from datetime import datetime
 
 API_URL = "http://localhost:5000"
+API_KEY = os.environ.get("API_KEY", "dev_secret_api_key")
+HEADERS = {"X-API-Key": API_KEY}
 # Ensure the uploads directory exists
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "storage", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -47,7 +49,7 @@ def print_header(title):
 def wait_for_pipeline(pipeline_id, timeout=120):
     start = time.time()
     while time.time() - start < timeout:
-        res = requests.get(f"{API_URL}/pipelines/{pipeline_id}")
+        res = requests.get(f"{API_URL}/pipelines/{pipeline_id}", headers=HEADERS)
         if res.status_code == 200:
             status = res.json().get("pipeline", {}).get("status")
             if status == "completed":
@@ -70,9 +72,9 @@ def evaluate_retrieval():
     with open(TEST_DOC_PATH, "rb") as f:
         files = {"file": f}
         data = {"pipeline_type": "document_processing_demo"}
-        res = requests.post(f"{API_URL}/files/upload", files=files, data=data)
+        res = requests.post(f"{API_URL}/files/upload", files=files, data=data, headers=HEADERS)
         
-    if res.status_code != 200:
+    if res.status_code not in [200, 201]:
         print(f"[ERROR] Upload failed: {res.text}")
         sys.exit(1)
         
@@ -125,8 +127,8 @@ def evaluate_retrieval():
             "pipeline_id": pipeline_id
         }
         
-        res = requests.post(f"{API_URL}/pipelines/retrieval", json=payload)
-        if res.status_code != 200:
+        res = requests.post(f"{API_URL}/query-pipelines", json=payload, headers=HEADERS)
+        if res.status_code not in [200, 201]:
             print(f"[ERROR] Query failed: {res.text}")
             continue
             
@@ -134,12 +136,12 @@ def evaluate_retrieval():
         
         # Poll for answer
         answer_data = None
-        for _ in range(15):
+        for _ in range(45):
             time.sleep(1)
-            ans_res = requests.get(f"{API_URL}/pipelines/{retrieval_pipeline_id}/answer")
+            ans_res = requests.get(f"{API_URL}/query-pipelines/{retrieval_pipeline_id}/answer", headers=HEADERS)
             if ans_res.status_code == 200:
                 data = ans_res.json()
-                if "final_answer" in data:
+                if data.get("final_answer") is not None:
                     answer_data = data["final_answer"]
                     break
         

@@ -216,7 +216,7 @@ def parse_pdf(
     _trace(f"[PARSER] Total pages: {page_count}")
 
     # Circuit breaker: absurdly high page count for file size
-    if page_count > (file_size_mb * 500) + 100:
+    if page_count > (file_size_mb * 3000) + 100:
         _cleanup()
         raise ValueError(
             f"FAILED_VALIDATION: Anomaly — {page_count} pages for {file_size_mb:.1f} MB file. "

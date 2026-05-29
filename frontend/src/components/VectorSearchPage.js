@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Database, Search, Cpu, FileText, Loader2, Sparkles } from 'lucide-react';
-import { searchVectors, fetchVectorStats, createRetrievalPipeline, fetchRetrievalPipelineAnswer } from '../services/api';
+import { Database, Search, Cpu, FileText, Loader2, Sparkles, Trash2 } from 'lucide-react';
+import { searchVectors, fetchVectorStats, fetchPipelines, createRetrievalPipeline, fetchRetrievalPipelineAnswer } from '../services/api';
 
 const VectorSearchPage = () => {
   const [query, setQuery] = useState('');
@@ -12,6 +12,8 @@ const VectorSearchPage = () => {
   const [ragLoading, setRagLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(null); // 'input', 'embed', 'search', 'synthesize', 'done'
   const [error, setError] = useState(null);
+  const [pipelines, setPipelines] = useState([]);
+  const [selectedPipelineId, setSelectedPipelineId] = useState('');
 
   const loadStats = async () => {
     try {
@@ -22,8 +24,27 @@ const VectorSearchPage = () => {
     }
   };
 
+  const loadPipelines = async () => {
+    try {
+      const data = await fetchPipelines();
+      // Only keep document processing pipelines that are completed
+      const docPipelines = (data || []).filter(p =>
+        (p.pipeline_type === 'document_processing_demo' || p.pipeline_type === 'system_stability_pipeline') &&
+        p.status === 'completed'
+      );
+      setPipelines(docPipelines);
+      if (docPipelines.length > 0 && !selectedPipelineId) {
+        setSelectedPipelineId(String(docPipelines[0].id));
+      }
+    } catch (err) {
+      console.error('Error fetching pipelines:', err);
+    }
+  };
+
   useEffect(() => {
     loadStats();
+    loadPipelines();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleVectorSearch = async (e) => {
@@ -65,8 +86,15 @@ const VectorSearchPage = () => {
     try {
       // RAG Synthesizer execution sequence
       setCurrentStep('embed');
-      // Create a query pipeline
-      const pipeline = await createRetrievalPipeline({ query: query });
+      // Create a query pipeline with pipeline_id_filter
+      const payload = { query: query };
+      if (selectedPipelineId) {
+        payload.pipeline_id_filter = parseInt(selectedPipelineId);
+      }
+      if (!selectedPipelineId) {
+        throw new Error('Please select an ingested document pipeline before running RAG. Use the dropdown above.');
+      }
+      const pipeline = await createRetrievalPipeline(payload);
       const pipelineId = pipeline.pipeline_id;
 
       setCurrentStep('search');
@@ -107,30 +135,58 @@ const VectorSearchPage = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
       
       {/* Header and Stats */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, color: '#fff' }}>Vector Search & RAG Control Plane</h1>
           <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginTop: '4px' }}>Query distributed vector indices and inspect retrieval relevance</p>
         </div>
 
-        {stats && (
-          <div style={{ display: 'flex', gap: '16px' }}>
-            <div className="panel" style={{ margin: 0, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Database size={18} style={{ color: '#5B8CFF' }} />
-              <div>
-                <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8' }}>QDRANT COLLECTION</span>
-                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>{stats.collection}</span>
-              </div>
-            </div>
-            <div className="panel" style={{ margin: 0, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Cpu size={18} style={{ color: '#10B981' }} />
-              <div>
-                <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8' }}>TOTAL VECTOR POINTS</span>
-                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>{stats.points_count}</span>
-              </div>
-            </div>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          {/* Pipeline Selector */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Active Document Pipeline (for RAG)</label>
+            <select
+              value={selectedPipelineId}
+              onChange={(e) => setSelectedPipelineId(e.target.value)}
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(91, 140, 255, 0.3)',
+                color: '#fff',
+                padding: '6px 12px',
+                borderRadius: '6px',
+                fontSize: '0.8rem',
+                outline: 'none',
+                minWidth: '240px'
+              }}
+            >
+              <option value="">— Select completed ingestion pipeline —</option>
+              {pipelines.map(p => (
+                <option key={p.id} value={String(p.id)}>
+                  #{p.id} {p.name} ({p.pipeline_type === 'document_processing_demo' ? 'doc' : 'stability'})
+                </option>
+              ))}
+            </select>
           </div>
-        )}
+
+          {stats && (
+            <div style={{ display: 'flex', gap: '16px' }}>
+              <div className="panel" style={{ margin: 0, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Database size={18} style={{ color: '#5B8CFF' }} />
+                <div>
+                  <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8' }}>QDRANT COLLECTION</span>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>{stats.collection}</span>
+                </div>
+              </div>
+              <div className="panel" style={{ margin: 0, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Cpu size={18} style={{ color: '#10B981' }} />
+                <div>
+                  <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8' }}>TOTAL VECTOR POINTS</span>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>{stats.points_count}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Large Premium Search Control */}

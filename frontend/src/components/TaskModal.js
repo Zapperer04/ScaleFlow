@@ -118,7 +118,7 @@ const TaskModal = ({ taskId, onClose, onActionComplete }) => {
                 <>
                   <div className="detail-item">
                     <label>Lease Expiry</label>
-                    <span>{new Date(details.lease_expires_at).toLocaleString()}</span>
+                    <span>{new Date(details.lease_expires_at).toLocaleString([], { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                   </div>
                   <div className="detail-item">
                     <label>Lease Remaining</label>
@@ -156,7 +156,7 @@ const TaskModal = ({ taskId, onClose, onActionComplete }) => {
                 {details.logs && details.logs.length > 0 ? (
                   details.logs.map((log) => (
                     <div key={log.id} className="log-row">
-                      <div className="log-time">{new Date(log.created_at).toLocaleTimeString()}</div>
+                      <div className="log-time">{new Date(log.created_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
                       <div className="log-type-badge">{log.event_type}</div>
                       <div className="log-msg">
                         {log.message}

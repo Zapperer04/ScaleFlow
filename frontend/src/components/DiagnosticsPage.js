@@ -115,7 +115,7 @@ const DiagnosticsPage = () => {
                     <td style={{ maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#F87171', fontFamily: 'monospace' }}>
                       {task.error_message || 'Unknown Error'}
                     </td>
-                    <td>{new Date(task.created_at).toLocaleString()}</td>
+                    <td>{new Date(task.created_at).toLocaleString([], { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
                     <td>
                       <span className="badge failed">Quarantined</span>
                     </td>

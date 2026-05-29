@@ -7,6 +7,11 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Smooth scrolling for better UX during navigation and auto-scrolls */
+html, body {
+  scroll-behavior: smooth;
+}
+
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
@@ -29,5 +34,32 @@ code {
 
 .pulse-glow {
   animation: pulse-glow 2s infinite ease-in-out;
+}
+
+/* Dark-mode scrollbar polish (slate tracks, subtle thumb) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #0b1220; /* thumb, track */
+}
+
+/* Webkit-specific */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0b1220; /* dark slate track */
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #475569, #64748b);
+  border-radius: 8px;
+  border: 2px solid rgba(11,18,32,0.6);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #5b728a, #7b90a6);
 }
 

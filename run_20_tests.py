@@ -33,7 +33,7 @@ def run_single_pipeline(run_idx):
     
     # 1. Create a simple txt file
     with open("test_document.txt", "w") as f:
-        f.write(f"This is test run {run_idx} for deterministic execution reliability.\nWe must prove stability before moving forward.")
+        f.write(f"This is test run {run_idx} for deterministic execution reliability.\nWe must prove stability before moving forward. Adding more text to satisfy the minimum chunk size requirement of the semantic chunker which filters out short texts under forty words. This document now contains enough words to be successfully chunked, embedded, and indexed into our Qdrant vector database.")
 
     # 2. Upload the file
     upload_start = time.time()
@@ -78,7 +78,9 @@ def run_single_pipeline(run_idx):
         print(f"PIPELINE FAILED OR TIMED OUT. Final status: {final_status}")
         print(json.dumps(p_data, indent=2))
         return False, "Pipeline execution failed or stalled"
-
+    if not p_data:
+        return False, "p_data is None"
+        
     tasks = p_data.get("tasks", [])
     
     parse_dur = get_task_duration(tasks, 'parse_document')

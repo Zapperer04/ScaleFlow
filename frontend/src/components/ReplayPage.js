@@ -411,7 +411,7 @@ const ReplayPage = () => {
                       {getEventLabel(e.event_type)}
                     </div>
                     <span style={{ fontSize: '0.6rem', color: '#cbd5e1' }}>
-                      {new Date(e.created_at).toLocaleTimeString()}
+                      {new Date(e.created_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </span>
                   </div>
                 );
@@ -502,7 +502,7 @@ const ReplayPage = () => {
                   <div>
                     <span style={{ display: 'block', fontSize: '0.7rem', color: '#94a3b8' }}>RECORDED TIMESTAMP</span>
                     <span style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
-                      {new Date(replayDetails.events[currentEventIndex].created_at).toLocaleString()}
+                      {new Date(replayDetails.events[currentEventIndex].created_at).toLocaleString([], { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </span>
                   </div>
 
@@ -618,7 +618,7 @@ const ReplayPage = () => {
                                 )}
                               </div>
                               <span style={{ fontSize: '0.7rem', color: '#cbd5e1' }}>
-                                Worker: {t.worker_id || 'Unleased'} {t.lease_expires_at ? `(Lease expires: ${new Date(t.lease_expires_at).toLocaleTimeString()})` : ''}
+                                Worker: {t.worker_id || 'Unleased'} {t.lease_expires_at ? `(Lease expires: ${new Date(t.lease_expires_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })})` : ''}
                               </span>
                             </div>
 
