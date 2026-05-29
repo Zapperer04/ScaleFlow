@@ -1470,4 +1470,11 @@ def worker_loop():
 
 if __name__ == "__main__":
     print("WORKER MAIN STARTED", flush=True)
+    try:
+        from services.embedding_service import get_embedding_model
+        print(f"[{WORKER_ID}] [STARTUP] Preloading embedding model: all-MiniLM-L6-v2...", flush=True)
+        get_embedding_model()
+        print(f"[{WORKER_ID}] [STARTUP] Embedding model preloaded successfully!", flush=True)
+    except Exception as e:
+        print(f"[{WORKER_ID}] [STARTUP] ERROR preloading embedding model: {e}", flush=True)
     worker_loop()
