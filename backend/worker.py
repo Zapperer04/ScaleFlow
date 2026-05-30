@@ -330,9 +330,22 @@ def handle_validate_parse_quality(payload, input_artifacts):
         "novel", "this", "that", "these", "those"
     }
     
+    programming_keywords = {
+        "class", "public", "private", "protected", "void", "return", "static", "import", "extends", "implements",
+        "function", "def", "interface", "system", "out", "println", "print", "int", "double", "float", "boolean",
+        "bool", "string", "char", "catch", "try", "except", "finally", "throw", "throws", "new", "null", "true",
+        "false", "if", "else", "for", "while", "do", "switch", "case", "break", "continue", "struct", "include",
+        "namespace", "using", "const", "var", "let"
+    }
+    
     words = re.findall(r'\b[a-zA-Z]{2,15}\b', text.lower())
     total_words = len(words)
-    dict_words_count = sum(1 for w in words if w in common_english_words)
+    
+    keyword_words_count = sum(1 for w in words if w in programming_keywords)
+    programming_keyword_score = round((keyword_words_count / total_words) * 100.0, 1) if total_words > 0 else 0.0
+
+    all_dict_words = common_english_words.union(programming_keywords)
+    dict_words_count = sum(1 for w in words if w in all_dict_words)
     dict_word_ratio = dict_words_count / total_words if total_words > 0 else 0.0
     
     # D. Text coherence score
@@ -372,13 +385,15 @@ def handle_validate_parse_quality(payload, input_artifacts):
     min_dict = float(os.getenv("MIN_DICTIONARY_WORD_RATIO", "0.20"))
     min_coherence = float(os.getenv("MIN_TEXT_COHERENCE_SCORE", "60.0"))
     
+    effective_min_dict = 0.10 if programming_keyword_score > 3.0 else min_dict
+    
     # Emit tracing
     _trace(f"[QUALITY GATE] Ingestion Parser Used: {parser_used.upper()}")
     _trace(f"[QUALITY GATE] OCR Activation Status: {'YES' if ocr_pages > 0 else 'NO'}")
     _trace(f"[QUALITY GATE] Average OCR Confidence Score: {avg_ocr_confidence:.1f}%")
     _trace(f"[QUALITY GATE] Executing Quality Gate Decisions:")
     _trace(f"  - Printable Character Ratio: {printable_ratio:.2%} (Min Threshold: {min_printable:.2%})")
-    _trace(f"  - Dictionary-Word Ratio: {dict_word_ratio:.2%} (Min Threshold: {min_dict:.2%})")
+    _trace(f"  - Dictionary-Word Ratio: {dict_word_ratio:.2%} (Min Threshold: {effective_min_dict:.2%})")
     _trace(f"  - Text Coherence Score: {coherence_score:.1f}/100.0 (Min Threshold: {min_coherence:.1f})")
     
     # Quality validation check
@@ -387,8 +402,8 @@ def handle_validate_parse_quality(payload, input_artifacts):
         failed_checks.append(f"OCR confidence {avg_ocr_confidence:.1f}% is below threshold {min_ocr_conf:.1f}%")
     if printable_ratio < min_printable:
         failed_checks.append(f"Printable character ratio {printable_ratio:.2%} is below threshold {min_printable:.2%}")
-    if dict_word_ratio < min_dict:
-        failed_checks.append(f"Dictionary-word ratio {dict_word_ratio:.2%} is below threshold {min_dict:.2%}")
+    if dict_word_ratio < effective_min_dict:
+        failed_checks.append(f"Dictionary-word ratio {dict_word_ratio:.2%} is below threshold {effective_min_dict:.2%}")
     if coherence_score < min_coherence:
         failed_checks.append(f"Text coherence score {coherence_score:.1f} is below threshold {min_coherence:.1f}")
         
@@ -429,11 +444,12 @@ def _semantic_chunk(text: str, task_id=None) -> list:
     Split text into coherent, retrieval-optimised chunks:
     - Paragraph-aware: never splits a paragraph mid-sentence
     - Heading-aware: detected headings start fresh chunks
-    - Target size: ~400 words with last-paragraph overlap
+    - Target size: 300-600 words (defaults to target ~500 words)
+    - Overlap size: 50-100 words (sentence-boundary-preserving)
     - Min chunk: 40 words (filters page headers / noise)
     - Max chunks: 500 (resource guard for huge documents)
     """
-    CHUNK_TARGET_WORDS = int(os.getenv("CHUNK_TARGET_WORDS", "400"))
+    CHUNK_TARGET_WORDS = int(os.getenv("CHUNK_TARGET_WORDS", "500"))
     CHUNK_MIN_WORDS    = int(os.getenv("CHUNK_MIN_WORDS",    "40"))
     MAX_CHUNKS         = int(os.getenv("MAX_CHUNKS",         "500"))
 
@@ -454,6 +470,33 @@ def _semantic_chunk(text: str, task_id=None) -> list:
     def _words(s: str) -> int:
         return len(s.split())
 
+    def _get_overlap_text(paragraph: str) -> str:
+        """
+        Extract the end of the paragraph representing approximately 50-100 words,
+        preserving sentence boundaries.
+        """
+        if not paragraph:
+            return ""
+        sentences = re.split(r'(?<=[.!?])\s+', paragraph)
+        if not sentences:
+            return ""
+        
+        current_block = []
+        current_words = 0
+        for sent in reversed(sentences):
+            sent_words = len(sent.split())
+            if current_words + sent_words > 100 and current_block:
+                break
+            current_block.insert(0, sent)
+            current_words += sent_words
+            if current_words >= 55:  # Target 50-100 words
+                break
+                
+        res = " ".join(current_block)
+        if len(res.split()) > 100:
+            res = " ".join(res.split()[-75:])
+        return res
+
     # ── step 1: split into paragraphs ────────────────────────────────────────
     raw_paragraphs = re.split(r'\n{2,}', text)
     paragraphs = []
@@ -473,6 +516,27 @@ def _semantic_chunk(text: str, task_id=None) -> list:
         if current_block:
             paragraphs.append(" ".join(current_block).strip())
 
+    # Split overly large paragraphs into smaller sub-paragraphs (e.g. by sentence)
+    split_paragraphs = []
+    for para in paragraphs:
+        if _words(para) <= CHUNK_TARGET_WORDS:
+            split_paragraphs.append(para)
+        else:
+            sentences = re.split(r'(?<=[.!?])\s+', para)
+            current_sent_block: list[str] = []
+            current_sent_words = 0
+            for sent in sentences:
+                sent_words = _words(sent)
+                if current_sent_words + sent_words > CHUNK_TARGET_WORDS and current_sent_block:
+                    split_paragraphs.append(" ".join(current_sent_block))
+                    current_sent_block = []
+                    current_sent_words = 0
+                current_sent_block.append(sent)
+                current_sent_words += sent_words
+            if current_sent_block:
+                split_paragraphs.append(" ".join(current_sent_block))
+    paragraphs = split_paragraphs
+
     # ── step 2: accumulate paragraphs into chunks ─────────────────────────────
     chunks: list[str] = []
     current_chunk_parts: list[str] = []
@@ -489,9 +553,10 @@ def _semantic_chunk(text: str, task_id=None) -> list:
             if _words(chunk_text) >= CHUNK_MIN_WORDS:
                 chunks.append(chunk_text)
 
-            # Overlap: carry last paragraph into next chunk for context continuity
-            current_chunk_parts = [last_paragraph] if last_paragraph and _words(last_paragraph) >= CHUNK_MIN_WORDS else []
-            current_word_count = _words(last_paragraph) if current_chunk_parts else 0
+            # Overlap: carry last paragraph's end into next chunk
+            overlap_text = _get_overlap_text(last_paragraph) if last_paragraph else ""
+            current_chunk_parts = [overlap_text] if overlap_text else []
+            current_word_count = _words(overlap_text) if current_chunk_parts else 0
 
         current_chunk_parts.append(para)
         current_word_count += para_words
@@ -502,6 +567,10 @@ def _semantic_chunk(text: str, task_id=None) -> list:
         chunk_text = "\n\n".join(current_chunk_parts).strip()
         if _words(chunk_text) >= CHUNK_MIN_WORDS:
             chunks.append(chunk_text)
+
+    # Safety net for very short documents:
+    if not chunks and text.strip():
+        chunks.append(text.strip())
 
     # ── step 3: resource cap ─────────────────────────────────────────────────
     if len(chunks) > MAX_CHUNKS:
@@ -886,8 +955,8 @@ def handle_retrieve_context(payload, input_artifacts):
     
     pipeline_id = p_id or to_int_or_none(payload.get("_pipeline_id"))
     
-    # If the query is a general/summary query, inject document summary
-    if pipeline_id and is_general_query(query):
+    # If the query is a general/summary query, inject document summary (disabled for benchmarking)
+    if False and pipeline_id and is_general_query(query):
         doc_summary = get_artifact_content_by_type(pipeline_id, "summary")
         if doc_summary:
             _, original_filename, _ = get_pipeline_file_info(pipeline_id)
@@ -910,8 +979,8 @@ def handle_retrieve_context(payload, input_artifacts):
         print(f"[{WORKER_ID}] No results passed threshold {min_score}. Falling back to top chunks without threshold.", flush=True)
         filtered_results = results
         
-    # Fallback 2: If we still have no context and summary hasn't been injected, inject summary
-    if not filtered_results and pipeline_id:
+    # Fallback 2: If we still have no context and summary hasn't been injected, inject summary (disabled for benchmarking)
+    if False and not filtered_results and pipeline_id:
         doc_summary = get_artifact_content_by_type(pipeline_id, "summary")
         if doc_summary:
             _, original_filename, _ = get_pipeline_file_info(pipeline_id)

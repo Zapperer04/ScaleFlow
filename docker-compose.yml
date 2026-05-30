@@ -53,6 +53,7 @@ services:
       API_KEY: "${API_KEY:-dev_secret_api_key}"
       PYTHONUNBUFFERED: "1"
       MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.05}"
+      MIN_DICTIONARY_WORD_RATIO: "${MIN_DICTIONARY_WORD_RATIO:-0.20}"
       WORKER_CAPABILITIES: "default,cpu_heavy,embedding_gpu,summarization_llm,retrieval_optimized,io_heavy"
     volumes:
       - ./backend/storage:/app/storage
@@ -76,6 +77,7 @@ services:
       API_KEY: "${API_KEY:-dev_secret_api_key}"
       PYTHONUNBUFFERED: "1"
       MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.05}"
+      MIN_DICTIONARY_WORD_RATIO: "${MIN_DICTIONARY_WORD_RATIO:-0.20}"
       WORKER_CAPABILITIES: "default,cpu_heavy,embedding_gpu,summarization_llm,retrieval_optimized,io_heavy"
     volumes:
       - ./backend/storage:/app/storage
@@ -99,6 +101,7 @@ services:
       API_KEY: "${API_KEY:-dev_secret_api_key}"
       PYTHONUNBUFFERED: "1"
       MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.05}"
+      MIN_DICTIONARY_WORD_RATIO: "${MIN_DICTIONARY_WORD_RATIO:-0.20}"
       WORKER_CAPABILITIES: "default,cpu_heavy,embedding_gpu,summarization_llm,retrieval_optimized,io_heavy"
     volumes:
       - ./backend/storage:/app/storage

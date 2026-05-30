@@ -38,7 +38,8 @@ def evaluate_text_quality(text: str) -> dict:
             "quality_score": 0.0,
             "printable_ratio": 0.0,
             "dict_word_ratio": 0.0,
-            "coherence_score": 0.0
+            "coherence_score": 0.0,
+            "programming_keyword_score": 0.0
         }
         
     total_chars = len(text)
@@ -62,9 +63,22 @@ def evaluate_text_quality(text: str) -> dict:
         "novel", "this", "that", "these", "those"
     }
     
+    programming_keywords = {
+        "class", "public", "private", "protected", "void", "return", "static", "import", "extends", "implements",
+        "function", "def", "interface", "system", "out", "println", "print", "int", "double", "float", "boolean",
+        "bool", "string", "char", "catch", "try", "except", "finally", "throw", "throws", "new", "null", "true",
+        "false", "if", "else", "for", "while", "do", "switch", "case", "break", "continue", "struct", "include",
+        "namespace", "using", "const", "var", "let"
+    }
+    
     words = re.findall(r'\b[a-zA-Z]{2,15}\b', text.lower())
     total_words = len(words)
-    dict_words_count = sum(1 for w in words if w in common_english_words)
+    
+    keyword_words_count = sum(1 for w in words if w in programming_keywords)
+    programming_keyword_score = round((keyword_words_count / total_words) * 100.0, 1) if total_words > 0 else 0.0
+    
+    all_dict_words = common_english_words.union(programming_keywords)
+    dict_words_count = sum(1 for w in words if w in all_dict_words)
     dict_word_ratio = dict_words_count / total_words if total_words > 0 else 0.0
     
     consonant_cluster_words = 0
@@ -98,7 +112,10 @@ def evaluate_text_quality(text: str) -> dict:
     min_coherence = float(os.getenv("MIN_TEXT_COHERENCE_SCORE", "60.0"))
 
     quality_score = (dict_word_ratio * 0.6 + (coherence_score / 100.0) * 0.4) * 100.0
-    if dict_word_ratio < min_dict:
+    
+    effective_min_dict = 0.10 if programming_keyword_score > 3.0 else min_dict
+    
+    if dict_word_ratio < effective_min_dict:
         quality_score -= 50.0
     if printable_ratio < min_printable:
         quality_score -= 20.0
@@ -110,7 +127,8 @@ def evaluate_text_quality(text: str) -> dict:
         "quality_score": round(quality_score, 1),
         "printable_ratio": round(printable_ratio, 4),
         "dict_word_ratio": round(dict_word_ratio, 4),
-        "coherence_score": round(coherence_score, 1)
+        "coherence_score": round(coherence_score, 1),
+        "programming_keyword_score": programming_keyword_score
     }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -473,14 +491,18 @@ def parse_pdf(
     min_dict = float(os.getenv("MIN_DICTIONARY_WORD_RATIO", "0.20"))
     min_coherence = float(os.getenv("MIN_TEXT_COHERENCE_SCORE", "60.0"))
 
+    # Use code-aware minimum dictionary word ratio threshold
+    effective_min_dict = 0.10 if primary_metrics.get("programming_keyword_score", 0.0) > 3.0 else min_dict
+
     primary_is_bad = (
         primary_metrics["printable_ratio"] < min_printable or
-        primary_metrics["dict_word_ratio"] < min_dict or
+        primary_metrics["dict_word_ratio"] < effective_min_dict or
         primary_metrics["coherence_score"] < min_coherence
     )
 
     ocr_attempted = False
     ocr_score = 0.0
+    ocr_metrics = {}
     selected_parser = stats["parser"]
     selected_text = full_text
     rejection_reason = ""
@@ -489,8 +511,8 @@ def parse_pdf(
         rejection_reasons = []
         if primary_metrics["printable_ratio"] < min_printable:
             rejection_reasons.append(f"printable_ratio {primary_metrics['printable_ratio']:.2%} < {min_printable:.2%}")
-        if primary_metrics["dict_word_ratio"] < min_dict:
-            rejection_reasons.append(f"dict_word_ratio {primary_metrics['dict_word_ratio']:.2%} < {min_dict:.2%}")
+        if primary_metrics["dict_word_ratio"] < effective_min_dict:
+            rejection_reasons.append(f"dict_word_ratio {primary_metrics['dict_word_ratio']:.2%} < {effective_min_dict:.2%}")
         if primary_metrics["coherence_score"] < min_coherence:
             rejection_reasons.append(f"coherence_score {primary_metrics['coherence_score']:.1f} < {min_coherence:.1f}")
         rejection_reason = "Primary parse quality bad: " + "; ".join(rejection_reasons)
@@ -540,7 +562,13 @@ def parse_pdf(
         "pypdf_score": primary_score,
         "ocr_score": ocr_score,
         "selected_parser": selected_parser,
-        "rejection_reason": rejection_reason
+        "rejection_reason": rejection_reason,
+        "pypdf_programming_keyword_score": primary_metrics.get("programming_keyword_score", 0.0),
+        "ocr_programming_keyword_score": ocr_metrics.get("programming_keyword_score", 0.0) if ocr_metrics else 0.0,
+        "pypdf_dict_word_ratio": primary_metrics.get("dict_word_ratio", 0.0),
+        "ocr_dict_word_ratio": ocr_metrics.get("dict_word_ratio", 0.0) if ocr_metrics else 0.0,
+        "pypdf_coherence_score": primary_metrics.get("coherence_score", 0.0),
+        "ocr_coherence_score": ocr_metrics.get("coherence_score", 0.0) if ocr_metrics else 0.0
     }
 
     _trace(
