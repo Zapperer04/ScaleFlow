@@ -568,7 +568,11 @@ def parse_pdf(
         "pypdf_dict_word_ratio": primary_metrics.get("dict_word_ratio", 0.0),
         "ocr_dict_word_ratio": ocr_metrics.get("dict_word_ratio", 0.0) if ocr_metrics else 0.0,
         "pypdf_coherence_score": primary_metrics.get("coherence_score", 0.0),
-        "ocr_coherence_score": ocr_metrics.get("coherence_score", 0.0) if ocr_metrics else 0.0
+        "ocr_coherence_score": ocr_metrics.get("coherence_score", 0.0) if ocr_metrics else 0.0,
+        "pypdf_printable_ratio": primary_metrics.get("printable_ratio", 0.0),
+        "ocr_printable_ratio": ocr_metrics.get("printable_ratio", 0.0) if ocr_metrics else 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": sum(ocr_page_confidences) / len(ocr_page_confidences) if ocr_attempted and ocr_page_confidences else (stats.get("avg_ocr_confidence", 100.0) if stats.get("ocr_pages", 0) > 0 else 100.0)
     }
 
     _trace(

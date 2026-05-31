@@ -398,6 +398,24 @@ def handle_validate_parse_quality(payload, input_artifacts):
     
     # Quality validation check
     failed_checks = []
+    
+    # Detect handwritten documents (low-confidence OCR coupled with low dictionary ratio)
+    if ocr_pages > 0 and avg_ocr_confidence < 85.0 and dict_word_ratio < 0.30:
+        err_msg = (
+            "Document Type Not Supported\n\n"
+            "This document appears to contain handwritten text.\n\n"
+            "ScaleFlow currently supports:\n"
+            "- Digital PDFs\n"
+            "- Typed scanned PDFs\n"
+            "- Research papers\n"
+            "- Books\n"
+            "- Assignments\n"
+            "- Reports\n\n"
+            "Handwritten documents are not currently supported due to OCR reliability limitations."
+        )
+        _trace(f"[QUALITY GATE] REJECTED (HANDWRITTEN): {err_msg}")
+        raise ValueError(err_msg)
+        
     if ocr_pages > 0 and avg_ocr_confidence < min_ocr_conf:
         failed_checks.append(f"OCR confidence {avg_ocr_confidence:.1f}% is below threshold {min_ocr_conf:.1f}%")
     if printable_ratio < min_printable:
