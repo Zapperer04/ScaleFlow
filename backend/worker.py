@@ -23,6 +23,8 @@ def load_env():
 
 load_env()
 
+import config
+
 API_URL = os.getenv("API_URL", "http://localhost:5000")
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -300,304 +302,29 @@ def handle_validate_parse_quality(payload, input_artifacts):
         _trace("[QUALITY GATE] FAILED: No text was extracted from the document.")
         raise ValueError("Document unreadable / OCR quality too low: Extracted text is empty.")
 
-    # 2. Extract metrics from stats or calculate them
-    # A. OCR Confidence
-    ocr_pages = parse_stats.get("ocr_pages", 0)
-    avg_ocr_confidence = parse_stats.get("avg_ocr_confidence", 100.0)
-    parser_used = parse_stats.get("parser", "direct_text")
-    
-    # B. Printable character ratio
-    total_chars = len(text)
-    printable_chars = sum(1 for c in text if c.isprintable() or c in ['\n', '\r', '\t'])
-    printable_ratio = printable_chars / total_chars if total_chars > 0 else 0.0
-    
-    # C. Dictionary-word ratio
-    # Compile a small robust list of common English words
-    common_english_words = {
-        "the", "be", "to", "of", "and", "a", "in", "that", "have", "i", "it", "for", "not", "on", "with",
-        "he", "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she",
-        "or", "an", "will", "my", "one", "all", "would", "there", "their", "what", "so", "up", "out", "if",
-        "about", "who", "get", "which", "go", "me", "when", "make", "can", "like", "time", "no", "just", "him",
-        "know", "take", "people", "into", "year", "your", "good", "some", "could", "them", "see", "other",
-        "than", "then", "now", "look", "only", "come", "its", "over", "think", "also", "back", "after", "use",
-        "two", "how", "our", "work", "first", "well", "way", "even", "new", "want", "because", "any", "these",
-        "give", "day", "most", "us", "are", "was", "were", "been", "has", "had", "did", "does", "done", "goes",
-        "went", "gone", "more", "about", "project", "system", "document", "architecture", "data", "test",
-        "page", "file", "text", "error", "failed", "success", "pipeline", "worker", "tasks", "task", "run",
-        "is", "am", "should", "would", "could", "must", "shall", "do", "does", "did", "done", "has", "had",
-        "have", "academic", "simple", "large", "scanned", "image", "based", "repeated", "paragraph", "simulate",
-        "timeouts", "volume", "performance", "distributed", "systems", "advanced", "paper", "abstract", "explores",
-        "novel", "this", "that", "these", "those"
-    }
-    
-    programming_keywords = {
-        "class", "public", "private", "protected", "void", "return", "static", "import", "extends", "implements",
-        "function", "def", "interface", "system", "out", "println", "print", "int", "double", "float", "boolean",
-        "bool", "string", "char", "catch", "try", "except", "finally", "throw", "throws", "new", "null", "true",
-        "false", "if", "else", "for", "while", "do", "switch", "case", "break", "continue", "struct", "include",
-        "namespace", "using", "const", "var", "let"
-    }
-    
-    words = re.findall(r'\b[a-zA-Z]{2,15}\b', text.lower())
-    total_words = len(words)
-    
-    keyword_words_count = sum(1 for w in words if w in programming_keywords)
-    programming_keyword_score = round((keyword_words_count / total_words) * 100.0, 1) if total_words > 0 else 0.0
-
-    all_dict_words = common_english_words.union(programming_keywords)
-    dict_words_count = sum(1 for w in words if w in all_dict_words)
-    dict_word_ratio = dict_words_count / total_words if total_words > 0 else 0.0
-    
-    # D. Text coherence score
-    # Let's check consonant clusters and word length distributions
-    consonant_cluster_words = 0
-    no_vowel_words = 0
-    vowels = set("aeiouy")
-    
-    for w in words:
-        # Check vowel presence (except for very short common things)
-        if len(w) > 2 and not any(char in vowels for char in w):
-            no_vowel_words += 1
-            
-        # Check for 4+ consecutive consonants
-        consecutive_consonants = 0
-        max_consecutive = 0
-        for char in w:
-            if char not in vowels:
-                consecutive_consonants += 1
-                if consecutive_consonants > max_consecutive:
-                    max_consecutive = consecutive_consonants
-            else:
-                consecutive_consonants = 0
-        if max_consecutive >= 4:
-            consonant_cluster_words += 1
-            
-    # Calculate components
-    coherence_score = 100.0
-    if total_words > 0:
-        no_vowel_penalty = (no_vowel_words / total_words) * 100.0 * 2.0
-        consonant_penalty = (consonant_cluster_words / total_words) * 100.0 * 3.0
-        coherence_score = max(0.0, 100.0 - no_vowel_penalty - consonant_penalty)
+    from services.quality_gate_service import validate_quality
+    try:
+        metrics = validate_quality(text, parse_stats)
         
-    # Minimum thresholds (configurable)
-    min_ocr_conf = float(os.getenv("MIN_OCR_CONFIDENCE", "70.0"))
-    min_printable = float(os.getenv("MIN_PRINTABLE_RATIO", "0.85"))
-    min_dict = float(os.getenv("MIN_DICTIONARY_WORD_RATIO", "0.20"))
-    min_coherence = float(os.getenv("MIN_TEXT_COHERENCE_SCORE", "60.0"))
-    
-    effective_min_dict = 0.10 if programming_keyword_score > 3.0 else min_dict
-    
-    # Emit tracing
-    _trace(f"[QUALITY GATE] Ingestion Parser Used: {parser_used.upper()}")
-    _trace(f"[QUALITY GATE] OCR Activation Status: {'YES' if ocr_pages > 0 else 'NO'}")
-    _trace(f"[QUALITY GATE] Average OCR Confidence Score: {avg_ocr_confidence:.1f}%")
-    _trace(f"[QUALITY GATE] Executing Quality Gate Decisions:")
-    _trace(f"  - Printable Character Ratio: {printable_ratio:.2%} (Min Threshold: {min_printable:.2%})")
-    _trace(f"  - Dictionary-Word Ratio: {dict_word_ratio:.2%} (Min Threshold: {effective_min_dict:.2%})")
-    _trace(f"  - Text Coherence Score: {coherence_score:.1f}/100.0 (Min Threshold: {min_coherence:.1f})")
-    
-    # Quality validation check
-    failed_checks = []
-    
-    # Detect handwritten documents (low-confidence OCR coupled with low dictionary ratio)
-    if ocr_pages > 0 and avg_ocr_confidence < 85.0 and dict_word_ratio < 0.30:
-        err_msg = (
-            "Document Type Not Supported\n\n"
-            "This document appears to contain handwritten text.\n\n"
-            "ScaleFlow currently supports:\n"
-            "- Digital PDFs\n"
-            "- Typed scanned PDFs\n"
-            "- Research papers\n"
-            "- Books\n"
-            "- Assignments\n"
-            "- Reports\n\n"
-            "Handwritten documents are not currently supported due to OCR reliability limitations."
-        )
-        _trace(f"[QUALITY GATE] REJECTED (HANDWRITTEN): {err_msg}")
-        raise ValueError(err_msg)
+        # Emit tracing
+        _trace(f"[QUALITY GATE] Ingestion Parser Used: {metrics['parser_used'].upper()}")
+        _trace(f"[QUALITY GATE] OCR Activation Status: {'YES' if metrics['ocr_activated'] else 'NO'}")
+        _trace(f"[QUALITY GATE] Average OCR Confidence Score: {metrics['ocr_confidence']:.1f}%")
+        _trace(f"[QUALITY GATE] Executing Quality Gate Decisions:")
+        _trace(f"  - Printable Character Ratio: {metrics['printable_ratio']:.2%} (Min Threshold: {config.MIN_PRINTABLE_RATIO:.2%})")
+        _trace(f"  - Dictionary-Word Ratio: {metrics['dict_word_ratio']:.2%} (Min Threshold: {config.MIN_DICTIONARY_WORD_RATIO:.2%})")
+        _trace(f"  - Text Coherence Score: {metrics['coherence_score']:.1f}/100.0 (Min Threshold: {config.MIN_TEXT_COHERENCE_SCORE:.1f})")
         
-    if ocr_pages > 0 and avg_ocr_confidence < min_ocr_conf:
-        failed_checks.append(f"OCR confidence {avg_ocr_confidence:.1f}% is below threshold {min_ocr_conf:.1f}%")
-    if printable_ratio < min_printable:
-        failed_checks.append(f"Printable character ratio {printable_ratio:.2%} is below threshold {min_printable:.2%}")
-    if dict_word_ratio < effective_min_dict:
-        failed_checks.append(f"Dictionary-word ratio {dict_word_ratio:.2%} is below threshold {effective_min_dict:.2%}")
-    if coherence_score < min_coherence:
-        failed_checks.append(f"Text coherence score {coherence_score:.1f} is below threshold {min_coherence:.1f}")
-        
-    if failed_checks:
-        err_msg = "Document unreadable / OCR quality too low: " + "; ".join(failed_checks)
-        _trace(f"[QUALITY GATE] FAILED: {err_msg}")
-        raise ValueError(err_msg)
-        
-    _trace("[QUALITY GATE] PASSED: Document parsing quality is within acceptable bounds.")
-    
-    comparison_metrics = parse_stats.get("comparison_metrics", {})
-    ocr_attempted = parse_stats.get("ocr_attempted", False)
-    initial_parser = parse_stats.get("initial_parser", "pypdf")
-
-    return {
-        "parsed_text": text,
-        "preview": text[:1000],
-        "ocr_confidence": avg_ocr_confidence,
-        "printable_ratio": printable_ratio,
-        "dict_word_ratio": dict_word_ratio,
-        "coherence_score": coherence_score,
-        "parser_used": parser_used,
-        "ocr_activated": ocr_pages > 0,
-        "ocr_attempted": ocr_attempted,
-        "initial_parser": initial_parser,
-        "pypdf_score": comparison_metrics.get("pypdf_score", 0.0),
-        "ocr_score": comparison_metrics.get("ocr_score", 0.0),
-        "selected_parser": comparison_metrics.get("selected_parser", parser_used),
-        "rejection_reason": comparison_metrics.get("rejection_reason", "")
-    }
+        _trace("[QUALITY GATE] PASSED: Document parsing quality is within acceptable bounds.")
+        return metrics
+    except ValueError as ve:
+        _trace(f"[QUALITY GATE] FAILED: {str(ve)}")
+        raise ve
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Semantic Chunker — paragraph-aware, sentence-boundary-preserving
 # ─────────────────────────────────────────────────────────────────────────────
-def _semantic_chunk(text: str, task_id=None) -> list:
-    """
-    Split text into coherent, retrieval-optimised chunks:
-    - Paragraph-aware: never splits a paragraph mid-sentence
-    - Heading-aware: detected headings start fresh chunks
-    - Target size: 300-600 words (defaults to target ~500 words)
-    - Overlap size: 50-100 words (sentence-boundary-preserving)
-    - Min chunk: 40 words (filters page headers / noise)
-    - Max chunks: 500 (resource guard for huge documents)
-    """
-    CHUNK_TARGET_WORDS = int(os.getenv("CHUNK_TARGET_WORDS", "500"))
-    CHUNK_MIN_WORDS    = int(os.getenv("CHUNK_MIN_WORDS",    "40"))
-    MAX_CHUNKS         = int(os.getenv("MAX_CHUNKS",         "500"))
-
-    def _is_heading(line: str) -> bool:
-        stripped = line.strip()
-        # Markdown-style headings
-        if re.match(r'^#{1,4}\s', stripped):
-            return True
-        # ALL CAPS lines of moderate length (section titles)
-        if (len(stripped) > 4 and len(stripped) < 80
-                and stripped == stripped.upper() and stripped.replace(" ", "").isalpha()):
-            return True
-        # Numbered sections like "1.2 Introduction" or "Chapter 3"
-        if re.match(r'^(chapter|section|appendix|part)?\s*\d+[.\d]*\s+\w', stripped, re.IGNORECASE):
-            return True
-        return False
-
-    def _words(s: str) -> int:
-        return len(s.split())
-
-    def _get_overlap_text(paragraph: str) -> str:
-        """
-        Extract the end of the paragraph representing approximately 50-100 words,
-        preserving sentence boundaries.
-        """
-        if not paragraph:
-            return ""
-        sentences = re.split(r'(?<=[.!?])\s+', paragraph)
-        if not sentences:
-            return ""
-        
-        current_block = []
-        current_words = 0
-        for sent in reversed(sentences):
-            sent_words = len(sent.split())
-            if current_words + sent_words > 100 and current_block:
-                break
-            current_block.insert(0, sent)
-            current_words += sent_words
-            if current_words >= 55:  # Target 50-100 words
-                break
-                
-        res = " ".join(current_block)
-        if len(res.split()) > 100:
-            res = " ".join(res.split()[-75:])
-        return res
-
-    # ── step 1: split into paragraphs ────────────────────────────────────────
-    raw_paragraphs = re.split(r'\n{2,}', text)
-    paragraphs = []
-    for p in raw_paragraphs:
-        p = p.strip()
-        if not p:
-            continue
-        # Break at headings within a paragraph block
-        lines = p.splitlines()
-        current_block: list[str] = []
-        for line in lines:
-            if _is_heading(line) and current_block:
-                paragraphs.append(" ".join(current_block).strip())
-                current_block = [line]
-            else:
-                current_block.append(line)
-        if current_block:
-            paragraphs.append(" ".join(current_block).strip())
-
-    # Split overly large paragraphs into smaller sub-paragraphs (e.g. by sentence)
-    split_paragraphs = []
-    for para in paragraphs:
-        if _words(para) <= CHUNK_TARGET_WORDS:
-            split_paragraphs.append(para)
-        else:
-            sentences = re.split(r'(?<=[.!?])\s+', para)
-            current_sent_block: list[str] = []
-            current_sent_words = 0
-            for sent in sentences:
-                sent_words = _words(sent)
-                if current_sent_words + sent_words > CHUNK_TARGET_WORDS and current_sent_block:
-                    split_paragraphs.append(" ".join(current_sent_block))
-                    current_sent_block = []
-                    current_sent_words = 0
-                current_sent_block.append(sent)
-                current_sent_words += sent_words
-            if current_sent_block:
-                split_paragraphs.append(" ".join(current_sent_block))
-    paragraphs = split_paragraphs
-
-    # ── step 2: accumulate paragraphs into chunks ─────────────────────────────
-    chunks: list[str] = []
-    current_chunk_parts: list[str] = []
-    current_word_count = 0
-    last_paragraph = ""   # kept for overlap bridge
-
-    for para in paragraphs:
-        para_words = _words(para)
-
-        # A heading or the addition of this paragraph would overflow — flush
-        if (_is_heading(para) or current_word_count + para_words > CHUNK_TARGET_WORDS) \
-                and current_chunk_parts:
-            chunk_text = "\n\n".join(current_chunk_parts).strip()
-            if _words(chunk_text) >= CHUNK_MIN_WORDS:
-                chunks.append(chunk_text)
-
-            # Overlap: carry last paragraph's end into next chunk
-            overlap_text = _get_overlap_text(last_paragraph) if last_paragraph else ""
-            current_chunk_parts = [overlap_text] if overlap_text else []
-            current_word_count = _words(overlap_text) if current_chunk_parts else 0
-
-        current_chunk_parts.append(para)
-        current_word_count += para_words
-        last_paragraph = para
-
-    # Flush final chunk
-    if current_chunk_parts:
-        chunk_text = "\n\n".join(current_chunk_parts).strip()
-        if _words(chunk_text) >= CHUNK_MIN_WORDS:
-            chunks.append(chunk_text)
-
-    # Safety net for very short documents:
-    if not chunks and text.strip():
-        chunks.append(text.strip())
-
-    # ── step 3: resource cap ─────────────────────────────────────────────────
-    if len(chunks) > MAX_CHUNKS:
-        emit_task_trace(task_id, f"[CHUNKER] ERROR: {len(chunks)} chunks exceeds hard limit of {MAX_CHUNKS}. Aborting to prevent embedding overload.")
-        raise RuntimeError(f"Chunk explosion detected: Generated {len(chunks)} chunks (limit is {MAX_CHUNKS}).")
-
-    return chunks
-
-
 def handle_chunk_text(payload, input_artifacts):
     """
     Paragraph-aware, sentence-boundary-preserving semantic chunker.
@@ -623,7 +350,8 @@ def handle_chunk_text(payload, input_artifacts):
     paragraph_count = len([p for p in re.split(r'\n{2,}', text) if p.strip()])
     emit_task_trace(task_id, f"[CHUNKER] Detected {paragraph_count} paragraphs in document")
 
-    chunks = _semantic_chunk(text, task_id=task_id)
+    from services.chunking_service import chunk_text
+    chunks = chunk_text(text)
 
     if chunks:
         avg_words = sum(len(c.split()) for c in chunks) // len(chunks)
@@ -695,7 +423,7 @@ def handle_generate_embeddings(payload, input_artifacts):
     task_id     = payload.get('_task_id')
     pipeline_id = payload.get('_pipeline_id')
 
-    MAX_EMBED_CHUNKS = int(os.getenv("MAX_CHUNKS", "500"))
+    MAX_EMBED_CHUNKS = config.MAX_CHUNKS
 
     def _trace(msg: str):
         print(f"[{WORKER_ID}] {msg}", flush=True)
@@ -718,7 +446,7 @@ def handle_generate_embeddings(payload, input_artifacts):
         _trace(f"[EMBED] WARNING: {len(chunks)} chunks exceeds limit {MAX_EMBED_CHUNKS}. Truncating.")
         chunks = chunks[:MAX_EMBED_CHUNKS]
 
-    _trace(f"[EMBED] Generating embeddings for {len(chunks)} chunks (model: all-MiniLM-L6-v2, dim=384)")
+    _trace(f"[EMBED] Generating embeddings for {len(chunks)} chunks (model: {config.EMBEDDING_MODEL}, dim={config.EMBEDDING_DIMENSION})")
 
     # ── generate embeddings with batch progress trace ─────────────────────────
     vectors = []
@@ -763,8 +491,8 @@ def handle_generate_embeddings(payload, input_artifacts):
     artifact_data = {
         "collection":      "scaleflow_chunks",
         "vector_count":    len(chunks),
-        "embedding_model": "all-MiniLM-L6-v2",
-        "dimension":       384,
+        "embedding_model": config.EMBEDDING_MODEL,
+        "dimension":       config.EMBEDDING_DIMENSION,
         "qdrant_upserted": qdrant_upserted,
         "chunk_refs":      chunk_refs
     }
@@ -926,97 +654,31 @@ def is_general_query(query: str) -> bool:
     return False
 
 def handle_retrieve_context(payload, input_artifacts):
-    from services.vector_store import search_similar
     query_vector_data = input_artifacts.get("query_vector")
     if not query_vector_data:
         raise ValueError("Missing 'query_vector' in retrieve_context input artifacts")
         
     query = query_vector_data.get("query")
     vector = query_vector_data.get("vector")
-    top_k = query_vector_data.get("top_k", 5)
+    top_k = query_vector_data.get("top_k")
     pipeline_id_filter = query_vector_data.get("pipeline_id_filter")
-    file_id_filter = query_vector_data.get("file_id_filter")
     
-    if top_k is None:
-        top_k = 5
-    else:
-        try:
-            top_k = int(top_k)
-        except (ValueError, TypeError):
-            top_k = 5
-            
     p_id = to_int_or_none(pipeline_id_filter)
     if p_id is None:
         raise ValueError("Document-scoped retrieval failed: 'pipeline_id_filter' is missing or invalid.")
         
-    filters = {}
-    filters["pipeline_id"] = p_id
-    f_id = to_int_or_none(file_id_filter)
-    if f_id is not None:
-        filters["file_id"] = f_id
-        
     print("=" * 80, flush=True)
     print("RETRIEVAL TASK INITIATED", flush=True)
     print(f"QUERY: {query}", flush=True)
-    print(f"COLLECTION NAME (RETRIEVAL): scaleflow_chunks", flush=True)
     print(f"PIPELINE FILTER: {p_id}", flush=True)
-    print(f"FILTERS: {filters}", flush=True)
     print(f"TOP-K: {top_k}", flush=True)
     print("=" * 80, flush=True)
         
-    print(f"[{WORKER_ID}] Searching Qdrant collection scaleflow_chunks with top_k={top_k}, filters={filters}", flush=True)
-    results: list[Any] = search_similar("scaleflow_chunks", vector, top_k=top_k, filters=filters)
+    from services.retrieval_service import retrieve_context
+    artifact_data = retrieve_context(query_vector=vector, pipeline_id=p_id, top_k=top_k, query=query)
     
-    print("=" * 80, flush=True)
-    print(f"RETRIEVAL COMPLETE: RETURNED {len(results)} CHUNKS", flush=True)
-    print("=" * 80, flush=True)
-    
-    pipeline_id = p_id or to_int_or_none(payload.get("_pipeline_id"))
-    
-    # If the query is a general/summary query, inject document summary (disabled for benchmarking)
-    if False and pipeline_id and is_general_query(query):
-        doc_summary = get_artifact_content_by_type(pipeline_id, "summary")
-        if doc_summary:
-            _, original_filename, _ = get_pipeline_file_info(pipeline_id)
-            summary_chunk = {
-                "score": 0.95,
-                "chunk_text": f"Document Summary:\n{doc_summary}",
-                "original_filename": original_filename or "Document",
-                "file_id": f_id,
-                "chunk_index": -1
-            }
-            results = [summary_chunk] + results
-            print(f"[{WORKER_ID}] [OK] General query detected. Injected document summary into context.", flush=True)
-            
-    # Filter results by MIN_RETRIEVAL_SCORE
-    min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
-    filtered_results = [r for r in results if float(r.get("score") or 0.0) >= min_score or r.get("chunk_index") == -1]
-    
-    # Fallback 1: If isolated to a specific document/pipeline and nothing passed, bypass threshold
-    if not filtered_results and results and ("pipeline_id" in filters or "file_id" in filters):
-        print(f"[{WORKER_ID}] No results passed threshold {min_score}. Falling back to top chunks without threshold.", flush=True)
-        filtered_results = results
-        
-    # Fallback 2: If we still have no context and summary hasn't been injected, inject summary (disabled for benchmarking)
-    if False and not filtered_results and pipeline_id:
-        doc_summary = get_artifact_content_by_type(pipeline_id, "summary")
-        if doc_summary:
-            _, original_filename, _ = get_pipeline_file_info(pipeline_id)
-            summary_chunk = {
-                "score": 0.85,
-                "chunk_text": f"Document Summary:\n{doc_summary}",
-                "original_filename": original_filename or "Document",
-                "file_id": f_id,
-                "chunk_index": -1
-            }
-            filtered_results = [summary_chunk]
-            print(f"[{WORKER_ID}] [OK] Fallback: Injected document summary as sole context.", flush=True)
-            
-    artifact_data = {
-        "query": query,
-        "results": filtered_results
-    }
-    print(f"[{WORKER_ID}] [OK] Retrieved {len(filtered_results)} context chunks (filtered from {len(results)} total, threshold={min_score})", flush=True)
+    filtered_results = artifact_data.get("results", [])
+    print(f"[{WORKER_ID}] [OK] Retrieved {len(filtered_results)} context chunks", flush=True)
     return artifact_data
 
 def handle_generate_answer_report(payload, input_artifacts):
@@ -1300,6 +962,8 @@ def execute_task(task: Any):
                 for k, v in output_data.items():
                     if k not in ["chunk_refs", "vectors", "embeddings"]:
                         metadata[k] = v
+            elif isinstance(output_data, list):
+                metadata["chunk_count"] = len(output_data)
                         
             res_reg = requests.post(
                 f"{API_URL}/artifacts",

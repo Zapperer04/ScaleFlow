@@ -1837,6 +1837,18 @@ def get_pipeline_timeline(pipeline_id):
     finally:
         db.close()
 
+@app.route('/pipelines/<int:pipeline_id>/metadata', methods=['GET'])
+def get_pipeline_metadata(pipeline_id):
+    db = SessionLocal()
+    try:
+        from services.metadata_service import get_standardized_metadata
+        meta = get_standardized_metadata(db, pipeline_id)
+        if not meta:
+            return jsonify({"error": "Pipeline not found or has no metadata"}), 404
+        return jsonify(meta), 200
+    finally:
+        db.close()
+
 @app.route('/pipelines/<int:pipeline_id>/cancel', methods=['POST'])
 @require_api_key
 def cancel_pipeline(pipeline_id):

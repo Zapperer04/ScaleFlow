@@ -7,7 +7,7 @@ import datetime
 API_URL = "http://localhost:5000"
 API_KEY = "dev_secret_api_key"
 HEADERS = {"X-API-Key": API_KEY}
-TOTAL_RUNS = 20
+TOTAL_RUNS = int(os.getenv("TOTAL_RUNS", "20"))
 
 def wait_for_backend():
     print("Waiting for backend to become healthy...")

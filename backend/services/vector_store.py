@@ -10,10 +10,25 @@ logger = logging.getLogger(__name__)
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
 
-# Initialize client
-client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import config
 
-def ensure_collection(collection_name="scaleflow_chunks", vector_size=384):
+# Initialize client
+if os.environ.get("DB_MODE") == "sqlite":
+    logger.info("SQLite mode detected: Using in-memory QdrantClient fallback")
+    client = QdrantClient(location=":memory:")
+else:
+    try:
+        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=3.0)
+        client.get_collections()
+    except Exception as e:
+        logger.warning(f"Could not connect to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}: {e}. Falling back to in-memory QdrantClient.")
+        client = QdrantClient(location=":memory:")
+
+def ensure_collection(collection_name="scaleflow_chunks", vector_size=None):
+    if vector_size is None:
+        vector_size = config.EMBEDDING_DIMENSION
     try:
         collections = client.get_collections().collections
         exists = any(c.name == collection_name for c in collections)
@@ -38,7 +53,7 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
     print("QDRANT INSERTION COLLECTION NAME:", collection_name, flush=True)
     print("=" * 80, flush=True)
 
-    if not ensure_collection(collection_name, 384):
+    if not ensure_collection(collection_name, config.EMBEDDING_DIMENSION):
         logger.error("Could not ensure collection exists in Qdrant. Aborting upsert.")
         return False
         
@@ -137,12 +152,12 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
 def get_collection_stats(collection_name="scaleflow_chunks"):
     try:
         # Ensure collection configured
-        ensure_collection(collection_name, 384)
+        ensure_collection(collection_name, config.EMBEDDING_DIMENSION)
         info = client.get_collection(collection_name=collection_name)
         return {
             "collection": collection_name,
             "points_count": info.points_count,
-            "vector_size": 384,
+            "vector_size": config.EMBEDDING_DIMENSION,
             "status": "ok"
         }
     except Exception as e:
@@ -150,7 +165,7 @@ def get_collection_stats(collection_name="scaleflow_chunks"):
         return {
             "collection": collection_name,
             "points_count": 0,
-            "vector_size": 384,
+            "vector_size": config.EMBEDDING_DIMENSION,
             "status": "error",
             "error": str(e)
         }

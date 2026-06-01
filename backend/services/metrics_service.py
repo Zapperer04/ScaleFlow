@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import math
 import os
+import sys
 import json
 import traceback
 from sqlalchemy import func, and_
@@ -11,14 +12,17 @@ REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import config
+
 BACKPRESSURE_CONFIG = {
-    "enabled": True,
-    "max_backlog_size": 50,              # Admission blocked if queue backlog reaches this
-    "critical_wait_time_threshold": 30.0, # seconds average wait
-    "saturated_utilization_threshold": 90.0, # % worker utilization
-    "low_priority_throttle_limit": 5,    # limit low priority tasks in active queues
-    "overload_protection_policy": "defer",# 'defer' (mark as blocked/deferred) or 'reject' (return 429)
-    "aging_threshold_seconds": 60        # priority aged after this duration
+    "enabled": config.BACKPRESSURE_ENABLED,
+    "max_backlog_size": config.BACKPRESSURE_MAX_BACKLOG,
+    "critical_wait_time_threshold": config.BACKPRESSURE_CRITICAL_WAIT,
+    "saturated_utilization_threshold": config.BACKPRESSURE_SATURATED_UTILIZATION,
+    "low_priority_throttle_limit": config.BACKPRESSURE_LOW_PRIORITY_THROTTLE,
+    "overload_protection_policy": config.BACKPRESSURE_OVERLOAD_POLICY,
+    "aging_threshold_seconds": config.BACKPRESSURE_AGING_THRESHOLD_SECONDS
 }
 
 def get_system_cpu_ram():

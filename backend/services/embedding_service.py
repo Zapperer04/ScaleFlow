@@ -6,6 +6,10 @@ logger = logging.getLogger(__name__)
 
 _model = None
 
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import config
+
 def get_embedding_model():
     global _model
     if _model is not None:
@@ -15,10 +19,10 @@ def get_embedding_model():
         from sentence_transformers import SentenceTransformer
         # Disable huggingface warnings / download status bars if needed
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        logger.info("Attempting to load sentence-transformers model: all-MiniLM-L6-v2")
+        logger.info(f"Attempting to load sentence-transformers model: {config.EMBEDDING_MODEL}")
         # Load model (downloads if not cached)
-        _model = SentenceTransformer('all-MiniLM-L6-v2')
-        logger.info("Successfully loaded sentence-transformers model: all-MiniLM-L6-v2")
+        _model = SentenceTransformer(config.EMBEDDING_MODEL)
+        logger.info(f"Successfully loaded sentence-transformers model: {config.EMBEDDING_MODEL}")
     except Exception as e:
         logger.critical(f"CRITICAL: Failed to load sentence-transformers model: {e}")
         raise RuntimeError(f"Embedding model initialization failed: {e}") from e
