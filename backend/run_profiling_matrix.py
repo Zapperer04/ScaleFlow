@@ -12,7 +12,7 @@ from fpdf import FPDF
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s - %(message)s")
 logger = logging.getLogger("profiling_matrix")
 
-API_URL = "http://localhost:5000"
+API_URL = "http://127.0.0.1:5000"
 HEADERS = {"X-API-Key": "dev_secret_api_key"}
 
 # Dynamically find task_schedular.db to support both workspace root and backend folder executions

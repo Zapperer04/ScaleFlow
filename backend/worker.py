@@ -25,7 +25,7 @@ load_env()
 
 import config
 
-API_URL = os.getenv("API_URL", "http://localhost:5000")
+API_URL = os.getenv("API_URL", "http://127.0.0.1:5000")
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 WORKER_ID = os.getenv("WORKER_ID", "worker-1")
