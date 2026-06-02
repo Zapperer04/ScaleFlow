@@ -1,5 +1,5 @@
 # ScaleFlow Worker Resource Utilization Profile
-**Generated:** 2026-06-02 15:21:58
+**Generated:** 2026-06-02 15:43:35
 
 This report profiles worker resource utilization (CPU, memory, wait time) across the test categories.
 

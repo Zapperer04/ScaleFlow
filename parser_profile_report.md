@@ -1,5 +1,5 @@
 # ScaleFlow Ingestion Parser Performance Profile
-**Generated:** 2026-06-02 15:21:58
+**Generated:** 2026-06-02 15:43:35
 
 This report profiles the performance and fallback decisions of the 3-tier parser chain.
 

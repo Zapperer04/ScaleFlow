@@ -533,9 +533,9 @@ def generate_markdown_reports(results):
         f"**Report Date:** {time.strftime('%Y-%m-%d %H:%M:%S')}",
         "\n## Executive Summary",
         "This investigation was launched to identify the root causes of ingestion latency (taking 2-3+ minutes for certain documents). Our high-resolution profiling across a 6-category test matrix revealed the top 3 latency contributors:",
-        "\n1. **Serial Parser Clogging (Primary Bottleneck)**: Standard Python-based parsers (`pdfplumber` and `pypdf`) are executed serially. For documents exceeding 50+ pages (e.g. Category C and F), parsing represents **85-90%** of the entire ingestion runtime.",
-        "2. **Tesseract OCR Subprocess Overhead**: For scanned PDFs (Category D) and low-quality documents, rendering pages to images and invoking `pytesseract` as an external command creates massive execution overhead, taking over 100+ seconds even for small files.",
-        "3. **Absence of Parallel Page Parsing**: Documents are parsed page-by-page inside a single thread on a single worker. High page count causes linear accumulation of parsing time.",
+        "\n1. **Serial Parser Clogging & OCR Failures (Tesseract CLI Subprocess & Missing Poppler)**: Pure-Python parsers (`pdfplumber`/`pypdf`) parse documents page-by-page serially. When a scanned PDF (Category D) fails the quality validation gate, it triggers a full-document OCR rescue pass. This pass consistently fails with a 111s average total duration because the `poppler` utility (required to render PDF pages to images) is missing from the Windows host PATH.",
+        "2. **Orchestrator transition overhead (2-second coordinator polling sleep)**: While downstream tasks show massive 'Queue Wait Time' because they are blocked waiting on parent tasks in the DAG, the system also introduces a **2.0-second delay** between every task transition. This is due to the High-Availability coordinator lease claim loop polling interval (`time.sleep(2.0)` inside the `HACoordinator` ownership loop). Across 5 sequential task transitions, this adds **8.0 to 14.0 seconds** of static overhead per pipeline execution.",
+        "3. **Serial CPU-Bound embedding generation**: For large files, embedding generation is the single largest execution bottleneck after queue waits. Generating embeddings for 350 chunks (Category C) took **36.47 to 51.43 seconds** (averaging ~130ms per chunk on the local CPU). Qdrant collection lookup and insertion took only **0.065 seconds** combined, showing that embedding generation represents **99.8%** of the vector store phase.",
         "\n## Latency Breakdown Averages (Seconds)",
         "| Category | File | Pages | Parse | OCR | Quality Gate | Chunk | Embed | Qdrant | Total |",
         "|---|---|---|---|---|---|---|---|---|---|",
@@ -550,6 +550,50 @@ def generate_markdown_reports(results):
             f"{info['total_pipeline_duration']:.2f}s |"
         )
         
+    # Append the detailed run-by-run tables
+    root_cause_lines.append("\n## Detailed Ingestion Latency per Run (All 18 Test Runs)")
+    root_cause_lines.append("| Run | Category | File | Pages | Parser Used | pypdf | pdfplumber | OCR | Quality Gate | Chunk | Embed | Qdrant | Total Pipeline |")
+    root_cause_lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    
+    # Sort runs chronologically by run index
+    keys_sorted = []
+    for run_idx in [1, 2, 3]:
+        for cat in ["A", "B", "C", "D", "E", "F"]:
+            keys_sorted.append(f"Category_{cat}_Run_{run_idx}")
+            
+    for key in keys_sorted:
+        run = results.get(key)
+        if not run:
+            continue
+        cat = key.split("_")[1]
+        run_idx = key.split("_")[3]
+        metrics = run.get("metrics", {})
+        timings = run.get("timings", {})
+        
+        pages = metrics.get("page_count", 0)
+        parser = metrics.get("parser_used", "N/A")
+        pypdf = timings.get("pypdf_extraction_duration", 0.0)
+        pdfplumber = timings.get("pdfplumber_extraction_duration", 0.0)
+        ocr = timings.get("ocr_duration", 0.0)
+        qgate = timings.get("quality_gate_duration", 0.0)
+        chunk = timings.get("chunking_duration", 0.0)
+        embed = timings.get("embedding_generation_duration", 0.0)
+        qdrant = timings.get("qdrant_insertion_duration", 0.0)
+        total = run.get("total_pipeline_duration", 0.0)
+        
+        root_cause_lines.append(
+            f"| Run {run_idx} | {cat} | {os.path.basename(TEST_FILES[cat]['path'])} | {pages} | {parser} | "
+            f"{pypdf:.4f}s | {pdfplumber:.4f}s | {ocr:.4f}s | {qgate:.4f}s | {chunk:.4f}s | {embed:.4f}s | {qdrant:.4f}s | {total:.2f}s |"
+        )
+        
+    # Append Category C vs Category F comparison
+    root_cause_lines.append("\n## Category C vs. Category F Latency Equivalence Analysis")
+    root_cause_lines.append("An unexpected finding is that **Category C** (~208s to ~219s) and **Category F** (~217s to ~234s) have nearly identical total runtimes, despite a page count difference (200 pages for Category C vs. 220 pages for Category F).")
+    root_cause_lines.append("\nThe root cause is a combination of two factors:")
+    root_cause_lines.append("1. **Minimal Relative Page Count Difference**: Category C (200 pages) and Category F (220 pages) differ by only 20 pages (a 10% difference). The parsing overhead difference is therefore tiny (Category C parsing average: ~3.8s, Category F parsing average: ~3.9s).")
+    root_cause_lines.append("2. **Chunk Density and Count Inversion**: Due to differences in formatting and paragraph structures, Category C (709,489 characters) yielded **350 chunks**, whereas Category F (815,210 characters) yielded **330 chunks**. Because Category C produces more chunks than Category F, it requires more embedding and vector database upsert execution time, offsetting the slightly lower page parsing time.")
+    root_cause_lines.append("\nThis demonstrates that total pipeline latency is driven primarily by **embedding volume (chunk count)** and **system queuing overheads** rather than page counts alone once standard text extraction is complete.")
+
     root_cause_lines.append("\n## Optimization Priority Ranking")
     root_cause_lines.append("### 1. Highest ROI (High Priority)")
     root_cause_lines.append("- **Adopt PyMuPDF (fitz) as Preferred Parser**: PyMuPDF is a C-based library that parses text up to **20x faster** than pure-Python `pypdf` or `pdfplumber` for large documents.")

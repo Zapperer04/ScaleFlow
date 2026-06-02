@@ -1,5 +1,5 @@
 # ScaleFlow Embedding and Indexing Performance Profile
-**Generated:** 2026-06-02 15:21:58
+**Generated:** 2026-06-02 15:43:35
 
 This report profiles the performance, preloading overheads, and vector indexing times of the embedding stage.
 
