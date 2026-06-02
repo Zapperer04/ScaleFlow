@@ -458,10 +458,14 @@ def handle_generate_embeddings(payload, input_artifacts):
     model_load_duration = 0.0
     if chunks:
         def _batch_trace(batch_num, total_batches, done, total):
-            _trace(f"[EMBED] Batch {batch_num}/{total_batches} — {done}/{total} chunks embedded")
+            # Print to stdout directly (fast, local)
+            print(f"[{WORKER_ID}] [EMBED] Batch {batch_num}/{total_batches} — {done}/{total} chunks embedded", flush=True)
+            # Throttle HTTP traces to reduce network overhead: only post on first, last, and every 5th batch
+            if batch_num == 1 or batch_num == total_batches or batch_num % 5 == 0:
+                emit_task_trace(task_id, f"[EMBED] Batch {batch_num}/{total_batches} — {done}/{total} chunks embedded")
 
         t_embed_start = time.perf_counter()
-        vectors = embed_chunks_with_progress(chunks, progress_callback=_batch_trace)
+        vectors = embed_chunks_with_progress(chunks, progress_callback=_batch_trace, batch_size=config.EMBEDDING_BATCH_SIZE)
         embed_generation_duration = time.perf_counter() - t_embed_start
         model_load_duration = get_model_load_time()
 
@@ -508,7 +512,7 @@ def handle_generate_embeddings(payload, input_artifacts):
         "chunk_refs":      chunk_refs,
         "model_load_duration": round(model_load_duration, 5),
         "embedding_generation_duration": round(embed_generation_duration, 5),
-        "batch_size_used": 64,
+        "batch_size_used": config.EMBEDDING_BATCH_SIZE,
         "total_chunks_embedded": len(chunks),
         "qdrant_collection_lookup_duration": round(qdrant_lookup_duration, 5),
         "qdrant_insertion_duration": round(qdrant_insertion_duration, 5)
