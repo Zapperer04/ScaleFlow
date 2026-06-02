@@ -366,6 +366,13 @@ def parse_pdf(
         if page_text:
             text_parts.append(page_text)
 
+        # ── character limit guard ────────────────────────────────────────────
+        current_chars = sum(len(part) for part in text_parts)
+        if current_chars > config.MAX_CHARACTER_LIMIT:
+            _trace(f"[PARSER] CHARACTER LIMIT GUARD: {current_chars:,} characters parsed at page {i + 1} — raising error to prevent OOM")
+            _cleanup()
+            raise ValueError(f"Governance Limit Exceeded: Document text size ({current_chars:,} chars) exceeded limit ({config.MAX_CHARACTER_LIMIT:,} chars).")
+
         # ── checkpoint write (every 10 pages) ─────────────────────────────────
         if temp_cache_file and (i + 1) % 10 == 0:
             try:

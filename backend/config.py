@@ -20,9 +20,10 @@ load_env()
 # 1. Chunking Config
 CHUNK_TARGET_WORDS = int(os.getenv("CHUNK_TARGET_WORDS", "500"))
 CHUNK_MIN_WORDS = int(os.getenv("CHUNK_MIN_WORDS", "40"))
-MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", "500"))
+MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", "1500"))
 CHUNK_OVERLAP_WORDS = int(os.getenv("CHUNK_OVERLAP_WORDS", "55"))
 CHUNK_OVERLAP_MAX_WORDS = int(os.getenv("CHUNK_OVERLAP_MAX_WORDS", "100"))
+MAX_CHARACTER_LIMIT = int(os.getenv("MAX_CHARACTER_LIMIT", "2000000"))
 
 # 2. Quality / Coherence Thresholds
 MIN_PRINTABLE_RATIO = float(os.getenv("MIN_PRINTABLE_RATIO", "0.85"))
