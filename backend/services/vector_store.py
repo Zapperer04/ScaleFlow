@@ -53,9 +53,14 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
     print("QDRANT INSERTION COLLECTION NAME:", collection_name, flush=True)
     print("=" * 80, flush=True)
 
-    if not ensure_collection(collection_name, config.EMBEDDING_DIMENSION):
+    import time
+    t_lookup_start = time.perf_counter()
+    has_collection = ensure_collection(collection_name, config.EMBEDDING_DIMENSION)
+    lookup_duration = time.perf_counter() - t_lookup_start
+
+    if not has_collection:
         logger.error("Could not ensure collection exists in Qdrant. Aborting upsert.")
-        return False
+        return False, lookup_duration, 0.0
         
     points = []
     for i, (chunk_text, vector) in enumerate(zip(chunks, vectors)):
@@ -90,21 +95,30 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
     print("=" * 80, flush=True)
     print("INSERTING VECTOR PAYLOADS TO QDRANT (EXAMPLES):", flush=True)
     for idx, pt in enumerate(points[:5]):
-        print(f"Point {idx}: {pt.payload}", flush=True)
+        safe_payload = {}
+        for k, v in pt.payload.items():
+            if isinstance(v, str):
+                safe_payload[k] = v.encode(sys.stdout.encoding or 'utf-8', errors='ignore').decode(sys.stdout.encoding or 'utf-8')
+            else:
+                safe_payload[k] = v
+        print(f"Point {idx}: {safe_payload}", flush=True)
     if len(points) > 5:
         print(f"... and {len(points) - 5} more points.", flush=True)
     print("=" * 80, flush=True)
 
+    t_insert_start = time.perf_counter()
     try:
         client.upsert(
             collection_name=collection_name,
             points=points
         )
-        logger.info(f"Successfully upserted {len(points)} chunks to collection {collection_name}")
-        return True
+        insertion_duration = time.perf_counter() - t_insert_start
+        logger.info(f"Successfully upserted {len(points)} chunks to collection {collection_name} (took {insertion_duration:.4f}s)")
+        return True, lookup_duration, insertion_duration
     except Exception as e:
         logger.error(f"Failed to upsert chunks to Qdrant: {e}")
-        return False
+        insertion_duration = time.perf_counter() - t_insert_start
+        return False, lookup_duration, insertion_duration
 
 def search_similar(collection_name, query_vector, top_k=5, filters=None):
     print("=" * 80, flush=True)

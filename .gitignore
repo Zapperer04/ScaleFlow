@@ -64,3 +64,8 @@ powershell.cmd
 trace_run_*.log
 test_document.txt
 run_*.py.log
+
+# Databases
+task_schedular.db
+backend/task_schedular.db
+*.db

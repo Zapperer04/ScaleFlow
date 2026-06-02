@@ -351,7 +351,10 @@ def handle_chunk_text(payload, input_artifacts):
     emit_task_trace(task_id, f"[CHUNKER] Detected {paragraph_count} paragraphs in document")
 
     from services.chunking_service import chunk_text
+    
+    t_start = time.perf_counter()
     chunks = chunk_text(text)
+    duration = time.perf_counter() - t_start
 
     if chunks:
         avg_words = sum(len(c.split()) for c in chunks) // len(chunks)
@@ -359,7 +362,8 @@ def handle_chunk_text(payload, input_artifacts):
         avg_words = 0
 
     emit_task_trace(task_id, f"[CHUNKER] Generated {len(chunks)} chunks (avg {avg_words} words/chunk)")
-    print(f"[{WORKER_ID}]   [OK] Chunked text into {len(chunks)} semantic chunks (avg {avg_words} words)", flush=True)
+    emit_task_trace(task_id, f"[PROFILE] chunking_duration={duration:.5f}s count={len(chunks)}")
+    print(f"[{WORKER_ID}]   [OK] Chunked text into {len(chunks)} semantic chunks (avg {avg_words} words) (took {duration:.4f}s)", flush=True)
     return chunks
 
 def get_pipeline_file_info(pipeline_id):
@@ -417,7 +421,7 @@ def get_artifact_content_by_type(pipeline_id, artifact_type):
     return None
 
 def handle_generate_embeddings(payload, input_artifacts):
-    from services.embedding_service import embed_chunks_with_progress
+    from services.embedding_service import embed_chunks_with_progress, get_model_load_time
     from services.vector_store import upsert_document_chunks
 
     task_id     = payload.get('_task_id')
@@ -450,11 +454,16 @@ def handle_generate_embeddings(payload, input_artifacts):
 
     # ── generate embeddings with batch progress trace ─────────────────────────
     vectors = []
+    embed_generation_duration = 0.0
+    model_load_duration = 0.0
     if chunks:
         def _batch_trace(batch_num, total_batches, done, total):
             _trace(f"[EMBED] Batch {batch_num}/{total_batches} — {done}/{total} chunks embedded")
 
+        t_embed_start = time.perf_counter()
         vectors = embed_chunks_with_progress(chunks, progress_callback=_batch_trace)
+        embed_generation_duration = time.perf_counter() - t_embed_start
+        model_load_duration = get_model_load_time()
 
     # ── resolve pipeline context ──────────────────────────────────────────────
     file_id = original_filename = source_artifact_id = None
@@ -463,13 +472,15 @@ def handle_generate_embeddings(payload, input_artifacts):
 
     # ── upsert to Qdrant ──────────────────────────────────────────────────────
     qdrant_upserted = False
+    qdrant_lookup_duration = 0.0
+    qdrant_insertion_duration = 0.0
     if chunks and vectors:
         _trace(f"[QDRANT] Upserting {len(chunks)} vectors to collection 'scaleflow_chunks'...")
         meta_dict = {
             "source_artifact_id": source_artifact_id,
             "original_filename":  original_filename
         }
-        qdrant_upserted = upsert_document_chunks(
+        qdrant_upserted, qdrant_lookup_duration, qdrant_insertion_duration = upsert_document_chunks(
             pipeline_id=pipeline_id,
             file_id=file_id,
             task_id=task_id,
@@ -494,9 +505,16 @@ def handle_generate_embeddings(payload, input_artifacts):
         "embedding_model": config.EMBEDDING_MODEL,
         "dimension":       config.EMBEDDING_DIMENSION,
         "qdrant_upserted": qdrant_upserted,
-        "chunk_refs":      chunk_refs
+        "chunk_refs":      chunk_refs,
+        "model_load_duration": round(model_load_duration, 5),
+        "embedding_generation_duration": round(embed_generation_duration, 5),
+        "batch_size_used": 64,
+        "total_chunks_embedded": len(chunks),
+        "qdrant_collection_lookup_duration": round(qdrant_lookup_duration, 5),
+        "qdrant_insertion_duration": round(qdrant_insertion_duration, 5)
     }
 
+    _trace(f"[PROFILE] model_load_duration={model_load_duration:.5f}s embedding_generation_duration={embed_generation_duration:.5f}s qdrant_lookup_duration={qdrant_lookup_duration:.5f}s qdrant_insertion_duration={qdrant_insertion_duration:.5f}s")
     _trace(f"[EMBED] Complete — {len(chunks)} vectors (qdrant_upserted={qdrant_upserted})")
     return artifact_data
 

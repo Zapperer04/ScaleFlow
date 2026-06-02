@@ -1,17 +1,19 @@
 import os
 import logging
 import math
+import time
 
 logger = logging.getLogger(__name__)
 
 _model = None
+_model_load_time = 0.0
 
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
 def get_embedding_model():
-    global _model
+    global _model, _model_load_time
     if _model is not None:
         return _model
         
@@ -20,14 +22,20 @@ def get_embedding_model():
         # Disable huggingface warnings / download status bars if needed
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
         logger.info(f"Attempting to load sentence-transformers model: {config.EMBEDDING_MODEL}")
+        t_start = time.perf_counter()
         # Load model (downloads if not cached)
         _model = SentenceTransformer(config.EMBEDDING_MODEL)
-        logger.info(f"Successfully loaded sentence-transformers model: {config.EMBEDDING_MODEL}")
+        _model_load_time = time.perf_counter() - t_start
+        logger.info(f"Successfully loaded sentence-transformers model: {config.EMBEDDING_MODEL} (took {_model_load_time:.4f}s)")
     except Exception as e:
         logger.critical(f"CRITICAL: Failed to load sentence-transformers model: {e}")
         raise RuntimeError(f"Embedding model initialization failed: {e}") from e
         
     return _model
+
+def get_model_load_time() -> float:
+    global _model_load_time
+    return _model_load_time
 
 def embed_text(text: str) -> list[float]:
     model = get_embedding_model()

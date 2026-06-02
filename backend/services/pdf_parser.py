@@ -224,6 +224,7 @@ def parse_pdf(
             pass
 
     # ── open PDF with pypdf to get page count + circuit breaker ─────────────
+    t_open_start = time.perf_counter()
     try:
         reader = pypdf.PdfReader(filepath)
     except Exception as e:
@@ -232,8 +233,13 @@ def parse_pdf(
         if any(k in err for k in ("pdf", "read", "corrupt", "decrypt", "eof")):
             raise ValueError(f"FAILED_VALIDATION: Corrupted or unreadable PDF. Details: {e}")
         raise
+    t_open_end = time.perf_counter()
+    pdf_open_time = t_open_end - t_open_start
 
+    t_page_start = time.perf_counter()
     page_count = len(reader.pages)
+    t_page_end = time.perf_counter()
+    page_count_discovery_time = t_page_end - t_page_start
     _trace(f"[PARSER] Total pages: {page_count}")
 
     # Circuit breaker: absurdly high page count for file size
@@ -257,6 +263,11 @@ def parse_pdf(
     ocr_confidences = []
     low_text_pages = 0
     plumber_pages  = 0
+
+    pypdf_time = 0.0
+    plumber_time = 0.0
+    ocr_time = 0.0
+    parser_selection_overhead = 0.0
 
     # Resume from checkpoint
     if checkpoint_page > 0 and temp_cache_file and os.path.exists(temp_cache_file):
@@ -287,12 +298,18 @@ def parse_pdf(
         page_text = ""
         used_parser = ""
         
-        for parser_name in config.PARSER_PRIORITIES:
+        t_route_start = time.perf_counter()
+        priorities = list(config.PARSER_PRIORITIES)
+        t_route_end = time.perf_counter()
+        parser_selection_overhead += t_route_end - t_route_start
+
+        for parser_name in priorities:
             # If we've successfully extracted text above threshold, skip subsequent fallback parsers
             if len(page_text.strip()) >= LOW_TEXT_THRESH:
                 break
                 
             if parser_name == "pypdf":
+                t_sub_start = time.perf_counter()
                 try:
                     pypdf_text = _extract_page_pypdf(reader, i)
                     if len(pypdf_text.strip()) > len(page_text.strip()):
@@ -301,6 +318,8 @@ def parse_pdf(
                 except Exception as e:
                     page_failures.append({"page": i + 1, "parser": "pypdf", "reason": str(e)})
                     _trace(f"[PARSER] Page {i + 1} — pypdf failed: {e}")
+                t_sub_end = time.perf_counter()
+                pypdf_time += t_sub_end - t_sub_start
                     
             elif parser_name == "pdfplumber":
                 if PDFPLUMBER_AVAILABLE:
@@ -308,6 +327,7 @@ def parse_pdf(
                         _trace(f"[PARSER] Page {i + 1} — no text extracted yet, trying pdfplumber")
                     else:
                         _trace(f"[PARSER] Page {i + 1} — low-text density ({len(page_text.strip())} chars), trying pdfplumber")
+                    t_sub_start = time.perf_counter()
                     try:
                         plumber_text = _extract_page_pdfplumber(filepath, i)
                         if len(plumber_text.strip()) > len(page_text.strip()):
@@ -318,10 +338,13 @@ def parse_pdf(
                     except Exception as e:
                         page_failures.append({"page": i + 1, "parser": "pdfplumber", "reason": str(e)})
                         _trace(f"[PARSER] Page {i + 1} — pdfplumber failed: {e}")
+                    t_sub_end = time.perf_counter()
+                    plumber_time += t_sub_end - t_sub_start
                         
             elif parser_name == "ocr":
                 if OCR_AVAILABLE:
                     _trace(f"[PARSER] Page {i + 1} — text still empty, activating OCR fallback")
+                    t_sub_start = time.perf_counter()
                     try:
                         ocr_text_page, ocr_conf = _extract_page_ocr(filepath, i)
                         if len(ocr_text_page.strip()) > len(page_text.strip()):
@@ -335,6 +358,8 @@ def parse_pdf(
                     except Exception as e:
                         page_failures.append({"page": i + 1, "parser": "ocr", "reason": str(e)})
                         _trace(f"[PARSER] Page {i + 1} — OCR failed: {e}")
+                    t_sub_end = time.perf_counter()
+                    ocr_time += t_sub_end - t_sub_start
                 else:
                     _trace(f"[PARSER] Page {i + 1} — scanned/image page detected but OCR unavailable (install pytesseract + pdf2image + poppler)")
 
@@ -362,7 +387,7 @@ def parse_pdf(
                         "checkpoint_page": i + 1,
                         "total_pages":     page_count,
                         "memory_mb":       round(rss, 2),
-                        "status":          "parsing",
+                        "status":          "running",
                         "pages_processed": i + 1 - checkpoint_page,
                     },
                     headers=api_headers or {},
@@ -396,7 +421,10 @@ def parse_pdf(
     }
 
     # ── evaluate primary parse quality ────────────────────────────────────────
+    t_qual_start = time.perf_counter()
     primary_metrics = evaluate_text_quality(full_text)
+    t_qual_end = time.perf_counter()
+    quality_evaluation_time = t_qual_end - t_qual_start
     primary_score = primary_metrics["quality_score"]
 
     min_printable = config.MIN_PRINTABLE_RATIO
@@ -418,6 +446,7 @@ def parse_pdf(
     selected_parser = stats["parser"]
     selected_text = full_text
     rejection_reason = ""
+    ocr_rescue_evaluation_time = 0.0
 
     if primary_is_bad:
         rejection_reasons = []
@@ -437,6 +466,7 @@ def parse_pdf(
 
             for page_idx in range(page_count):
                 _trace(f"[PARSER] OCR Rescue — Running OCR on page {page_idx + 1}/{page_count}...")
+                t_ocr_sub_start = time.perf_counter()
                 try:
                     ocr_text_page, ocr_conf_page = _extract_page_ocr(filepath, page_idx)
                     ocr_text_parts.append(ocr_text_page)
@@ -445,9 +475,14 @@ def parse_pdf(
                     _trace(f"[PARSER] OCR Rescue — Page {page_idx + 1} failed: {e}")
                     ocr_text_parts.append("")
                     ocr_page_confidences.append(0.0)
+                t_ocr_sub_end = time.perf_counter()
+                ocr_time += t_ocr_sub_end - t_ocr_sub_start
 
             ocr_full_text = "\n\n".join(ocr_text_parts)
+            t_eval_start = time.perf_counter()
             ocr_metrics = evaluate_text_quality(ocr_full_text)
+            t_eval_end = time.perf_counter()
+            ocr_rescue_evaluation_time = t_eval_end - t_eval_start
             ocr_score = ocr_metrics["quality_score"]
 
             if ocr_score > primary_score:
@@ -464,9 +499,6 @@ def parse_pdf(
                 _trace(f"[PARSER] OCR Rescue COMPLETED. OCR Quality Score ({ocr_score:.1f}) is not better than Primary Quality Score ({primary_score:.1f}). Retaining primary parse.")
         else:
             _trace(f"[PARSER] OCR Rescue requested, but OCR is not available on this system.")
-    else:
-        # Quality was fine
-        pass
 
     stats["ocr_attempted"] = ocr_attempted
     stats["initial_parser"] = "pypdf" if plumber_pages == 0 and ocr_pages == 0 else ("pdfplumber" if plumber_pages > 0 else "ocr")
@@ -485,6 +517,18 @@ def parse_pdf(
         "ocr_printable_ratio": ocr_metrics.get("printable_ratio", 0.0) if ocr_metrics else 0.0,
         "pypdf_ocr_confidence": 100.0,
         "ocr_ocr_confidence": sum(ocr_page_confidences) / len(ocr_page_confidences) if ocr_attempted and ocr_page_confidences else (stats.get("avg_ocr_confidence", 100.0) if stats.get("ocr_pages", 0) > 0 else 100.0)
+    }
+
+    # Store timings inside stats dictionary
+    stats["timings"] = {
+        "pdf_open_time": round(pdf_open_time, 5),
+        "page_count_discovery_time": round(page_count_discovery_time, 5),
+        "pypdf_extraction_duration": round(pypdf_time, 5),
+        "pdfplumber_extraction_duration": round(plumber_time, 5),
+        "ocr_duration": round(ocr_time, 5),
+        "parser_selection_overhead": round(parser_selection_overhead, 5),
+        "parse_quality_evaluation_duration": round(quality_evaluation_time, 5),
+        "ocr_rescue_quality_evaluation_duration": round(ocr_rescue_evaluation_time, 5),
     }
 
     _trace(

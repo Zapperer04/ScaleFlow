@@ -1,0 +1,1910 @@
+{
+  "Category_A_Run_1": {
+    "pipeline_id": 28,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 1,
+      "processed_pages": 1,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 308,
+      "duration_seconds": 2.07,
+      "page_failures": [],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": false,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 67.8,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "",
+        "pypdf_programming_keyword_score": 2.0,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.5294,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 90.2,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 1.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 100.0
+      },
+      "timings": {
+        "pdf_open_time": 0.0009,
+        "page_count_discovery_time": 0.00051,
+        "pypdf_extraction_duration": 0.00262,
+        "pdfplumber_extraction_duration": 0.0,
+        "ocr_duration": 0.0,
+        "parser_selection_overhead": 0.0,
+        "parse_quality_evaluation_duration": 0.0003,
+        "ocr_rescue_quality_evaluation_duration": 0.0
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.0009,
+      "page_count_discovery_time": 0.00051,
+      "pypdf_extraction_duration": 0.00262,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 0.0,
+      "parse_quality_evaluation_duration": 0.0003,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.00047,
+      "chunking_duration": 0.0,
+      "model_load_duration": 5.58871,
+      "embedding_generation_duration": 2.20317,
+      "qdrant_collection_lookup_duration": 0.00021,
+      "qdrant_insertion_duration": 0.03615
+    },
+    "metrics": {
+      "page_count": 1,
+      "chunk_count": 1,
+      "char_count": 308,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 1.0,
+      "dict_word_ratio": 0.5294,
+      "coherence_score": 90.2
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 132,
+        "status": "completed",
+        "queue_wait": 2.0,
+        "execution": 29.0
+      },
+      "validate_parse_quality": {
+        "id": 133,
+        "status": "completed",
+        "queue_wait": 33.0,
+        "execution": 25.0
+      },
+      "chunk_text": {
+        "id": 134,
+        "status": "completed",
+        "queue_wait": 60.0,
+        "execution": 14.0
+      },
+      "generate_embeddings": {
+        "id": 135,
+        "status": "completed",
+        "queue_wait": 76.0,
+        "execution": 23.0
+      },
+      "summarize_document": {
+        "id": 136,
+        "status": "completed",
+        "queue_wait": 113.0,
+        "execution": 8.0
+      }
+    },
+    "status": "completed",
+    "total_pipeline_duration": 121.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.02
+    }
+  },
+  "Category_B_Run_1": {
+    "pipeline_id": 29,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 1,
+      "processed_pages": 1,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 352,
+      "duration_seconds": 2.05,
+      "page_failures": [],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": false,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 67.9,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "",
+        "pypdf_programming_keyword_score": 2.3,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.5116,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 93.0,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 1.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 100.0
+      },
+      "timings": {
+        "pdf_open_time": 0.0015,
+        "page_count_discovery_time": 0.00072,
+        "pypdf_extraction_duration": 0.00514,
+        "pdfplumber_extraction_duration": 0.0,
+        "ocr_duration": 0.0,
+        "parser_selection_overhead": 0.0,
+        "parse_quality_evaluation_duration": 0.00045,
+        "ocr_rescue_quality_evaluation_duration": 0.0
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.0015,
+      "page_count_discovery_time": 0.00072,
+      "pypdf_extraction_duration": 0.00514,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 0.0,
+      "parse_quality_evaluation_duration": 0.00045,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.00059,
+      "chunking_duration": 0.0,
+      "model_load_duration": 5.58871,
+      "embedding_generation_duration": 2.12251,
+      "qdrant_collection_lookup_duration": 0.00016,
+      "qdrant_insertion_duration": 0.00084
+    },
+    "metrics": {
+      "page_count": 1,
+      "chunk_count": 1,
+      "char_count": 352,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 1.0,
+      "dict_word_ratio": 0.5116,
+      "coherence_score": 93.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 137,
+        "status": "completed",
+        "queue_wait": 3.0,
+        "execution": 29.0
+      },
+      "validate_parse_quality": {
+        "id": 138,
+        "status": "completed",
+        "queue_wait": 34.0,
+        "execution": 25.0
+      },
+      "chunk_text": {
+        "id": 139,
+        "status": "completed",
+        "queue_wait": 61.0,
+        "execution": 14.0
+      },
+      "generate_embeddings": {
+        "id": 140,
+        "status": "completed",
+        "queue_wait": 77.0,
+        "execution": 23.0
+      },
+      "summarize_document": {
+        "id": 141,
+        "status": "completed",
+        "queue_wait": 102.0,
+        "execution": 9.0
+      }
+    },
+    "status": "completed",
+    "total_pipeline_duration": 111.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.02
+    }
+  },
+  "Category_C_Run_1": {
+    "pipeline_id": 30,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 200,
+      "processed_pages": 200,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 709489,
+      "duration_seconds": 45.14,
+      "page_failures": [],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": false,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 80.9,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "",
+        "pypdf_programming_keyword_score": 0.0,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.6825,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 100.0,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 1.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 100.0
+      },
+      "timings": {
+        "pdf_open_time": 0.00861,
+        "page_count_discovery_time": 0.03662,
+        "pypdf_extraction_duration": 1.94985,
+        "pdfplumber_extraction_duration": 0.0,
+        "ocr_duration": 0.0,
+        "parser_selection_overhead": 0.00051,
+        "parse_quality_evaluation_duration": 0.36804,
+        "ocr_rescue_quality_evaluation_duration": 0.0
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.00861,
+      "page_count_discovery_time": 0.03662,
+      "pypdf_extraction_duration": 1.94985,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 0.00051,
+      "parse_quality_evaluation_duration": 0.36804,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.37191,
+      "chunking_duration": 0.0,
+      "model_load_duration": 5.58871,
+      "embedding_generation_duration": 28.6305,
+      "qdrant_collection_lookup_duration": 0.0001,
+      "qdrant_insertion_duration": 0.03666
+    },
+    "metrics": {
+      "page_count": 200,
+      "chunk_count": 350,
+      "char_count": 709489,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 1.0,
+      "dict_word_ratio": 0.6825,
+      "coherence_score": 100.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 142,
+        "status": "completed",
+        "queue_wait": 5.0,
+        "execution": 72.0
+      },
+      "validate_parse_quality": {
+        "id": 143,
+        "status": "completed",
+        "queue_wait": 79.0,
+        "execution": 25.0
+      },
+      "chunk_text": {
+        "id": 144,
+        "status": "completed",
+        "queue_wait": 106.0,
+        "execution": 15.0
+      },
+      "generate_embeddings": {
+        "id": 145,
+        "status": "completed",
+        "queue_wait": 123.0,
+        "execution": 49.0
+      },
+      "summarize_document": {
+        "id": 146,
+        "status": "completed",
+        "queue_wait": 186.0,
+        "execution": 8.0
+      }
+    },
+    "status": "completed",
+    "total_pipeline_duration": 194.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.03
+    }
+  },
+  "Category_D_Run_1": {
+    "pipeline_id": 31,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 1,
+      "processed_pages": 1,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 0,
+      "duration_seconds": 8.23,
+      "page_failures": [
+        {
+          "page": 1,
+          "parser": "ocr",
+          "reason": "OCR page 1 error: Unable to get page count. Is poppler installed and in PATH?"
+        }
+      ],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": true,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 0.0,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "Primary parse quality bad: printable_ratio 0.00% < 85.00%; dict_word_ratio 0.00% < 20.00%; coherence_score 0.0 < 60.0",
+        "pypdf_programming_keyword_score": 0.0,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.0,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 0.0,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 0.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 0.0
+      },
+      "timings": {
+        "pdf_open_time": 0.00144,
+        "page_count_discovery_time": 0.0006,
+        "pypdf_extraction_duration": 0.0017,
+        "pdfplumber_extraction_duration": 0.02067,
+        "ocr_duration": 4.13098,
+        "parser_selection_overhead": 0.0,
+        "parse_quality_evaluation_duration": 2e-05,
+        "ocr_rescue_quality_evaluation_duration": 1e-05
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.00144,
+      "page_count_discovery_time": 0.0006,
+      "pypdf_extraction_duration": 0.0017,
+      "pdfplumber_extraction_duration": 0.02067,
+      "ocr_duration": 4.13098,
+      "parser_selection_overhead": 0.0,
+      "parse_quality_evaluation_duration": 2e-05,
+      "ocr_rescue_quality_evaluation_duration": 1e-05,
+      "quality_gate_duration": 0.0,
+      "chunking_duration": 0.0,
+      "model_load_duration": 0.0,
+      "embedding_generation_duration": 0.0,
+      "qdrant_collection_lookup_duration": 0.0,
+      "qdrant_insertion_duration": 0.0
+    },
+    "metrics": {
+      "page_count": 1,
+      "chunk_count": 0,
+      "char_count": 0,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": true,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 0.0,
+      "dict_word_ratio": 0.0,
+      "coherence_score": 0.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 147,
+        "status": "completed",
+        "queue_wait": 2.0,
+        "execution": 47.0
+      },
+      "validate_parse_quality": {
+        "id": 148,
+        "status": "failed",
+        "queue_wait": 93.0,
+        "execution": 0.0
+      },
+      "chunk_text": {
+        "id": 149,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "generate_embeddings": {
+        "id": 150,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "summarize_document": {
+        "id": 151,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      }
+    },
+    "status": "failed",
+    "total_pipeline_duration": 105.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.03
+    }
+  },
+  "Category_E_Run_1": {
+    "pipeline_id": 32,
+    "parse_stats": {},
+    "timings": {
+      "pdf_open_time": 0.0,
+      "page_count_discovery_time": 0.0,
+      "pypdf_extraction_duration": 0.0,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 0.0,
+      "parse_quality_evaluation_duration": 0.0,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.0,
+      "chunking_duration": 0.0,
+      "model_load_duration": 0.0,
+      "embedding_generation_duration": 0.0,
+      "qdrant_collection_lookup_duration": 0.0,
+      "qdrant_insertion_duration": 0.0
+    },
+    "metrics": {
+      "page_count": 0,
+      "chunk_count": 0,
+      "char_count": 0,
+      "parser_used": "N/A",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 0.0,
+      "dict_word_ratio": 0.0,
+      "coherence_score": 0.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 152,
+        "status": "failed",
+        "queue_wait": 73.0,
+        "execution": 0.0
+      },
+      "validate_parse_quality": {
+        "id": 153,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "chunk_text": {
+        "id": 154,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "generate_embeddings": {
+        "id": 155,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "summarize_document": {
+        "id": 156,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      }
+    },
+    "status": "failed",
+    "total_pipeline_duration": 97.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.03
+    }
+  },
+  "Category_F_Run_1": {
+    "pipeline_id": 33,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 220,
+      "processed_pages": 220,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 815210,
+      "duration_seconds": 51.75,
+      "page_failures": [],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": false,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 63.1,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "",
+        "pypdf_programming_keyword_score": 0.0,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.3857,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 100.0,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 1.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 100.0
+      },
+      "timings": {
+        "pdf_open_time": 0.0138,
+        "page_count_discovery_time": 0.11241,
+        "pypdf_extraction_duration": 4.53902,
+        "pdfplumber_extraction_duration": 0.0,
+        "ocr_duration": 0.0,
+        "parser_selection_overhead": 0.00091,
+        "parse_quality_evaluation_duration": 0.55998,
+        "ocr_rescue_quality_evaluation_duration": 0.0
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.0138,
+      "page_count_discovery_time": 0.11241,
+      "pypdf_extraction_duration": 4.53902,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 0.00091,
+      "parse_quality_evaluation_duration": 0.55998,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.6668,
+      "chunking_duration": 0.0,
+      "model_load_duration": 5.58871,
+      "embedding_generation_duration": 49.78716,
+      "qdrant_collection_lookup_duration": 0.0019,
+      "qdrant_insertion_duration": 0.1307
+    },
+    "metrics": {
+      "page_count": 220,
+      "chunk_count": 330,
+      "char_count": 815210,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 1.0,
+      "dict_word_ratio": 0.3857,
+      "coherence_score": 100.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 157,
+        "status": "completed",
+        "queue_wait": 7.0,
+        "execution": 79.0
+      },
+      "validate_parse_quality": {
+        "id": 158,
+        "status": "completed",
+        "queue_wait": 88.0,
+        "execution": 26.0
+      },
+      "chunk_text": {
+        "id": 159,
+        "status": "completed",
+        "queue_wait": 127.0,
+        "execution": 15.0
+      },
+      "generate_embeddings": {
+        "id": 160,
+        "status": "completed",
+        "queue_wait": 144.0,
+        "execution": 71.0
+      },
+      "summarize_document": {
+        "id": 161,
+        "status": "completed",
+        "queue_wait": 217.0,
+        "execution": 9.0
+      }
+    },
+    "status": "completed",
+    "total_pipeline_duration": 226.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.02
+    }
+  },
+  "Category_A_Run_2": {
+    "pipeline_id": 34,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 1,
+      "processed_pages": 1,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 308,
+      "duration_seconds": 2.04,
+      "page_failures": [],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": false,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 67.8,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "",
+        "pypdf_programming_keyword_score": 2.0,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.5294,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 90.2,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 1.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 100.0
+      },
+      "timings": {
+        "pdf_open_time": 0.00137,
+        "page_count_discovery_time": 0.00066,
+        "pypdf_extraction_duration": 0.00848,
+        "pdfplumber_extraction_duration": 0.0,
+        "ocr_duration": 0.0,
+        "parser_selection_overhead": 1e-05,
+        "parse_quality_evaluation_duration": 0.00069,
+        "ocr_rescue_quality_evaluation_duration": 0.0
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.00137,
+      "page_count_discovery_time": 0.00066,
+      "pypdf_extraction_duration": 0.00848,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 1e-05,
+      "parse_quality_evaluation_duration": 0.00069,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.00034,
+      "chunking_duration": 0.0,
+      "model_load_duration": 5.58871,
+      "embedding_generation_duration": 2.15952,
+      "qdrant_collection_lookup_duration": 0.00017,
+      "qdrant_insertion_duration": 0.00096
+    },
+    "metrics": {
+      "page_count": 1,
+      "chunk_count": 1,
+      "char_count": 308,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 1.0,
+      "dict_word_ratio": 0.5294,
+      "coherence_score": 90.2
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 162,
+        "status": "completed",
+        "queue_wait": 2.0,
+        "execution": 29.0
+      },
+      "validate_parse_quality": {
+        "id": 163,
+        "status": "completed",
+        "queue_wait": 33.0,
+        "execution": 25.0
+      },
+      "chunk_text": {
+        "id": 164,
+        "status": "completed",
+        "queue_wait": 60.0,
+        "execution": 15.0
+      },
+      "generate_embeddings": {
+        "id": 165,
+        "status": "completed",
+        "queue_wait": 77.0,
+        "execution": 23.0
+      },
+      "summarize_document": {
+        "id": 166,
+        "status": "completed",
+        "queue_wait": 102.0,
+        "execution": 8.0
+      }
+    },
+    "status": "completed",
+    "total_pipeline_duration": 110.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.03
+    }
+  },
+  "Category_B_Run_2": {
+    "pipeline_id": 35,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 1,
+      "processed_pages": 1,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 352,
+      "duration_seconds": 2.08,
+      "page_failures": [],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": false,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 67.9,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "",
+        "pypdf_programming_keyword_score": 2.3,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.5116,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 93.0,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 1.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 100.0
+      },
+      "timings": {
+        "pdf_open_time": 0.00134,
+        "page_count_discovery_time": 0.00067,
+        "pypdf_extraction_duration": 0.00551,
+        "pdfplumber_extraction_duration": 0.0,
+        "ocr_duration": 0.0,
+        "parser_selection_overhead": 1e-05,
+        "parse_quality_evaluation_duration": 0.00045,
+        "ocr_rescue_quality_evaluation_duration": 0.0
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.00134,
+      "page_count_discovery_time": 0.00067,
+      "pypdf_extraction_duration": 0.00551,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 1e-05,
+      "parse_quality_evaluation_duration": 0.00045,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.00066,
+      "chunking_duration": 0.0,
+      "model_load_duration": 5.58871,
+      "embedding_generation_duration": 2.13549,
+      "qdrant_collection_lookup_duration": 0.0002,
+      "qdrant_insertion_duration": 0.00164
+    },
+    "metrics": {
+      "page_count": 1,
+      "chunk_count": 1,
+      "char_count": 352,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 1.0,
+      "dict_word_ratio": 0.5116,
+      "coherence_score": 93.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 167,
+        "status": "completed",
+        "queue_wait": 4.0,
+        "execution": 29.0
+      },
+      "validate_parse_quality": {
+        "id": 168,
+        "status": "completed",
+        "queue_wait": 35.0,
+        "execution": 25.0
+      },
+      "chunk_text": {
+        "id": 169,
+        "status": "completed",
+        "queue_wait": 62.0,
+        "execution": 15.0
+      },
+      "generate_embeddings": {
+        "id": 170,
+        "status": "completed",
+        "queue_wait": 79.0,
+        "execution": 23.0
+      },
+      "summarize_document": {
+        "id": 171,
+        "status": "completed",
+        "queue_wait": 115.0,
+        "execution": 8.0
+      }
+    },
+    "status": "completed",
+    "total_pipeline_duration": 123.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.03
+    }
+  },
+  "Category_C_Run_2": {
+    "pipeline_id": 36,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 200,
+      "processed_pages": 200,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 709489,
+      "duration_seconds": 47.12,
+      "page_failures": [],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": false,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 80.9,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "",
+        "pypdf_programming_keyword_score": 0.0,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.6825,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 100.0,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 1.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 100.0
+      },
+      "timings": {
+        "pdf_open_time": 0.01465,
+        "page_count_discovery_time": 0.06701,
+        "pypdf_extraction_duration": 3.8573,
+        "pdfplumber_extraction_duration": 0.0,
+        "ocr_duration": 0.0,
+        "parser_selection_overhead": 0.0007,
+        "parse_quality_evaluation_duration": 0.6045,
+        "ocr_rescue_quality_evaluation_duration": 0.0
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.01465,
+      "page_count_discovery_time": 0.06701,
+      "pypdf_extraction_duration": 3.8573,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 0.0007,
+      "parse_quality_evaluation_duration": 0.6045,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.49712,
+      "chunking_duration": 0.0,
+      "model_load_duration": 5.58871,
+      "embedding_generation_duration": 51.43268,
+      "qdrant_collection_lookup_duration": 0.00019,
+      "qdrant_insertion_duration": 0.11205
+    },
+    "metrics": {
+      "page_count": 200,
+      "chunk_count": 350,
+      "char_count": 709489,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 1.0,
+      "dict_word_ratio": 0.6825,
+      "coherence_score": 100.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 172,
+        "status": "completed",
+        "queue_wait": 4.0,
+        "execution": 74.0
+      },
+      "validate_parse_quality": {
+        "id": 173,
+        "status": "completed",
+        "queue_wait": 81.0,
+        "execution": 25.0
+      },
+      "chunk_text": {
+        "id": 174,
+        "status": "completed",
+        "queue_wait": 108.0,
+        "execution": 15.0
+      },
+      "generate_embeddings": {
+        "id": 175,
+        "status": "completed",
+        "queue_wait": 125.0,
+        "execution": 72.0
+      },
+      "summarize_document": {
+        "id": 176,
+        "status": "completed",
+        "queue_wait": 210.0,
+        "execution": 9.0
+      }
+    },
+    "status": "completed",
+    "total_pipeline_duration": 219.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.03
+    }
+  },
+  "Category_D_Run_2": {
+    "pipeline_id": 37,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 1,
+      "processed_pages": 1,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 0,
+      "duration_seconds": 8.25,
+      "page_failures": [
+        {
+          "page": 1,
+          "parser": "ocr",
+          "reason": "OCR page 1 error: Unable to get page count. Is poppler installed and in PATH?"
+        }
+      ],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": true,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 0.0,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "Primary parse quality bad: printable_ratio 0.00% < 85.00%; dict_word_ratio 0.00% < 20.00%; coherence_score 0.0 < 60.0",
+        "pypdf_programming_keyword_score": 0.0,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.0,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 0.0,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 0.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 0.0
+      },
+      "timings": {
+        "pdf_open_time": 0.00176,
+        "page_count_discovery_time": 0.00098,
+        "pypdf_extraction_duration": 0.00182,
+        "pdfplumber_extraction_duration": 0.03,
+        "ocr_duration": 4.13663,
+        "parser_selection_overhead": 0.0,
+        "parse_quality_evaluation_duration": 1e-05,
+        "ocr_rescue_quality_evaluation_duration": 1e-05
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.00176,
+      "page_count_discovery_time": 0.00098,
+      "pypdf_extraction_duration": 0.00182,
+      "pdfplumber_extraction_duration": 0.03,
+      "ocr_duration": 4.13663,
+      "parser_selection_overhead": 0.0,
+      "parse_quality_evaluation_duration": 1e-05,
+      "ocr_rescue_quality_evaluation_duration": 1e-05,
+      "quality_gate_duration": 0.0,
+      "chunking_duration": 0.0,
+      "model_load_duration": 0.0,
+      "embedding_generation_duration": 0.0,
+      "qdrant_collection_lookup_duration": 0.0,
+      "qdrant_insertion_duration": 0.0
+    },
+    "metrics": {
+      "page_count": 1,
+      "chunk_count": 0,
+      "char_count": 0,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": true,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 0.0,
+      "dict_word_ratio": 0.0,
+      "coherence_score": 0.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 177,
+        "status": "completed",
+        "queue_wait": 7.0,
+        "execution": 48.0
+      },
+      "validate_parse_quality": {
+        "id": 178,
+        "status": "failed",
+        "queue_wait": 96.0,
+        "execution": 0.0
+      },
+      "chunk_text": {
+        "id": 179,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "generate_embeddings": {
+        "id": 180,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "summarize_document": {
+        "id": 181,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      }
+    },
+    "status": "failed",
+    "total_pipeline_duration": 109.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.02
+    }
+  },
+  "Category_E_Run_2": {
+    "pipeline_id": 38,
+    "parse_stats": {},
+    "timings": {
+      "pdf_open_time": 0.0,
+      "page_count_discovery_time": 0.0,
+      "pypdf_extraction_duration": 0.0,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 0.0,
+      "parse_quality_evaluation_duration": 0.0,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.0,
+      "chunking_duration": 0.0,
+      "model_load_duration": 0.0,
+      "embedding_generation_duration": 0.0,
+      "qdrant_collection_lookup_duration": 0.0,
+      "qdrant_insertion_duration": 0.0
+    },
+    "metrics": {
+      "page_count": 0,
+      "chunk_count": 0,
+      "char_count": 0,
+      "parser_used": "N/A",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 0.0,
+      "dict_word_ratio": 0.0,
+      "coherence_score": 0.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 182,
+        "status": "failed",
+        "queue_wait": 72.0,
+        "execution": 0.0
+      },
+      "validate_parse_quality": {
+        "id": 183,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "chunk_text": {
+        "id": 184,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "generate_embeddings": {
+        "id": 185,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "summarize_document": {
+        "id": 186,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      }
+    },
+    "status": "failed",
+    "total_pipeline_duration": 97.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.02
+    }
+  },
+  "Category_F_Run_2": {
+    "pipeline_id": 39,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 220,
+      "processed_pages": 220,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 815210,
+      "duration_seconds": 52.1,
+      "page_failures": [],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": false,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 63.1,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "",
+        "pypdf_programming_keyword_score": 0.0,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.3857,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 100.0,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 1.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 100.0
+      },
+      "timings": {
+        "pdf_open_time": 0.0112,
+        "page_count_discovery_time": 0.06862,
+        "pypdf_extraction_duration": 4.82861,
+        "pdfplumber_extraction_duration": 0.0,
+        "ocr_duration": 0.0,
+        "parser_selection_overhead": 0.00078,
+        "parse_quality_evaluation_duration": 0.56136,
+        "ocr_rescue_quality_evaluation_duration": 0.0
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.0112,
+      "page_count_discovery_time": 0.06862,
+      "pypdf_extraction_duration": 4.82861,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 0.00078,
+      "parse_quality_evaluation_duration": 0.56136,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.76512,
+      "chunking_duration": 0.0,
+      "model_load_duration": 5.58871,
+      "embedding_generation_duration": 50.4163,
+      "qdrant_collection_lookup_duration": 0.00064,
+      "qdrant_insertion_duration": 0.10355
+    },
+    "metrics": {
+      "page_count": 220,
+      "chunk_count": 330,
+      "char_count": 815210,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 1.0,
+      "dict_word_ratio": 0.3857,
+      "coherence_score": 100.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 187,
+        "status": "completed",
+        "queue_wait": 3.0,
+        "execution": 80.0
+      },
+      "validate_parse_quality": {
+        "id": 188,
+        "status": "completed",
+        "queue_wait": 85.0,
+        "execution": 26.0
+      },
+      "chunk_text": {
+        "id": 189,
+        "status": "completed",
+        "queue_wait": 124.0,
+        "execution": 15.0
+      },
+      "generate_embeddings": {
+        "id": 190,
+        "status": "completed",
+        "queue_wait": 152.0,
+        "execution": 71.0
+      },
+      "summarize_document": {
+        "id": 191,
+        "status": "completed",
+        "queue_wait": 226.0,
+        "execution": 8.0
+      }
+    },
+    "status": "completed",
+    "total_pipeline_duration": 234.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.01
+    }
+  },
+  "Category_A_Run_3": {
+    "pipeline_id": 40,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 1,
+      "processed_pages": 1,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 308,
+      "duration_seconds": 2.05,
+      "page_failures": [],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": false,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 67.8,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "",
+        "pypdf_programming_keyword_score": 2.0,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.5294,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 90.2,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 1.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 100.0
+      },
+      "timings": {
+        "pdf_open_time": 0.00136,
+        "page_count_discovery_time": 0.00065,
+        "pypdf_extraction_duration": 0.00278,
+        "pdfplumber_extraction_duration": 0.0,
+        "ocr_duration": 0.0,
+        "parser_selection_overhead": 0.0,
+        "parse_quality_evaluation_duration": 0.00047,
+        "ocr_rescue_quality_evaluation_duration": 0.0
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.00136,
+      "page_count_discovery_time": 0.00065,
+      "pypdf_extraction_duration": 0.00278,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 0.0,
+      "parse_quality_evaluation_duration": 0.00047,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.00039,
+      "chunking_duration": 0.0,
+      "model_load_duration": 5.58871,
+      "embedding_generation_duration": 2.10205,
+      "qdrant_collection_lookup_duration": 8e-05,
+      "qdrant_insertion_duration": 0.00052
+    },
+    "metrics": {
+      "page_count": 1,
+      "chunk_count": 1,
+      "char_count": 308,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 1.0,
+      "dict_word_ratio": 0.5294,
+      "coherence_score": 90.2
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 192,
+        "status": "completed",
+        "queue_wait": 5.0,
+        "execution": 29.0
+      },
+      "validate_parse_quality": {
+        "id": 193,
+        "status": "completed",
+        "queue_wait": 36.0,
+        "execution": 25.0
+      },
+      "chunk_text": {
+        "id": 194,
+        "status": "completed",
+        "queue_wait": 63.0,
+        "execution": 15.0
+      },
+      "generate_embeddings": {
+        "id": 195,
+        "status": "completed",
+        "queue_wait": 91.0,
+        "execution": 23.0
+      },
+      "summarize_document": {
+        "id": 196,
+        "status": "completed",
+        "queue_wait": 116.0,
+        "execution": 8.0
+      }
+    },
+    "status": "completed",
+    "total_pipeline_duration": 124.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.01
+    }
+  },
+  "Category_B_Run_3": {
+    "pipeline_id": 41,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 1,
+      "processed_pages": 1,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 352,
+      "duration_seconds": 2.06,
+      "page_failures": [],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": false,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 67.9,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "",
+        "pypdf_programming_keyword_score": 2.3,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.5116,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 93.0,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 1.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 100.0
+      },
+      "timings": {
+        "pdf_open_time": 0.00168,
+        "page_count_discovery_time": 0.00107,
+        "pypdf_extraction_duration": 0.00444,
+        "pdfplumber_extraction_duration": 0.0,
+        "ocr_duration": 0.0,
+        "parser_selection_overhead": 0.0,
+        "parse_quality_evaluation_duration": 0.00034,
+        "ocr_rescue_quality_evaluation_duration": 0.0
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.00168,
+      "page_count_discovery_time": 0.00107,
+      "pypdf_extraction_duration": 0.00444,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 0.0,
+      "parse_quality_evaluation_duration": 0.00034,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.00056,
+      "chunking_duration": 0.0,
+      "model_load_duration": 5.58871,
+      "embedding_generation_duration": 2.1183,
+      "qdrant_collection_lookup_duration": 8e-05,
+      "qdrant_insertion_duration": 0.0005
+    },
+    "metrics": {
+      "page_count": 1,
+      "chunk_count": 1,
+      "char_count": 352,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 1.0,
+      "dict_word_ratio": 0.5116,
+      "coherence_score": 93.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 197,
+        "status": "completed",
+        "queue_wait": 2.0,
+        "execution": 29.0
+      },
+      "validate_parse_quality": {
+        "id": 198,
+        "status": "completed",
+        "queue_wait": 44.0,
+        "execution": 27.0
+      },
+      "chunk_text": {
+        "id": 199,
+        "status": "completed",
+        "queue_wait": 73.0,
+        "execution": 14.0
+      },
+      "generate_embeddings": {
+        "id": 200,
+        "status": "completed",
+        "queue_wait": 89.0,
+        "execution": 23.0
+      },
+      "summarize_document": {
+        "id": 201,
+        "status": "completed",
+        "queue_wait": 125.0,
+        "execution": 9.0
+      }
+    },
+    "status": "completed",
+    "total_pipeline_duration": 134.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.01
+    }
+  },
+  "Category_C_Run_3": {
+    "pipeline_id": 42,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 200,
+      "processed_pages": 200,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 709489,
+      "duration_seconds": 47.39,
+      "page_failures": [],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": false,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 80.9,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "",
+        "pypdf_programming_keyword_score": 0.0,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.6825,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 100.0,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 1.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 100.0
+      },
+      "timings": {
+        "pdf_open_time": 0.01152,
+        "page_count_discovery_time": 0.09458,
+        "pypdf_extraction_duration": 4.07339,
+        "pdfplumber_extraction_duration": 0.0,
+        "ocr_duration": 0.0,
+        "parser_selection_overhead": 0.00068,
+        "parse_quality_evaluation_duration": 0.56064,
+        "ocr_rescue_quality_evaluation_duration": 0.0
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.01152,
+      "page_count_discovery_time": 0.09458,
+      "pypdf_extraction_duration": 4.07339,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 0.00068,
+      "parse_quality_evaluation_duration": 0.56064,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.55805,
+      "chunking_duration": 0.0,
+      "model_load_duration": 5.58871,
+      "embedding_generation_duration": 29.35736,
+      "qdrant_collection_lookup_duration": 0.00027,
+      "qdrant_insertion_duration": 0.04826
+    },
+    "metrics": {
+      "page_count": 200,
+      "chunk_count": 350,
+      "char_count": 709489,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 1.0,
+      "dict_word_ratio": 0.6825,
+      "coherence_score": 100.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 202,
+        "status": "completed",
+        "queue_wait": 4.0,
+        "execution": 75.0
+      },
+      "validate_parse_quality": {
+        "id": 203,
+        "status": "completed",
+        "queue_wait": 92.0,
+        "execution": 26.0
+      },
+      "chunk_text": {
+        "id": 204,
+        "status": "completed",
+        "queue_wait": 131.0,
+        "execution": 15.0
+      },
+      "generate_embeddings": {
+        "id": 205,
+        "status": "completed",
+        "queue_wait": 148.0,
+        "execution": 50.0
+      },
+      "summarize_document": {
+        "id": 206,
+        "status": "completed",
+        "queue_wait": 200.0,
+        "execution": 8.0
+      }
+    },
+    "status": "completed",
+    "total_pipeline_duration": 208.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.01
+    }
+  },
+  "Category_D_Run_3": {
+    "pipeline_id": 43,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 1,
+      "processed_pages": 1,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 0,
+      "duration_seconds": 8.18,
+      "page_failures": [
+        {
+          "page": 1,
+          "parser": "ocr",
+          "reason": "OCR page 1 error: Unable to get page count. Is poppler installed and in PATH?"
+        }
+      ],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": true,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 0.0,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "Primary parse quality bad: printable_ratio 0.00% < 85.00%; dict_word_ratio 0.00% < 20.00%; coherence_score 0.0 < 60.0",
+        "pypdf_programming_keyword_score": 0.0,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.0,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 0.0,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 0.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 0.0
+      },
+      "timings": {
+        "pdf_open_time": 0.00391,
+        "page_count_discovery_time": 0.00175,
+        "pypdf_extraction_duration": 0.00227,
+        "pdfplumber_extraction_duration": 0.01173,
+        "ocr_duration": 4.06728,
+        "parser_selection_overhead": 0.0,
+        "parse_quality_evaluation_duration": 1e-05,
+        "ocr_rescue_quality_evaluation_duration": 0.0
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.00391,
+      "page_count_discovery_time": 0.00175,
+      "pypdf_extraction_duration": 0.00227,
+      "pdfplumber_extraction_duration": 0.01173,
+      "ocr_duration": 4.06728,
+      "parser_selection_overhead": 0.0,
+      "parse_quality_evaluation_duration": 1e-05,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.0,
+      "chunking_duration": 0.0,
+      "model_load_duration": 0.0,
+      "embedding_generation_duration": 0.0,
+      "qdrant_collection_lookup_duration": 0.0,
+      "qdrant_insertion_duration": 0.0
+    },
+    "metrics": {
+      "page_count": 1,
+      "chunk_count": 0,
+      "char_count": 0,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": true,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 0.0,
+      "dict_word_ratio": 0.0,
+      "coherence_score": 0.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 207,
+        "status": "completed",
+        "queue_wait": 3.0,
+        "execution": 47.0
+      },
+      "validate_parse_quality": {
+        "id": 208,
+        "status": "failed",
+        "queue_wait": 97.0,
+        "execution": 0.0
+      },
+      "chunk_text": {
+        "id": 209,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "generate_embeddings": {
+        "id": 210,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "summarize_document": {
+        "id": 211,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      }
+    },
+    "status": "failed",
+    "total_pipeline_duration": 109.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.03
+    }
+  },
+  "Category_E_Run_3": {
+    "pipeline_id": 44,
+    "parse_stats": {},
+    "timings": {
+      "pdf_open_time": 0.0,
+      "page_count_discovery_time": 0.0,
+      "pypdf_extraction_duration": 0.0,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 0.0,
+      "parse_quality_evaluation_duration": 0.0,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.0,
+      "chunking_duration": 0.0,
+      "model_load_duration": 0.0,
+      "embedding_generation_duration": 0.0,
+      "qdrant_collection_lookup_duration": 0.0,
+      "qdrant_insertion_duration": 0.0
+    },
+    "metrics": {
+      "page_count": 0,
+      "chunk_count": 0,
+      "char_count": 0,
+      "parser_used": "N/A",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 0.0,
+      "dict_word_ratio": 0.0,
+      "coherence_score": 0.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 212,
+        "status": "failed",
+        "queue_wait": 78.0,
+        "execution": 0.0
+      },
+      "validate_parse_quality": {
+        "id": 213,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "chunk_text": {
+        "id": 214,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "generate_embeddings": {
+        "id": 215,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      },
+      "summarize_document": {
+        "id": 216,
+        "status": "blocked",
+        "queue_wait": 0.0,
+        "execution": 0.0
+      }
+    },
+    "status": "failed",
+    "total_pipeline_duration": 102.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.03
+    }
+  },
+  "Category_F_Run_3": {
+    "pipeline_id": 45,
+    "parse_stats": {
+      "parser": "pypdf",
+      "total_pages": 220,
+      "processed_pages": 220,
+      "low_text_pages": 0,
+      "pdfplumber_pages": 0,
+      "ocr_pages": 0,
+      "ocr_confidences": [],
+      "avg_ocr_confidence": 100.0,
+      "char_count": 815210,
+      "duration_seconds": 49.12,
+      "page_failures": [],
+      "pdfplumber_available": true,
+      "ocr_available": true,
+      "ocr_attempted": false,
+      "initial_parser": "pypdf",
+      "comparison_metrics": {
+        "pypdf_score": 63.1,
+        "ocr_score": 0.0,
+        "selected_parser": "pypdf",
+        "rejection_reason": "",
+        "pypdf_programming_keyword_score": 0.0,
+        "ocr_programming_keyword_score": 0.0,
+        "pypdf_dict_word_ratio": 0.3857,
+        "ocr_dict_word_ratio": 0.0,
+        "pypdf_coherence_score": 100.0,
+        "ocr_coherence_score": 0.0,
+        "pypdf_printable_ratio": 1.0,
+        "ocr_printable_ratio": 0.0,
+        "pypdf_ocr_confidence": 100.0,
+        "ocr_ocr_confidence": 100.0
+      },
+      "timings": {
+        "pdf_open_time": 0.00428,
+        "page_count_discovery_time": 0.03568,
+        "pypdf_extraction_duration": 2.0864,
+        "pdfplumber_extraction_duration": 0.0,
+        "ocr_duration": 0.0,
+        "parser_selection_overhead": 0.0005,
+        "parse_quality_evaluation_duration": 0.24324,
+        "ocr_rescue_quality_evaluation_duration": 0.0
+      }
+    },
+    "timings": {
+      "pdf_open_time": 0.00428,
+      "page_count_discovery_time": 0.03568,
+      "pypdf_extraction_duration": 2.0864,
+      "pdfplumber_extraction_duration": 0.0,
+      "ocr_duration": 0.0,
+      "parser_selection_overhead": 0.0005,
+      "parse_quality_evaluation_duration": 0.24324,
+      "ocr_rescue_quality_evaluation_duration": 0.0,
+      "quality_gate_duration": 0.20528,
+      "chunking_duration": 0.0,
+      "model_load_duration": 5.58871,
+      "embedding_generation_duration": 37.64837,
+      "qdrant_collection_lookup_duration": 0.00125,
+      "qdrant_insertion_duration": 0.06485
+    },
+    "metrics": {
+      "page_count": 220,
+      "chunk_count": 330,
+      "char_count": 815210,
+      "parser_used": "pypdf",
+      "ocr_activated": false,
+      "ocr_attempted": false,
+      "ocr_confidence": 100.0,
+      "printable_ratio": 1.0,
+      "dict_word_ratio": 0.3857,
+      "coherence_score": 100.0
+    },
+    "tasks": {
+      "parse_document": {
+        "id": 217,
+        "status": "completed",
+        "queue_wait": 5.0,
+        "execution": 76.0
+      },
+      "validate_parse_quality": {
+        "id": 218,
+        "status": "completed",
+        "queue_wait": 94.0,
+        "execution": 25.0
+      },
+      "chunk_text": {
+        "id": 219,
+        "status": "completed",
+        "queue_wait": 132.0,
+        "execution": 14.0
+      },
+      "generate_embeddings": {
+        "id": 220,
+        "status": "completed",
+        "queue_wait": 148.0,
+        "execution": 59.0
+      },
+      "summarize_document": {
+        "id": 221,
+        "status": "completed",
+        "queue_wait": 209.0,
+        "execution": 8.0
+      }
+    },
+    "status": "completed",
+    "total_pipeline_duration": 217.0,
+    "worker_resources": {
+      "cpu_usage": 0.0,
+      "memory_usage": 0.03
+    }
+  }
+}

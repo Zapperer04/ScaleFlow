@@ -119,6 +119,9 @@ def validate_quality(text: str, parse_stats: dict) -> dict:
     -------
     Dictionary of calculated quality gate metrics and validation result.
     """
+    import time
+    t_start = time.perf_counter()
+
     if not text:
         raise ValueError("Document unreadable / OCR quality too low: Extracted text is empty.")
 
@@ -164,6 +167,8 @@ def validate_quality(text: str, parse_stats: dict) -> dict:
     ocr_attempted = parse_stats.get("ocr_attempted", False)
     initial_parser = parse_stats.get("initial_parser", "pypdf")
 
+    duration = time.perf_counter() - t_start
+
     return {
         "parsed_text": text,
         "preview": text[:1000],
@@ -178,5 +183,6 @@ def validate_quality(text: str, parse_stats: dict) -> dict:
         "pypdf_score": comparison_metrics.get("pypdf_score", 0.0),
         "ocr_score": comparison_metrics.get("ocr_score", 0.0),
         "selected_parser": comparison_metrics.get("selected_parser", parser_used),
-        "rejection_reason": comparison_metrics.get("rejection_reason", "")
+        "rejection_reason": comparison_metrics.get("rejection_reason", ""),
+        "quality_gate_duration": round(duration, 5)
     }
