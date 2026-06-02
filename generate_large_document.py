@@ -3,8 +3,18 @@ import time
 import requests
 import json
 
-API_URL = "http://localhost:5000"
-HEADERS = {"X-API-Key": "dev_secret_api_key"}
+# Try to load env variables first
+import sys
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend"))
+try:
+    import config
+    API_URL = os.getenv("API_URL", "http://127.0.0.1:5000")
+    API_KEY = os.getenv("API_KEY", "dev_secret_api_key")
+except ImportError:
+    API_URL = os.getenv("API_URL", "http://127.0.0.1:5000")
+    API_KEY = os.getenv("API_KEY", "dev_secret_api_key")
+
+HEADERS = {"X-API-Key": API_KEY}
 
 def generate_text_file():
     filename = "test_data/large_document.txt"
@@ -64,7 +74,7 @@ def upload_and_run_pipeline():
     with open(filepath, "rb") as f:
         files = {"file": f}
         data = {"pipeline_type": "document_processing_demo"}
-        res = requests.post(url, data=data, files=files, headers={"X-API-Key": "dev_secret_api_key"})
+        res = requests.post(url, data=data, files=files, headers=HEADERS)
         
     if res.status_code != 201:
         print(f"Failed to submit ingestion pipeline: {res.status_code} - {res.text}")

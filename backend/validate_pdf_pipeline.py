@@ -19,8 +19,16 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s - %(message)s")
 logger = logging.getLogger("validate_pdf_pipeline")
 
-API_URL = "http://localhost:5000"
-HEADERS = {"X-API-Key": "dev_secret_api_key"}
+# Try to load env variables first (config.py loads from .env)
+try:
+    import config
+    API_URL = os.getenv("API_URL", "http://127.0.0.1:5000")
+    API_KEY = os.getenv("API_KEY", "dev_secret_api_key")
+except ImportError:
+    API_URL = "http://127.0.0.1:5000"
+    API_KEY = "dev_secret_api_key"
+
+HEADERS = {"X-API-Key": API_KEY}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. GENERATE TEST PDFS FOR 5 CATEGORIES

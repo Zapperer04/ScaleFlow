@@ -20,34 +20,50 @@ def load_env():
 load_env()
 
 import sys
+import time
+
 DB_MODE = os.environ.get("DB_MODE", "postgres").lower()
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/task_schedular")
+
+def validate_postgres_connection(db_url, timeout=3, retries=5, backoff=1.5):
+    last_err = None
+    for attempt in range(retries):
+        try:
+            temp_engine = create_engine(db_url, connect_args={"connect_timeout": timeout})
+            with temp_engine.connect() as conn:
+                return True
+        except Exception as e:
+            last_err = e
+            if attempt < retries - 1:
+                sleep_time = backoff ** attempt
+                print(f"DATABASE CONNECTION PENDING: Attempt {attempt+1}/{retries} failed to connect to PostgreSQL. Retrying in {sleep_time:.2f}s... Error: {e}", file=sys.stderr)
+                time.sleep(sleep_time)
+    raise last_err
 
 if DB_MODE == "sqlite":
     DATABASE_URL = "sqlite:///task_schedular.db"
 elif DB_MODE == "postgres":
     try:
-        temp_engine = create_engine(DATABASE_URL, connect_args={"connect_timeout": 3})
-        with temp_engine.connect() as conn:
-            pass
+        validate_postgres_connection(DATABASE_URL, timeout=3, retries=5, backoff=1.5)
     except Exception as e:
-        print(f"DATABASE STARTUP ERROR: Failed to connect to PostgreSQL in postgres mode. URL: {DATABASE_URL}", file=sys.stderr)
+        print(f"DATABASE STARTUP ERROR: Failed to connect to PostgreSQL in postgres mode after retries. URL: {DATABASE_URL}", file=sys.stderr)
         raise e
 elif DB_MODE == "auto":
     try:
-        temp_engine = create_engine(DATABASE_URL, connect_args={"connect_timeout": 2})
-        with temp_engine.connect() as conn:
-            pass
+        validate_postgres_connection(DATABASE_URL, timeout=2, retries=3, backoff=1.2)
     except Exception as e:
-        print(f"DATABASE WARNING: PostgreSQL connection failed. Falling back to SQLite task_schedular.db. Error: {e}", file=sys.stderr)
+        print(f"DATABASE WARNING: PostgreSQL connection failed after retries. Falling back to SQLite task_schedular.db. Error: {e}", file=sys.stderr)
         DATABASE_URL = "sqlite:///task_schedular.db"
 else:
     print(f"DATABASE WARNING: Invalid DB_MODE '{DB_MODE}'. Defaulting to postgres.", file=sys.stderr)
-    temp_engine = create_engine(DATABASE_URL, connect_args={"connect_timeout": 3})
-    with temp_engine.connect() as conn:
-        pass
+    try:
+        validate_postgres_connection(DATABASE_URL, timeout=3, retries=5, backoff=1.5)
+    except Exception as e:
+        print(f"DATABASE STARTUP ERROR: Default postgres mode failed. URL: {DATABASE_URL}", file=sys.stderr)
+        raise e
 
 ACTIVE_DATABASE_URL = DATABASE_URL
+# Make sure SQLite URL has check_same_thread=False
 ACTIVE_DB_MODE = DB_MODE
 
 if DATABASE_URL.startswith("sqlite"):
@@ -96,8 +112,8 @@ class Artifact(Base):
     __tablename__ = 'artifacts'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    pipeline_id = Column(Integer, ForeignKey('pipelines.id'))
-    task_id = Column(Integer, ForeignKey('tasks.id'), nullable=True)
+    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), index=True)
+    task_id = Column(Integer, ForeignKey('tasks.id'), nullable=True, index=True)
     artifact_type = Column(String(50), nullable=False)
     storage_uri = Column(Text, nullable=False)
     metadata_json = Column(Text, nullable=True)
@@ -124,7 +140,7 @@ class TaskDependency(Base):
 class TaskLog(Base):
     __tablename__ = 'task_logs'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    task_id = Column(Integer, ForeignKey('tasks.id'))
+    task_id = Column(Integer, ForeignKey('tasks.id'), index=True)
     event_type = Column(String(50), nullable=False)
     message = Column(Text, nullable=True)
     worker_id = Column(String(100), nullable=True)
@@ -166,7 +182,7 @@ class Task(Base):
     progress_json = Column(Text, nullable=True)
     
     # Phase 2 columns
-    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True)
+    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True, index=True)
     input_artifact_ids = Column(Text, nullable=True) # JSON list
     output_artifact_ids = Column(Text, nullable=True) # JSON list
     blocked_reason = Column(Text, nullable=True)
@@ -248,7 +264,7 @@ class FileRecord(Base):
     storage_uri = Column(Text, nullable=False)
     size_bytes = Column(Integer, nullable=False)
     status = Column(String(20), default='uploaded') # uploaded, processing, processed, failed
-    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True)
+    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
     error_message = Column(Text, nullable=True)
 
@@ -269,8 +285,8 @@ class OrchestrationEvent(Base):
     __tablename__ = 'orchestration_events'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True)
-    task_id = Column(Integer, ForeignKey('tasks.id'), nullable=True)
+    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True, index=True)
+    task_id = Column(Integer, ForeignKey('tasks.id'), nullable=True, index=True)
     event_type = Column(String(50), nullable=False)
     event_category = Column(String(20), nullable=False)  # critical, operational, telemetry, debug, transient
     message = Column(Text, nullable=True)
@@ -301,7 +317,7 @@ class OrchestrationSnapshot(Base):
     __tablename__ = 'orchestration_snapshots'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True)
+    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True, index=True)
     last_event_id = Column(Integer, nullable=False)
     snapshot_data = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
@@ -388,4 +404,25 @@ def init_db():
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ctype}"))
         except Exception:
             pass
+
+    # Auto-create indexes for foreign keys if missing
+    for idx_name, table, col in [
+        ("idx_artifacts_pipeline_id", "artifacts", "pipeline_id"),
+        ("idx_artifacts_task_id", "artifacts", "task_id"),
+        ("idx_task_logs_task_id", "task_logs", "task_id"),
+        ("idx_tasks_pipeline_id", "tasks", "pipeline_id"),
+        ("idx_file_records_pipeline_id", "file_records", "pipeline_id"),
+        ("idx_orchestration_events_pipeline_id", "orchestration_events", "pipeline_id"),
+        ("idx_orchestration_events_task_id", "orchestration_events", "task_id"),
+        ("idx_orchestration_snapshots_pipeline_id", "orchestration_snapshots", "pipeline_id"),
+    ]:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({col})"))
+        except Exception:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(f"CREATE INDEX {idx_name} ON {table} ({col})"))
+            except Exception:
+                pass
 

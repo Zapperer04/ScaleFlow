@@ -2,8 +2,17 @@ import os
 import time
 import requests
 
-API_URL = "http://localhost:5000"
-API_KEY = "dev_secret_api_key"
+# Try to load env variables first
+import sys
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend"))
+try:
+    import config
+    API_URL = os.getenv("API_URL", "http://127.0.0.1:5000")
+    API_KEY = os.getenv("API_KEY", "dev_secret_api_key")
+except ImportError:
+    API_URL = os.getenv("API_URL", "http://127.0.0.1:5000")
+    API_KEY = os.getenv("API_KEY", "dev_secret_api_key")
+
 HEADERS = {"X-API-Key": API_KEY}
 
 def run_test():
