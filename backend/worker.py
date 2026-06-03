@@ -245,23 +245,32 @@ def handle_preprocess_document(payload, input_artifacts):
             "(PREPROCESS_REJECT_HANDWRITTEN=True)."
         )
 
-    # Step 4: Enhance if needed
-    # Enhanced PDF is written to storage/temp/preprocessed_{pipeline_id}.pdf
-    # handle_parse_document() will find it there by convention.
-    _worker_dir = os.path.dirname(os.path.abspath(__file__))
-    _temp_dir   = os.path.join(_worker_dir, "storage", "temp")
-    output_path = enhance_document(
-        filepath=filepath,
-        report=report,
-        pipeline_id=str(pipeline_id),
-        output_dir=_temp_dir,
-        trace_fn=_trace,
-    )
-
-    if output_path != filepath:
-        _trace(f"[PREPROCESS] Enhanced file ready: {os.path.basename(output_path)}")
+    # Step 4: Protect Clean Digital PDFs
+    # If text is easily extractable, we bypass all image manipulation entirely
+    skip_ocr = False
+    output_path = filepath
+    if report.extractable_text_ratio > 0.80:
+        _trace(f"[PREPROCESS] Document is highly textual ({report.extractable_text_ratio:.1%} extractable). Bypassing enhancement and OCR.")
+        report.needs_enhancement = False
+        skip_ocr = True
     else:
-        _trace("[PREPROCESS] Document quality acceptable — no enhancement applied")
+        # Step 5: Enhance if needed
+        # Enhanced PDF is written to storage/temp/preprocessed_{pipeline_id}.pdf
+        # handle_parse_document() will find it there by convention.
+        _worker_dir = os.path.dirname(os.path.abspath(__file__))
+        _temp_dir   = os.path.join(_worker_dir, "storage", "temp")
+        output_path = enhance_document(
+            filepath=filepath,
+            report=report,
+            pipeline_id=str(pipeline_id),
+            output_dir=_temp_dir,
+            trace_fn=_trace,
+        )
+
+        if output_path != filepath:
+            _trace(f"[PREPROCESS] Enhanced file ready: {os.path.basename(output_path)}")
+        else:
+            _trace("[PREPROCESS] Document quality acceptable — no enhancement applied")
 
     # Return the report dict as the pipeline artifact (no filesystem paths)
     import dataclasses
@@ -276,6 +285,7 @@ def handle_preprocess_document(payload, input_artifacts):
         "overall_quality":      report.overall_quality,
         "needs_enhancement":    report.needs_enhancement,
     }
+    report_dict["skip_ocr"] = skip_ocr
     return report_dict
 
 
@@ -322,6 +332,10 @@ def handle_parse_document(payload, input_artifacts):
             if is_pdf:
                 _trace(f"[PARSER] PDF detected — starting fallback-chain parser")
                 try:
+                    skip_ocr_flag = False
+                    if input_artifacts and "preprocess_document" in input_artifacts:
+                        skip_ocr_flag = input_artifacts["preprocess_document"].get("skip_ocr", False)
+
                     from services.pdf_parser import parse_pdf
                     result = parse_pdf(
                         filepath=filepath,
@@ -331,6 +345,7 @@ def handle_parse_document(payload, input_artifacts):
                         trace_fn=_trace,
                         api_url=API_URL,
                         api_headers=HEADERS,
+                        skip_ocr=skip_ocr_flag,
                     )
                     text = result.text
                     parse_stats = result.stats

@@ -81,8 +81,13 @@ PREPROCESS_SAMPLE_PAGES       = int(os.getenv("PREPROCESS_SAMPLE_PAGES", "5"))
 PREPROCESS_TARGET_DPI         = int(os.getenv("PREPROCESS_TARGET_DPI", "300"))
 # Cap on pages that receive enhancement. Pages beyond this are appended unenhanced.
 # Prevents worker timeouts on large scanned documents.
-PREPROCESS_MAX_ENHANCE_PAGES  = int(os.getenv("PREPROCESS_MAX_ENHANCE_PAGES", "50"))
+PREPROCESS_MAX_ENHANCE_PAGES  = int(os.getenv("MAX_ENHANCED_PAGE_COUNT", "25"))
+# Feature flags for expensive image operations
+PREPROCESS_ENABLE_DENOISE     = os.getenv("PREPROCESS_ENABLE_DENOISE", "False").lower() in ("true", "1", "yes")
+PREPROCESS_ENABLE_SHARPEN     = os.getenv("PREPROCESS_ENABLE_SHARPEN", "False").lower() in ("true", "1", "yes")
+
 # Optional: absolute path to the directory containing Poppler binaries (pdftoppm, pdfinfo).
 # Leave empty to use the system PATH. Required on Windows when Poppler was installed
 # but its bin directory is not yet on PATH (e.g. after a fresh winget install).
 PREPROCESS_POPPLER_PATH       = os.getenv("PREPROCESS_POPPLER_PATH", "")
+

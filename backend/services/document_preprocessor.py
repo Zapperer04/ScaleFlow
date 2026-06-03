@@ -930,11 +930,11 @@ def enhance_document(
         enhancements.append("deskew")
     if needs_upscale:
         enhancements.append("upscale")
-    if report.noise_score < config.PREPROCESS_NOISE_MIN:
+    if report.noise_score < config.PREPROCESS_NOISE_MIN and config.PREPROCESS_ENABLE_DENOISE:
         enhancements.append("denoise")
     if report.contrast_score < config.PREPROCESS_CONTRAST_MIN:
         enhancements.append("contrast")
-    if report.blur_score < config.PREPROCESS_BLUR_MIN:
+    if report.blur_score < config.PREPROCESS_BLUR_MIN and config.PREPROCESS_ENABLE_SHARPEN:
         enhancements.append("sharpen")
 
     _t(f"[PREPROCESS] Enhancements to apply: {', '.join(enhancements) if enhancements else 'none'}")

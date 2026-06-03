@@ -129,11 +129,13 @@ def _extract_page_ocr(filepath: str, page_index: int) -> tuple[str, float]:
     from pdf2image import convert_from_path
     from pytesseract import Output
     try:
+        poppler_path = getattr(config, "PREPROCESS_POPPLER_PATH", None) or os.getenv("PREPROCESS_POPPLER_PATH") or None
         images = convert_from_path(
             filepath,
             first_page=page_index + 1,
             last_page=page_index + 1,
-            dpi=200
+            dpi=200,
+            poppler_path=poppler_path
         )
         if not images:
             return "", 0.0
@@ -163,6 +165,7 @@ def parse_pdf(
     trace_fn: Optional[Callable[[str], None]] = None,
     api_url: Optional[str] = None,
     api_headers: Optional[dict] = None,
+    skip_ocr: bool = False,
 ) -> ParseResult:
     """
     Parse a PDF file using the 3-tier fallback chain.
@@ -342,19 +345,53 @@ def parse_pdf(
                     plumber_time += t_sub_end - t_sub_start
                         
             elif parser_name == "ocr":
+                if skip_ocr:
+                    _trace(f"[PARSER] Page {i + 1} — OCR skipped due to clean PDF flag")
+                    continue
                 if OCR_AVAILABLE:
                     _trace(f"[PARSER] Page {i + 1} — text still empty, activating OCR fallback")
                     t_sub_start = time.perf_counter()
                     try:
                         ocr_text_page, ocr_conf = _extract_page_ocr(filepath, i)
-                        if len(ocr_text_page.strip()) > len(page_text.strip()):
-                            page_text = ocr_text_page
-                            used_parser = "ocr"
-                            ocr_pages += 1
-                            ocr_confidences.append(ocr_conf)
-                            _trace(f"[PARSER] Page {i + 1} — OCR extraction completed ({len(ocr_text_page.strip())} chars) | Confidence: {ocr_conf:.1f}%")
+                        
+                        # OCR Sanity Framework checks
+                        valid_ocr = True
+                        reason = ""
+                        original_text_len = len(page_text.strip())
+                        
+                        if original_text_len > 0 and len(ocr_text_page.strip()) > original_text_len * 5:
+                            valid_ocr = False
+                            reason = f"OCR length ({len(ocr_text_page.strip())}) exceeds original ({original_text_len}) by >5x"
                         else:
-                            _trace(f"[PARSER] Page {i + 1} — OCR returned empty (likely blank or purely graphical page)")
+                            import re
+                            if re.search(r"(.)\1{10,}", ocr_text_page):
+                                valid_ocr = False
+                                reason = "Repeated character pattern detected"
+                            else:
+                                ocr_metrics = evaluate_text_quality(ocr_text_page)
+                                if ocr_metrics["dict_word_ratio"] < 0.15:
+                                    valid_ocr = False
+                                    reason = f"Dictionary ratio too low ({ocr_metrics['dict_word_ratio']:.2f})"
+                                elif ocr_metrics["printable_ratio"] < 0.90:
+                                    valid_ocr = False
+                                    reason = f"Printable ratio too low ({ocr_metrics['printable_ratio']:.2f})"
+                                elif original_text_len > 0:
+                                    orig_metrics = evaluate_text_quality(page_text)
+                                    if ocr_metrics["quality_score"] < orig_metrics["quality_score"]:
+                                        valid_ocr = False
+                                        reason = f"OCR score ({ocr_metrics['quality_score']:.1f}) < Original ({orig_metrics['quality_score']:.1f})"
+                        
+                        if valid_ocr:
+                            if len(ocr_text_page.strip()) > original_text_len:
+                                page_text = ocr_text_page
+                                used_parser = "ocr"
+                                ocr_pages += 1
+                                ocr_confidences.append(ocr_conf)
+                                _trace(f"[PARSER] Page {i + 1} — OCR extraction completed ({len(ocr_text_page.strip())} chars) | Confidence: {ocr_conf:.1f}%")
+                            else:
+                                _trace(f"[PARSER] Page {i + 1} — OCR returned empty or shorter text")
+                        else:
+                            _trace(f"[PARSER] Page {i + 1} — OCR rejected: {reason}. Falling back to original extraction.")
                     except Exception as e:
                         page_failures.append({"page": i + 1, "parser": "ocr", "reason": str(e)})
                         _trace(f"[PARSER] Page {i + 1} — OCR failed: {e}")
