@@ -178,6 +178,107 @@ def get_uploaded_file_path(pipeline_id):
 # ─────────────────────────────────────────────────────────────────────────────
 # PDF parsing delegated to services/pdf_parser.py (fallback chain)
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Document Preprocessing — quality evaluation + image enhancement pre-parse
+# ─────────────────────────────────────────────────────────────────────────────
+def handle_preprocess_document(payload, input_artifacts):
+    """
+    Pre-parse document quality evaluation and conditional image enhancement.
+
+    Evaluates: blur, DPI, contrast, skew, noise, extractable text ratio,
+    handwriting score, signature, table, and image-region presence.
+
+    If quality is below configured thresholds, applies enhancement:
+        deskew → upscale → denoise → contrast → sharpen
+    and writes the enhanced PDF to storage/temp/preprocessed_{pipeline_id}.pdf.
+
+    The output path is NOT stored in the returned artifact — it is recovered
+    by handle_parse_document() using the same predictable naming convention.
+    Only the PreprocessingReport dict is stored as the pipeline artifact.
+
+    Hard rejections (always active):
+      - Encrypted PDF
+      - Corrupted / malformed PDF
+    Opt-in rejection (PREPROCESS_REJECT_HANDWRITTEN=True):
+      - Heavily handwritten documents
+    """
+    pipeline_id = payload.get('_pipeline_id')
+    task_id     = payload.get('_task_id')
+
+    def _trace(msg: str):
+        print(f"[{WORKER_ID}] {msg}", flush=True)
+        emit_task_trace(task_id, msg)
+
+    _trace("[PREPROCESS] Document preprocessing stage started")
+
+    filepath = get_uploaded_file_path(pipeline_id)
+    if not filepath or not os.path.exists(filepath):
+        raise FileNotFoundError(
+            "[PREPROCESS] Cannot preprocess: uploaded file not found. "
+            f"Resolved path: {filepath!r}"
+        )
+
+    from services.document_preprocessor import evaluate_document, enhance_document
+
+    # Step 1: Evaluate quality signals
+    report = evaluate_document(filepath, trace_fn=_trace)
+
+    # Step 2: Hard rejections
+    if report.is_encrypted:
+        raise ValueError(
+            "Document rejected: this PDF is password-protected. "
+            "Please remove the password and re-upload."
+        )
+    if report.is_corrupted:
+        raise ValueError(
+            "Document rejected: this PDF appears to be corrupted or malformed "
+            "and cannot be processed."
+        )
+
+    # Step 3: Opt-in handwriting rejection
+    if report.is_heavily_handwritten and config.PREPROCESS_REJECT_HANDWRITTEN:
+        raise ValueError(
+            "Document rejected: this document appears to be primarily handwritten "
+            f"(handwriting score={report.handwriting_score:.2f}, "
+            f"extractable text ratio={report.extractable_text_ratio:.1%}). "
+            "ScaleFlow is configured to reject heavily handwritten documents "
+            "(PREPROCESS_REJECT_HANDWRITTEN=True)."
+        )
+
+    # Step 4: Enhance if needed
+    # Enhanced PDF is written to storage/temp/preprocessed_{pipeline_id}.pdf
+    # handle_parse_document() will find it there by convention.
+    _worker_dir = os.path.dirname(os.path.abspath(__file__))
+    _temp_dir   = os.path.join(_worker_dir, "storage", "temp")
+    output_path = enhance_document(
+        filepath=filepath,
+        report=report,
+        pipeline_id=str(pipeline_id),
+        output_dir=_temp_dir,
+        trace_fn=_trace,
+    )
+
+    if output_path != filepath:
+        _trace(f"[PREPROCESS] Enhanced file ready: {os.path.basename(output_path)}")
+    else:
+        _trace("[PREPROCESS] Document quality acceptable — no enhancement applied")
+
+    # Return the report dict as the pipeline artifact (no filesystem paths)
+    import dataclasses
+    report_dict = dataclasses.asdict(report)
+    report_dict["content_summary"] = {
+        "has_handwriting":      report.has_handwriting,
+        "has_signature":        report.has_signature,
+        "has_table":            report.has_table,
+        "has_image_region":     report.has_image_region,
+        "is_heavily_handwritten": report.is_heavily_handwritten,
+        "extractable_text_ratio": report.extractable_text_ratio,
+        "overall_quality":      report.overall_quality,
+        "needs_enhancement":    report.needs_enhancement,
+    }
+    return report_dict
+
+
 def handle_parse_document(payload, input_artifacts):
     """
     Parse uploaded document via a 3-tier fallback chain:
@@ -198,6 +299,19 @@ def handle_parse_document(payload, input_artifacts):
     if not text and pipeline_id:
         _trace("[PARSER] Initializing document parser")
         filepath = get_uploaded_file_path(pipeline_id)
+
+        # Check if preprocessing produced an enhanced file at the predictable temp path.
+        # The path is NOT stored in the preprocessing_report artifact to avoid
+        # serializing ephemeral filesystem paths that break under worker restarts.
+        _worker_dir = os.path.dirname(os.path.abspath(__file__))
+        _temp_dir   = os.path.join(_worker_dir, "storage", "temp")
+        preprocessed_path = os.path.join(_temp_dir, f"preprocessed_{pipeline_id}.pdf")
+        if os.path.exists(preprocessed_path):
+            _trace(f"[PARSER] Using preprocessed enhanced file: preprocessed_{pipeline_id}.pdf")
+            filepath = preprocessed_path
+        else:
+            _trace(f"[PARSER] No preprocessed file found at expected path — using original upload")
+
         if filepath and os.path.exists(filepath):
             file_id, original_filename, _ = get_pipeline_file_info(pipeline_id)
             is_pdf = (
@@ -781,6 +895,7 @@ def handle_generate_answer_report(payload, input_artifacts):
     return artifact_data
 
 HANDLER_MAP = {
+    "preprocess_document": handle_preprocess_document,
     "send_email": handle_send_email,
     "process_video": handle_process_video,
     "generate_report": handle_generate_report,
@@ -804,6 +919,7 @@ HANDLER_MAP = {
 }
 
 OUTPUT_ARTIFACT_TYPES = {
+    "preprocess_document": "preprocessing_report",
     "parse_document": "parsed_text",
     "validate_parse_quality": "parsed_text",
     "chunk_text": "text_chunks",
@@ -819,6 +935,7 @@ OUTPUT_ARTIFACT_TYPES = {
 }
 
 LEASE_DURATIONS = {
+    "preprocess_document": 120,    # evaluation + optional enhancement on large docs
     "send_email": 30,
     "process_video": 120,
     "generate_report": 60,

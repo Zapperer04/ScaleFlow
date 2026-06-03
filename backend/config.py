@@ -59,3 +59,30 @@ BACKPRESSURE_SATURATED_UTILIZATION = float(os.getenv("BACKPRESSURE_SATURATED_UTI
 BACKPRESSURE_LOW_PRIORITY_THROTTLE = int(os.getenv("BACKPRESSURE_LOW_PRIORITY_THROTTLE", "5"))
 BACKPRESSURE_AGING_THRESHOLD_SECONDS = int(os.getenv("BACKPRESSURE_AGING_THRESHOLD_SECONDS", "60"))
 BACKPRESSURE_OVERLOAD_POLICY = os.getenv("BACKPRESSURE_OVERLOAD_POLICY", "defer")
+
+# 8. Document Preprocessing Config
+# Thresholds for quality evaluation (0–100 scale, higher = better quality)
+PREPROCESS_BLUR_MIN          = float(os.getenv("PREPROCESS_BLUR_MIN", "40.0"))
+PREPROCESS_CONTRAST_MIN      = float(os.getenv("PREPROCESS_CONTRAST_MIN", "35.0"))
+PREPROCESS_DPI_MIN           = float(os.getenv("PREPROCESS_DPI_MIN", "150.0"))
+PREPROCESS_SKEW_MAX_DEG      = float(os.getenv("PREPROCESS_SKEW_MAX_DEG", "2.0"))
+PREPROCESS_NOISE_MIN         = float(os.getenv("PREPROCESS_NOISE_MIN", "40.0"))
+
+# Handwriting detection
+PREPROCESS_HW_SCORE_MIN      = float(os.getenv("PREPROCESS_HW_SCORE_MIN", "0.70"))
+PREPROCESS_HW_TEXT_RATIO_MAX = float(os.getenv("PREPROCESS_HW_TEXT_RATIO_MAX", "0.10"))
+# Opt-in: set to True to hard-reject heavily handwritten documents.
+# Default is False — handwriting is a warning flag only.
+# The pipeline is domain-agnostic; handwritten inputs are valid in many domains.
+PREPROCESS_REJECT_HANDWRITTEN = os.getenv("PREPROCESS_REJECT_HANDWRITTEN", "False").lower() in ("true", "1", "yes")
+
+# Sampling and enhancement
+PREPROCESS_SAMPLE_PAGES       = int(os.getenv("PREPROCESS_SAMPLE_PAGES", "5"))
+PREPROCESS_TARGET_DPI         = int(os.getenv("PREPROCESS_TARGET_DPI", "300"))
+# Cap on pages that receive enhancement. Pages beyond this are appended unenhanced.
+# Prevents worker timeouts on large scanned documents.
+PREPROCESS_MAX_ENHANCE_PAGES  = int(os.getenv("PREPROCESS_MAX_ENHANCE_PAGES", "50"))
+# Optional: absolute path to the directory containing Poppler binaries (pdftoppm, pdfinfo).
+# Leave empty to use the system PATH. Required on Windows when Poppler was installed
+# but its bin directory is not yet on PATH (e.g. after a fresh winget install).
+PREPROCESS_POPPLER_PATH       = os.getenv("PREPROCESS_POPPLER_PATH", "")
