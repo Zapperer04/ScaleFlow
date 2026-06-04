@@ -1,0 +1,4 @@
+scale Flow Category & Low DPI Document
+Distributed ledger systems require high throughput
+
+This low resolution text must be upescaled for OCR

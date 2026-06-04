@@ -1,7 +1,0 @@
-{
-  "Scenario A (Burst Load & Backpressure)": true,
-  "Scenario B (Worker Crash & Recovery)": true,
-  "Scenario C (Starvation Prevention)": true,
-  "Scenario D (Scaling & Forecasting)": true,
-  "Priority Escalation & Deferral Release": true
-}

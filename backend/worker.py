@@ -284,6 +284,8 @@ def handle_preprocess_document(payload, input_artifacts):
         "extractable_text_ratio": report.extractable_text_ratio,
         "overall_quality":      report.overall_quality,
         "needs_enhancement":    report.needs_enhancement,
+        "document_type":        report.document_type,
+        "routing_confidence":   report.routing_confidence,
     }
     report_dict["skip_ocr"] = skip_ocr
     return report_dict
@@ -301,6 +303,9 @@ def handle_parse_document(payload, input_artifacts):
     lease_token = payload.get('_lease_token')
     progress_json = payload.get('_progress_json')
     parse_stats = {}
+    pages = []
+    document_type = "DIGITAL"
+    routing_confidence = 1.0
 
     def _trace(msg: str):
         print(f"[{WORKER_ID}] {msg}", flush=True)
@@ -334,7 +339,10 @@ def handle_parse_document(payload, input_artifacts):
                 try:
                     skip_ocr_flag = False
                     if input_artifacts and "preprocess_document" in input_artifacts:
-                        skip_ocr_flag = input_artifacts["preprocess_document"].get("skip_ocr", False)
+                        prep = input_artifacts["preprocess_document"]
+                        skip_ocr_flag = prep.get("skip_ocr", False)
+                        document_type = prep.get("document_type", "DIGITAL")
+                        routing_confidence = prep.get("routing_confidence", 1.0)
 
                     from services.pdf_parser import parse_pdf
                     result = parse_pdf(
@@ -346,9 +354,12 @@ def handle_parse_document(payload, input_artifacts):
                         api_url=API_URL,
                         api_headers=HEADERS,
                         skip_ocr=skip_ocr_flag,
+                        document_type=document_type,
+                        routing_confidence=routing_confidence,
                     )
                     text = result.text
                     parse_stats = result.stats
+                    pages = result.pages
 
                     if not text:
                         _trace("[PARSER] WARNING: All parsers returned empty text. Document may be fully graphical.")
@@ -397,8 +408,14 @@ def handle_parse_document(payload, input_artifacts):
         for pf in parse_stats["page_failures"][:5]:   # surface first 5 only
             _trace(f"[PARSER] Page {pf['page']} failure [{pf['parser']}]: {pf['reason'][:120]}")
 
-    # Return text with embedded parse stats so the artifact metadata carries them
-    return {"parsed_text": normalized, "parse_stats": parse_stats}
+    # Return text with embedded parse stats and page list
+    return {
+        "parsed_text": normalized,
+        "parse_stats": parse_stats,
+        "pages": pages,
+        "document_type": document_type,
+        "routing_confidence": routing_confidence
+    }
 
 
 def handle_validate_parse_quality(payload, input_artifacts):
@@ -463,8 +480,17 @@ def handle_chunk_text(payload, input_artifacts):
 
     # Input may be a dict (new format from handle_parse_document) or raw string
     raw_input = input_artifacts.get("parsed_text", "")
+    
+    text = ""
+    pages = []
+    document_type = "DIGITAL"
+    routing_confidence = 1.0
+
     if isinstance(raw_input, dict):
         text = raw_input.get("parsed_text", "")
+        pages = raw_input.get("pages", [])
+        document_type = raw_input.get("document_type", "DIGITAL")
+        routing_confidence = raw_input.get("routing_confidence", 1.0)
     elif isinstance(raw_input, str):
         text = raw_input
     else:
@@ -475,25 +501,80 @@ def handle_chunk_text(payload, input_artifacts):
 
     emit_task_trace(task_id, "[CHUNKER] Paragraph-aware semantic chunking started")
 
-    # Detect paragraph structure richness
-    paragraph_count = len([p for p in re.split(r'\n{2,}', text) if p.strip()])
-    emit_task_trace(task_id, f"[CHUNKER] Detected {paragraph_count} paragraphs in document")
+    # If pages is not populated (e.g. text/log file or direct test), create a dummy page
+    if not pages:
+        pages = [{
+            "page_number": 1,
+            "text": text,
+            "extraction_method": "pypdf" if document_type == "DIGITAL" else "unknown",
+            "ocr_engine": "none",
+            "ocr_confidence": 0.0,
+            "table_detected": False,
+            "contains_signature": False,
+            "contains_handwriting": False
+        }]
 
     from services.chunking_service import chunk_text
+    from services.quality_gate_service import evaluate_text_quality
     
     t_start = time.perf_counter()
-    chunks = chunk_text(text)
+    
+    output_chunks = []
+    for page in pages:
+        page_text = page.get("text", "")
+        if not page_text or not page_text.strip():
+            continue
+        page_chunks = chunk_text(page_text)
+        for pc in page_chunks:
+            chunk_quality = evaluate_text_quality(pc)
+            chunk_quality_score = chunk_quality.get("quality_score", 0.0)
+            
+            chunk_metadata = {
+                "page_number": page.get("page_number", 1),
+                "document_type": document_type,
+                "routing_confidence": routing_confidence,
+                "ocr_engine": page.get("ocr_engine", "none"),
+                "ocr_confidence": page.get("ocr_confidence", 0.0),
+                "extraction_method": page.get("extraction_method", "pypdf"),
+                "table_detected": page.get("table_detected", False),
+                "contains_signature": page.get("contains_signature", False),
+                "contains_handwriting": page.get("contains_handwriting", False),
+                "chunk_quality_score": chunk_quality_score
+            }
+            output_chunks.append({
+                "text": pc,
+                "metadata": chunk_metadata
+            })
+            
     duration = time.perf_counter() - t_start
 
-    if chunks:
-        avg_words = sum(len(c.split()) for c in chunks) // len(chunks)
-    else:
-        avg_words = 0
+    # If everything is filtered or empty, fallback
+    if not output_chunks and text.strip():
+        chunk_quality = evaluate_text_quality(text)
+        output_chunks.append({
+            "text": text,
+            "metadata": {
+                "page_number": 1,
+                "document_type": document_type,
+                "routing_confidence": routing_confidence,
+                "ocr_engine": "none",
+                "ocr_confidence": 0.0,
+                "extraction_method": "pypdf" if document_type == "DIGITAL" else "unknown",
+                "table_detected": False,
+                "contains_signature": False,
+                "contains_handwriting": False,
+                "chunk_quality_score": chunk_quality.get("quality_score", 0.0)
+            }
+        })
 
-    emit_task_trace(task_id, f"[CHUNKER] Generated {len(chunks)} chunks (avg {avg_words} words/chunk)")
-    emit_task_trace(task_id, f"[PROFILE] chunking_duration={duration:.5f}s count={len(chunks)}")
-    print(f"[{WORKER_ID}]   [OK] Chunked text into {len(chunks)} semantic chunks (avg {avg_words} words) (took {duration:.4f}s)", flush=True)
-    return chunks
+    avg_words = 0
+    if output_chunks:
+        avg_words = sum(len(c["text"].split()) for c in output_chunks) // len(output_chunks)
+
+    emit_task_trace(task_id, f"[CHUNKER] Generated {len(output_chunks)} chunks (avg {avg_words} words/chunk)")
+    emit_task_trace(task_id, f"[PROFILE] chunking_duration={duration:.5f}s count={len(output_chunks)}")
+    print(f"[{WORKER_ID}]   [OK] Chunked text into {len(output_chunks)} semantic chunks (avg {avg_words} words) (took {duration:.4f}s)", flush=True)
+    return output_chunks
 
 def get_pipeline_file_info(pipeline_id):
     file_id = None
@@ -564,20 +645,43 @@ def handle_generate_embeddings(payload, input_artifacts):
 
     # ── normalise input (text_chunks or error_patterns) ──────────────────────
     raw = input_artifacts.get("text_chunks") or input_artifacts.get("error_patterns") or []
+    
+    chunks = []
+    chunk_metadata = []
+    
     if isinstance(raw, str):
         chunks = [raw]
+        chunk_metadata = [{}]
     elif isinstance(raw, dict):
-        chunks = [json.dumps(raw)]
+        if "text" in raw and "metadata" in raw:
+            chunks = [raw["text"]]
+            chunk_metadata = [raw["metadata"]]
+        else:
+            chunks = [json.dumps(raw)]
+            chunk_metadata = [{}]
     elif isinstance(raw, list):
-        # Each element may itself be a string or dict
-        chunks = [c if isinstance(c, str) else json.dumps(c) for c in raw]
+        for item in raw:
+            if isinstance(item, dict) and "text" in item and "metadata" in item:
+                chunks.append(item["text"])
+                chunk_metadata.append(item["metadata"])
+            elif isinstance(item, str):
+                chunks.append(item)
+                chunk_metadata.append({})
+            elif isinstance(item, dict):
+                chunks.append(json.dumps(item))
+                chunk_metadata.append({})
+            else:
+                chunks.append(str(item))
+                chunk_metadata.append({})
     else:
         chunks = []
+        chunk_metadata = []
 
     # ── resource guard: cap chunk count ──────────────────────────────────────
     if len(chunks) > MAX_EMBED_CHUNKS:
         _trace(f"[EMBED] WARNING: {len(chunks)} chunks exceeds limit {MAX_EMBED_CHUNKS}. Truncating.")
         chunks = chunks[:MAX_EMBED_CHUNKS]
+        chunk_metadata = chunk_metadata[:MAX_EMBED_CHUNKS]
 
     _trace(f"[EMBED] Generating embeddings for {len(chunks)} chunks (model: {config.EMBEDDING_MODEL}, dim={config.EMBEDDING_DIMENSION})")
 
@@ -610,8 +714,11 @@ def handle_generate_embeddings(payload, input_artifacts):
     if chunks and vectors:
         _trace(f"[QDRANT] Upserting {len(chunks)} vectors to collection 'scaleflow_chunks'...")
         meta_dict = {
-            "source_artifact_id": source_artifact_id,
-            "original_filename":  original_filename
+            "global_metadata": {
+                "source_artifact_id": source_artifact_id,
+                "original_filename":  original_filename
+            },
+            "chunk_metadata": chunk_metadata
         }
         qdrant_upserted, qdrant_lookup_duration, qdrant_insertion_duration = upsert_document_chunks(
             pipeline_id=pipeline_id,
@@ -687,7 +794,19 @@ def handle_summarize_document(payload, input_artifacts):
     if not chunks:
         chunks = ["No content to summarize."]
         
-    summary_chunks = chunks[:2]
+    # Extract string content if chunks are dictionaries
+    processed_chunks = []
+    for c in chunks:
+        if isinstance(c, dict) and "text" in c:
+            processed_chunks.append(c["text"])
+        elif isinstance(c, str):
+            processed_chunks.append(c)
+        elif isinstance(c, dict):
+            processed_chunks.append(json.dumps(c))
+        else:
+            processed_chunks.append(str(c))
+
+    summary_chunks = processed_chunks[:2]
     summary = "SUMMARY:\n" + "\n".join(summary_chunks)
     print(f"[{WORKER_ID}]   [OK] Generated extractive summary", flush=True)
     return summary

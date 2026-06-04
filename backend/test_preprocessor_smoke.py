@@ -43,6 +43,7 @@ for path, label in tests:
     print(f"  blur={r.blur_score:.1f}  contrast={r.contrast_score:.1f}  noise={r.noise_score:.1f}  skew={r.skew_angle:.2f}deg")
     print(f"  dpi={r.dpi_estimate}  text_ratio={r.extractable_text_ratio:.2%}")
     print(f"  hw={r.has_handwriting}(score={r.handwriting_score:.2f})  sig={r.has_signature}  tbl={r.has_table}  img_region={r.has_image_region}")
+    print(f"  doc_type={r.document_type}  routing_conf={r.routing_confidence:.2f}  img_area_ratio={r.image_area_ratio:.2f}  ocr_ratio={r.ocr_text_ratio:.2f}")
     print(f"  is_heavily_handwritten={r.is_heavily_handwritten}  sampled=[{','.join(str(p+1) for p in r.sampled_pages)}]")
     print(f"  eval_ms={r.evaluation_duration_ms:.0f}ms")
     if r.warnings:

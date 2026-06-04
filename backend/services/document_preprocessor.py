@@ -93,6 +93,13 @@ class PreprocessingReport:
     evaluation_duration_ms: float = 0.0
     enhancement_duration_ms: float = 0.0
 
+    # Phase 2 Document Routing (Directive)
+    document_type: str = "DIGITAL"
+    routing_confidence: float = 1.0
+    image_area_ratio: float = 0.0
+    page_text_density: float = 0.0
+    ocr_text_ratio: float = 0.0
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Library probes — graceful degradation when optional deps are absent
@@ -496,6 +503,44 @@ def _detect_image_region(img) -> bool:
     return False
 
 
+def _calculate_image_area_ratio(gray) -> float:
+    import cv2
+    import numpy as np
+    h, w = gray.shape
+    page_area = h * w
+    _, binary = cv2.threshold(gray, 220, 255, cv2.THRESH_BINARY_INV)
+    _, _, stats, _ = cv2.connectedComponentsWithStats(binary)
+    large_comp_area = 0
+    for i in range(1, len(stats)):
+        area = stats[i, cv2.CC_STAT_AREA]
+        comp_w = stats[i, cv2.CC_STAT_WIDTH]
+        comp_h = stats[i, cv2.CC_STAT_HEIGHT]
+        # Ignore small character sized components, sum up larger blobs
+        if area > page_area * 0.005 and comp_w > 40 and comp_h > 40:
+            large_comp_area += area
+    return min(float(large_comp_area) / page_area, 1.0)
+
+
+def _probe_ocr_text_length(filepath: str, page_index: int, poppler_path: Optional[str] = None) -> int:
+    try:
+        import pytesseract
+        from pdf2image import convert_from_path
+        # Low DPI for speed
+        images = convert_from_path(
+            filepath,
+            first_page=page_index + 1,
+            last_page=page_index + 1,
+            dpi=100,
+            poppler_path=poppler_path
+        )
+        if not images:
+            return 0
+        ocr_text = pytesseract.image_to_string(images[0], config="--psm 6")
+        return len(ocr_text.strip())
+    except Exception:
+        return 0
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 3 — Aggregate image analysis across sampled pages
 # ─────────────────────────────────────────────────────────────────────────────
@@ -520,6 +565,11 @@ def _analyze_pages(filepath: str, sampled_pages: List[int], trace_fn=None) -> di
     handwriting_scores: list[float] = []
     has_signature = has_table = has_image_region = False
 
+    image_area_ratios: list[float] = []
+    page_text_densities: list[float] = []
+    ocr_text_ratios: list[float] = []
+    page_types: list[str] = []
+
     for page_idx in sampled_pages[:config.PREPROCESS_SAMPLE_PAGES]:
         try:
             img = _render_page_thumbnail(filepath, page_idx, dpi=72)
@@ -541,6 +591,39 @@ def _analyze_pages(filepath: str, sampled_pages: List[int], trace_fn=None) -> di
             if not has_image_region:
                 has_image_region = _detect_image_region(img)
 
+            # Get digital text length (using pypdf)
+            digital_char_count = 0
+            try:
+                import pypdf
+                reader = pypdf.PdfReader(filepath, strict=False)
+                if page_idx < len(reader.pages):
+                    txt = reader.pages[page_idx].extract_text() or ""
+                    digital_char_count = len(txt.strip())
+            except Exception:
+                pass
+
+            # Calculate image area ratio
+            img_ratio = _calculate_image_area_ratio(gray)
+            image_area_ratios.append(img_ratio)
+
+            # Get quick low-DPI OCR text length
+            ocr_char_count = _probe_ocr_text_length(filepath, page_idx, poppler_path=_get_poppler_path())
+            
+            # Page text density is the digital character count
+            page_text_densities.append(float(digital_char_count))
+
+            # OCR text ratio: ratio of OCR chars to digital chars
+            ocr_ratio = float(ocr_char_count) / (digital_char_count + 1)
+            ocr_text_ratios.append(ocr_ratio)
+
+            # Page classification rule
+            is_page_digital = (
+                digital_char_count >= 50
+                and img_ratio < 0.2
+                and ocr_char_count < digital_char_count * 1.5
+            )
+            page_types.append("digital" if is_page_digital else "scanned")
+
         except Exception as exc:
             _t(f"[PREPROCESS] WARNING: Image analysis failed on page {page_idx + 1}: {exc}")
 
@@ -558,6 +641,10 @@ def _analyze_pages(filepath: str, sampled_pages: List[int], trace_fn=None) -> di
         "has_signature":     has_signature,
         "has_table":         has_table,
         "has_image_region":  has_image_region,
+        "image_area_ratio":  _avg(image_area_ratios),
+        "page_text_density": _avg(page_text_densities),
+        "ocr_text_ratio":    _avg(ocr_text_ratios),
+        "page_types":        page_types,
     }
 
 
@@ -706,6 +793,11 @@ def evaluate_document(filepath: str, trace_fn: Optional[Callable] = None) -> Pre
     blur_score = contrast_score = noise_score = 100.0
     skew_angle = handwriting_score = 0.0
     has_handwriting = has_signature = has_table = has_image_region = False
+    
+    image_area_ratio = 0.0
+    page_text_density = 0.0
+    ocr_text_ratio = 0.0
+    page_types = []
 
     if CV2_AVAILABLE and PDF2IMAGE_AVAILABLE:
         img_signals = _analyze_pages(filepath, sampled_pages, trace_fn=trace_fn)
@@ -718,6 +810,11 @@ def evaluate_document(filepath: str, trace_fn: Optional[Callable] = None) -> Pre
         has_signature     = img_signals["has_signature"]
         has_table         = img_signals["has_table"]
         has_image_region  = img_signals["has_image_region"]
+        
+        image_area_ratio  = img_signals["image_area_ratio"]
+        page_text_density = img_signals["page_text_density"]
+        ocr_text_ratio    = img_signals["ocr_text_ratio"]
+        page_types        = img_signals["page_types"]
 
         _t(
             f"[PREPROCESS] Quality signals — "
@@ -739,6 +836,38 @@ def evaluate_document(filepath: str, trace_fn: Optional[Callable] = None) -> Pre
             "Install opencv-python-headless and pdf2image for full preprocessing support."
         )
         _t("[PREPROCESS] WARNING: Image analysis skipped (opencv/pdf2image unavailable)")
+
+    # ── Phase 4.5: Document Classification ────────────────────────────────────
+    if page_types:
+        num_pages = len(page_types)
+        num_digital = page_types.count("digital")
+        num_scanned = page_types.count("scanned")
+        digital_ratio = num_digital / num_pages
+        scanned_ratio = num_scanned / num_pages
+        
+        if digital_ratio >= 0.90:
+            document_type = "DIGITAL"
+            routing_confidence = digital_ratio * (1.0 - min(image_area_ratio, 0.5))
+        elif scanned_ratio >= 0.90:
+            document_type = "SCANNED"
+            routing_confidence = scanned_ratio * (1.0 - min(page_text_density / 1000.0, 0.5))
+        else:
+            document_type = "MIXED"
+            routing_confidence = 1.0 - abs(digital_ratio - scanned_ratio)
+    else:
+        # Fallback when image analysis is skipped (use extractable_text_ratio from text probe)
+        if extractable_text_ratio >= 0.80:
+            document_type = "DIGITAL"
+            routing_confidence = 1.0
+        elif extractable_text_ratio <= 0.10:
+            document_type = "SCANNED"
+            routing_confidence = 1.0
+        else:
+            document_type = "MIXED"
+            routing_confidence = 0.8
+            
+    routing_confidence = round(min(max(routing_confidence, 0.0), 1.0), 2)
+    _t(f"[PREPROCESS] Document routing classification: {document_type} (confidence={routing_confidence:.2f})")
 
     # ── Phase 5: Derive enhancement need and composite quality ────────────────
     needs_enhancement = _compute_needs_enhancement(
@@ -790,6 +919,11 @@ def evaluate_document(filepath: str, trace_fn: Optional[Callable] = None) -> Pre
         warnings=warnings,
         sampled_pages=sampled_pages,
         evaluation_duration_ms=duration_ms,
+        document_type=document_type,
+        routing_confidence=routing_confidence,
+        image_area_ratio=image_area_ratio,
+        page_text_density=page_text_density,
+        ocr_text_ratio=ocr_text_ratio,
     )
 
 

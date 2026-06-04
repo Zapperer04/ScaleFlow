@@ -54,6 +54,7 @@ MEMORY_CHECK_EVERY = 50   # check RSS every N pages
 class ParseResult:
     text: str = ""
     stats: dict = field(default_factory=dict)
+    pages: list[dict] = field(default_factory=list)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -79,6 +80,109 @@ def _probe_ocr():
 
 PDFPLUMBER_AVAILABLE = _probe_pdfplumber()
 OCR_AVAILABLE        = _probe_ocr()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Page heuristics and features (Phase 2 Directive)
+# ──────────────────────────────────────────────────────────────────────────────
+def _render_page_thumbnail(filepath: str, page_index: int) -> Optional[Any]:
+    from pdf2image import convert_from_path
+    poppler_path = getattr(config, "PREPROCESS_POPPLER_PATH", None) or os.getenv("PREPROCESS_POPPLER_PATH") or None
+    try:
+        images = convert_from_path(
+            filepath,
+            first_page=page_index + 1,
+            last_page=page_index + 1,
+            dpi=72,
+            poppler_path=poppler_path
+        )
+        return images[0] if images else None
+    except Exception:
+        return None
+
+
+def _detect_table(img) -> bool:
+    import cv2
+    import numpy as np
+    gray = np.array(img.convert("L"))
+    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+    lines = cv2.HoughLinesP(
+        edges, 1, np.pi / 180,
+        threshold=50,
+        minLineLength=gray.shape[1] // 8,
+        maxLineGap=10,
+    )
+    if lines is None:
+        return False
+    h_lines = v_lines = 0
+    for line in lines:
+        x1, y1, x2, y2 = line[0]
+        slope = abs(float(y2 - y1)) / (abs(float(x2 - x1)) + 1e-6)
+        if slope < 0.2:    # near-horizontal
+            h_lines += 1
+        elif slope > 5.0:  # near-vertical
+            v_lines += 1
+    return h_lines >= 3 and v_lines >= 2
+
+
+def _detect_signature(img) -> bool:
+    import cv2
+    import numpy as np
+    gray = np.array(img.convert("L"))
+    h, w = gray.shape
+    roi = gray[int(h * 0.70):, :]
+    binary = cv2.adaptiveThreshold(
+        roi, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        11, 2,
+    )
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if area < 200:
+            continue
+        perimeter = cv2.arcLength(cnt, True)
+        if perimeter == 0:
+            continue
+        circularity = 4 * 3.14159 * area / (perimeter ** 2)
+        if 0.01 < circularity < 0.5 and area < (w * h * 0.30 * 0.25):
+            return True
+    return False
+
+
+def _compute_handwriting_score(img) -> float:
+    import cv2
+    import numpy as np
+    try:
+        gray = np.array(img.convert("L"))
+        binary = cv2.adaptiveThreshold(
+            gray, 255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            11, 2,
+        )
+        dist = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
+        ink_pixels = dist[binary > 0]
+        sw_score = min(float(ink_pixels.std()) / 3.0, 1.0) if len(ink_pixels) > 0 else 0.0
+        _, _, stats, _ = cv2.connectedComponentsWithStats(binary)
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        cc_score = 0.0
+        if len(areas) > 1:
+            cv_ratio = float(areas.std()) / (float(areas.mean()) + 1e-6)
+            cc_score = min(cv_ratio / 5.0, 1.0)
+        block_means = []
+        bh, bw = gray.shape
+        bs = 32
+        for y in range(0, bh - bs, bs):
+            for x in range(0, bw - bs, bs):
+                block_means.append(float(gray[y:y + bs, x:x + bs].mean()))
+        density_score = 0.0
+        if block_means:
+            density_score = min(float(np.std(block_means)) / 255.0 * 4.0, 1.0)
+        return sw_score * 0.5 + cc_score * 0.3 + density_score * 0.2
+    except Exception:
+        return 0.0
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -166,6 +270,8 @@ def parse_pdf(
     api_url: Optional[str] = None,
     api_headers: Optional[dict] = None,
     skip_ocr: bool = False,
+    document_type: str = "DIGITAL",
+    routing_confidence: float = 1.0,
 ) -> ParseResult:
     """
     Parse a PDF file using the 3-tier fallback chain.
@@ -179,10 +285,13 @@ def parse_pdf(
     trace_fn     : callable(message: str) — receives human-readable trace lines
     api_url      : backend API base URL (for progress PATCH)
     api_headers  : auth headers for progress PATCH
+    skip_ocr     : bypass OCR fallback flag
+    document_type: DIGITAL, SCANNED, or MIXED
+    routing_confidence: confidence score (0.0 to 1.0)
 
     Returns
     -------
-    ParseResult with .text and .stats
+    ParseResult with .text, .stats, and .pages
     """
     import pypdf
 
@@ -201,6 +310,7 @@ def parse_pdf(
     file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
     _trace(f"[PARSER] PDF file: {os.path.basename(filepath)} ({file_size_mb:.1f} MB)")
     _trace(f"[PARSER] Capabilities: pdfplumber={'yes' if PDFPLUMBER_AVAILABLE else 'no'}, OCR={'yes' if OCR_AVAILABLE else 'no'}")
+    _trace(f"[PARSER] Routing: document_type={document_type} (confidence={routing_confidence:.2f})")
 
     # ── temp dir for checkpoint cache ────────────────────────────────────────
     _worker_dir = os.path.dirname(os.path.abspath(__file__))
@@ -261,6 +371,7 @@ def parse_pdf(
     # ── per-page extraction loop ─────────────────────────────────────────────
     start_time  = time.time()
     text_parts  = []
+    pages_list  = []
     page_failures: list[dict] = []
     ocr_pages   = 0
     ocr_confidences = []
@@ -280,7 +391,7 @@ def parse_pdf(
     elif temp_cache_file and os.path.exists(temp_cache_file):
         _cleanup()
 
-    _trace(f"[PARSER] pypdf extraction started — processing {page_count - checkpoint_page} pages")
+    _trace(f"[PARSER] Extraction started — processing {page_count - checkpoint_page} pages under {document_type} routing rules")
 
     for i in range(checkpoint_page, page_count):
         # ── timeout guard ────────────────────────────────────────────────────
@@ -297,39 +408,88 @@ def parse_pdf(
                 _cleanup()
                 raise MemoryError(f"Governance Limit Exceeded: Parser memory usage ({rss:.0f} MB) exceeded limit ({MEMORY_LIMIT_MB} MB).")
 
-        # ── fallback chain loop ──────────────────────────────────────────────
+        # ── page-level heuristics and features ───────────────────────────────
+        img = _render_page_thumbnail(filepath, i)
+        table_detected = False
+        contains_signature = False
+        contains_handwriting = False
+        if img:
+            try:
+                table_detected = _detect_table(img)
+                contains_signature = _detect_signature(img)
+                contains_handwriting = _compute_handwriting_score(img) > 0.4
+            except Exception:
+                pass
+
+        # ── routing and fallback execution ───────────────────────────────────
         page_text = ""
         used_parser = ""
-        
-        t_route_start = time.perf_counter()
-        priorities = list(config.PARSER_PRIORITIES)
-        t_route_end = time.perf_counter()
-        parser_selection_overhead += t_route_end - t_route_start
+        ocr_conf = 0.0
 
-        for parser_name in priorities:
-            # If we've successfully extracted text above threshold, skip subsequent fallback parsers
-            if len(page_text.strip()) >= LOW_TEXT_THRESH:
-                break
-                
-            if parser_name == "pypdf":
+        t_route_start = time.perf_counter()
+        if document_type == "DIGITAL":
+            # DIGITAL Routing Rule: pypdf first, fallback to pdfplumber, NO OCR
+            t_sub_start = time.perf_counter()
+            try:
+                pypdf_text = _extract_page_pypdf(reader, i)
+                if len(pypdf_text.strip()) >= 50:
+                    page_text = pypdf_text
+                    used_parser = "pypdf"
+            except Exception as e:
+                page_failures.append({"page": i + 1, "parser": "pypdf", "reason": str(e)})
+            pypdf_time += time.perf_counter() - t_sub_start
+
+            if len(page_text.strip()) < 50 and PDFPLUMBER_AVAILABLE:
                 t_sub_start = time.perf_counter()
                 try:
-                    pypdf_text = _extract_page_pypdf(reader, i)
-                    if len(pypdf_text.strip()) > len(page_text.strip()):
-                        page_text = pypdf_text
-                        used_parser = "pypdf"
+                    plumber_text = _extract_page_pdfplumber(filepath, i)
+                    if len(plumber_text.strip()) > len(page_text.strip()):
+                        page_text = plumber_text
+                        used_parser = "pdfplumber"
+                        plumber_pages += 1
                 except Exception as e:
-                    page_failures.append({"page": i + 1, "parser": "pypdf", "reason": str(e)})
-                    _trace(f"[PARSER] Page {i + 1} — pypdf failed: {e}")
-                t_sub_end = time.perf_counter()
-                pypdf_time += t_sub_end - t_sub_start
-                    
-            elif parser_name == "pdfplumber":
-                if PDFPLUMBER_AVAILABLE:
-                    if len(page_text.strip()) == 0:
-                        _trace(f"[PARSER] Page {i + 1} — no text extracted yet, trying pdfplumber")
-                    else:
-                        _trace(f"[PARSER] Page {i + 1} — low-text density ({len(page_text.strip())} chars), trying pdfplumber")
+                    page_failures.append({"page": i + 1, "parser": "pdfplumber", "reason": str(e)})
+                plumber_time += time.perf_counter() - t_sub_start
+
+            if not page_text and used_parser == "":
+                used_parser = "pypdf"
+
+        elif document_type == "SCANNED":
+            # SCANNED Routing Rule: Tesseract OCR directly
+            if OCR_AVAILABLE and not skip_ocr:
+                t_sub_start = time.perf_counter()
+                try:
+                    ocr_text_page, ocr_conf_val = _extract_page_ocr(filepath, i)
+                    page_text = ocr_text_page
+                    used_parser = "ocr"
+                    ocr_conf = ocr_conf_val
+                    ocr_pages += 1
+                    ocr_confidences.append(ocr_conf)
+                except Exception as e:
+                    page_failures.append({"page": i + 1, "parser": "ocr", "reason": str(e)})
+                    used_parser = "ocr"
+                ocr_time += time.perf_counter() - t_sub_start
+            else:
+                used_parser = "pypdf"
+                try:
+                    page_text = _extract_page_pypdf(reader, i)
+                except Exception:
+                    pass
+
+        else:  # MIXED
+            # MIXED Routing Rule: Page-level classification
+            digital_char_count = 0
+            pypdf_text = ""
+            try:
+                pypdf_text = _extract_page_pypdf(reader, i)
+                digital_char_count = len(pypdf_text.strip())
+            except Exception:
+                pass
+
+            if digital_char_count >= 50:
+                page_text = pypdf_text
+                used_parser = "pypdf"
+                if digital_char_count < 150 and PDFPLUMBER_AVAILABLE:
                     t_sub_start = time.perf_counter()
                     try:
                         plumber_text = _extract_page_pdfplumber(filepath, i)
@@ -337,71 +497,44 @@ def parse_pdf(
                             page_text = plumber_text
                             used_parser = "pdfplumber"
                             plumber_pages += 1
-                            _trace(f"[PARSER] Page {i + 1} — pdfplumber succeeded ({len(plumber_text.strip())} chars)")
-                    except Exception as e:
-                        page_failures.append({"page": i + 1, "parser": "pdfplumber", "reason": str(e)})
-                        _trace(f"[PARSER] Page {i + 1} — pdfplumber failed: {e}")
-                    t_sub_end = time.perf_counter()
-                    plumber_time += t_sub_end - t_sub_start
-                        
-            elif parser_name == "ocr":
-                if skip_ocr:
-                    _trace(f"[PARSER] Page {i + 1} — OCR skipped due to clean PDF flag")
-                    continue
-                if OCR_AVAILABLE:
-                    _trace(f"[PARSER] Page {i + 1} — text still empty, activating OCR fallback")
+                    except Exception:
+                        pass
+                    plumber_time += time.perf_counter() - t_sub_start
+            else:
+                # Scanned page -> Run OCR
+                if OCR_AVAILABLE and not skip_ocr:
                     t_sub_start = time.perf_counter()
                     try:
-                        ocr_text_page, ocr_conf = _extract_page_ocr(filepath, i)
-                        
-                        # OCR Sanity Framework checks
-                        valid_ocr = True
-                        reason = ""
-                        original_text_len = len(page_text.strip())
-                        
-                        if original_text_len > 0 and len(ocr_text_page.strip()) > original_text_len * 5:
-                            valid_ocr = False
-                            reason = f"OCR length ({len(ocr_text_page.strip())}) exceeds original ({original_text_len}) by >5x"
-                        else:
-                            import re
-                            if re.search(r"(.)\1{10,}", ocr_text_page):
-                                valid_ocr = False
-                                reason = "Repeated character pattern detected"
-                            else:
-                                ocr_metrics = evaluate_text_quality(ocr_text_page)
-                                if ocr_metrics["dict_word_ratio"] < 0.15:
-                                    valid_ocr = False
-                                    reason = f"Dictionary ratio too low ({ocr_metrics['dict_word_ratio']:.2f})"
-                                elif ocr_metrics["printable_ratio"] < 0.90:
-                                    valid_ocr = False
-                                    reason = f"Printable ratio too low ({ocr_metrics['printable_ratio']:.2f})"
-                                elif original_text_len > 0:
-                                    orig_metrics = evaluate_text_quality(page_text)
-                                    if ocr_metrics["quality_score"] < orig_metrics["quality_score"]:
-                                        valid_ocr = False
-                                        reason = f"OCR score ({ocr_metrics['quality_score']:.1f}) < Original ({orig_metrics['quality_score']:.1f})"
-                        
-                        if valid_ocr:
-                            if len(ocr_text_page.strip()) > original_text_len:
-                                page_text = ocr_text_page
-                                used_parser = "ocr"
-                                ocr_pages += 1
-                                ocr_confidences.append(ocr_conf)
-                                _trace(f"[PARSER] Page {i + 1} — OCR extraction completed ({len(ocr_text_page.strip())} chars) | Confidence: {ocr_conf:.1f}%")
-                            else:
-                                _trace(f"[PARSER] Page {i + 1} — OCR returned empty or shorter text")
-                        else:
-                            _trace(f"[PARSER] Page {i + 1} — OCR rejected: {reason}. Falling back to original extraction.")
+                        ocr_text_page, ocr_conf_val = _extract_page_ocr(filepath, i)
+                        page_text = ocr_text_page
+                        used_parser = "ocr"
+                        ocr_conf = ocr_conf_val
+                        ocr_pages += 1
+                        ocr_confidences.append(ocr_conf)
                     except Exception as e:
                         page_failures.append({"page": i + 1, "parser": "ocr", "reason": str(e)})
-                        _trace(f"[PARSER] Page {i + 1} — OCR failed: {e}")
-                    t_sub_end = time.perf_counter()
-                    ocr_time += t_sub_end - t_sub_start
+                        used_parser = "ocr"
+                    ocr_time += time.perf_counter() - t_sub_start
                 else:
-                    _trace(f"[PARSER] Page {i + 1} — scanned/image page detected but OCR unavailable (install pytesseract + pdf2image + poppler)")
+                    page_text = pypdf_text
+                    used_parser = "pypdf"
+        
+        parser_selection_overhead += time.perf_counter() - t_route_start
 
         if page_text:
             text_parts.append(page_text)
+
+        # Store page-level data
+        pages_list.append({
+            "page_number": i + 1,
+            "text": page_text,
+            "extraction_method": used_parser,
+            "ocr_engine": "tesseract" if used_parser == "ocr" else "none",
+            "ocr_confidence": ocr_conf,
+            "table_detected": table_detected,
+            "contains_signature": contains_signature,
+            "contains_handwriting": contains_handwriting,
+        })
 
         # ── character limit guard ────────────────────────────────────────────
         current_chars = sum(len(part) for part in text_parts)
@@ -492,7 +625,8 @@ def parse_pdf(
     rejection_reason = ""
     ocr_rescue_evaluation_time = 0.0
 
-    if primary_is_bad:
+    # Only run OCR rescue if document is NOT DIGITAL and OCR is available
+    if primary_is_bad and document_type != "DIGITAL":
         rejection_reasons = []
         if primary_metrics["printable_ratio"] < min_printable:
             rejection_reasons.append(f"printable_ratio {primary_metrics['printable_ratio']:.2%} < {min_printable:.2%}")
@@ -533,12 +667,18 @@ def parse_pdf(
                 _trace(f"[PARSER] OCR Rescue SUCCESS! OCR Quality Score ({ocr_score:.1f}) > Primary Quality Score ({primary_score:.1f}). Selecting OCR parse.")
                 selected_text = ocr_full_text
                 selected_parser = "ocr"
-                # Update stats
                 stats["parser"] = "ocr_fallback"
                 stats["ocr_pages"] = page_count
                 stats["ocr_confidences"] = ocr_page_confidences
                 stats["avg_ocr_confidence"] = sum(ocr_page_confidences) / len(ocr_page_confidences) if ocr_page_confidences else 100.0
                 stats["char_count"] = len(ocr_full_text)
+                
+                # Update pages list with OCR rescue results
+                for p_idx, page_info in enumerate(pages_list):
+                    page_info["text"] = ocr_text_parts[p_idx]
+                    page_info["extraction_method"] = "ocr"
+                    page_info["ocr_engine"] = "tesseract"
+                    page_info["ocr_confidence"] = ocr_page_confidences[p_idx]
             else:
                 _trace(f"[PARSER] OCR Rescue COMPLETED. OCR Quality Score ({ocr_score:.1f}) is not better than Primary Quality Score ({primary_score:.1f}). Retaining primary parse.")
         else:
@@ -581,4 +721,4 @@ def parse_pdf(
         f"failures={len(page_failures)}"
     )
 
-    return ParseResult(text=selected_text, stats=stats)
+    return ParseResult(text=selected_text, stats=stats, pages=pages_list)

@@ -1,0 +1,37 @@
+[
+  {
+    "query": "What do distributed ledger systems require?",
+    "expected_keyword": "throughput",
+    "expected_category": "B"
+  },
+  {
+    "query": "What does replication across nodes ensure?",
+    "expected_keyword": "reliability",
+    "expected_category": "C"
+  },
+  {
+    "query": "What is the authorization amount?",
+    "expected_keyword": "150,000",
+    "expected_category": "F"
+  },
+  {
+    "query": "Q1 total cost summary",
+    "expected_keyword": "4.2",
+    "expected_category": "F"
+  },
+  {
+    "query": "What kind of lighting should be used?",
+    "expected_keyword": "lighting",
+    "expected_category": "E"
+  },
+  {
+    "query": "Who signed the document?",
+    "expected_keyword": "john",
+    "expected_category": "G"
+  },
+  {
+    "query": "What style is the text written in?",
+    "expected_keyword": "cursive",
+    "expected_category": "H"
+  }
+]

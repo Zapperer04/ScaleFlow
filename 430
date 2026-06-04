@@ -1,6 +1,0 @@
-Traceback (most recent call last):
-  File "<string>", line 1, in <module>
-psycopg2.errors.DatatypeMismatch: argument of WHERE must be type boolean, not type integer
-LINE 1: ...ELECT id, status, created_at FROM pipelines WHERE id  ORDER ...
-                                                             ^
-
