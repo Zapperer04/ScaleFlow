@@ -150,3 +150,4 @@ def chunk_text(text: str) -> list[str]:
         raise RuntimeError(f"Chunk explosion detected: Generated {len(chunks)} chunks (limit is {max_chunks}).")
 
     return chunks
+

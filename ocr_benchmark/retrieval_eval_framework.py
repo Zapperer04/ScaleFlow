@@ -1,4 +1,5 @@
 import os
+os.environ["OMP_NUM_THREADS"] = "1"
 import sys
 import time
 import json
@@ -63,11 +64,23 @@ def extract_corpus_texts():
     return texts
 
 def evaluate_retrieval():
+    print("\n--- Loading Embedding Model ---")
+    import os
+    from pathlib import Path
+    
+    # Bypass HuggingFace network ping which was hanging indefinitely
+    cache_dir = Path.home() / ".cache" / "huggingface" / "hub" / "models--BAAI--bge-base-en-v1.5"
+    snapshots_dir = cache_dir / "snapshots"
+    snapshot = list(snapshots_dir.iterdir())[0] if snapshots_dir.exists() else None
+    
+    if snapshot:
+        model = SentenceTransformer(str(snapshot))
+    else:
+        model = SentenceTransformer("BAAI/bge-base-en-v1.5")
+    
     ground_truth = load_ground_truth()
     corpus_texts = extract_corpus_texts()
     
-    print("\n--- Loading Embedding Model ---")
-    model = SentenceTransformer("all-MiniLM-L6-v2")
     
     results = {}
     
@@ -98,7 +111,7 @@ def evaluate_retrieval():
         client = QdrantClient(":memory:")
         client.create_collection(
             collection_name="eval",
-            vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+            vectors_config=VectorParams(size=768, distance=Distance.COSINE)
         )
         client.upsert(collection_name="eval", points=points)
         

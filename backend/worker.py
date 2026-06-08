@@ -889,8 +889,8 @@ def handle_embed_query(payload, input_artifacts):
 
     artifact_data = {
         "query": query,
-        "embedding_model": "all-MiniLM-L6-v2",
-        "dimension": 384,
+        "embedding_model": "BAAI/bge-base-en-v1.5",
+        "dimension": 768,
         "vector": vector,
         "top_k": payload.get("top_k"),
         "pipeline_id_filter": payload.get("pipeline_id_filter"),
@@ -1496,7 +1496,7 @@ if __name__ == "__main__":
     print("WORKER MAIN STARTED", flush=True)
     try:
         from services.embedding_service import get_embedding_model
-        print(f"[{WORKER_ID}] [STARTUP] Preloading embedding model: all-MiniLM-L6-v2...", flush=True)
+        print(f"[{WORKER_ID}] [STARTUP] Preloading embedding model: BAAI/bge-base-en-v1.5...", flush=True)
         get_embedding_model()
         print(f"[{WORKER_ID}] [STARTUP] Embedding model preloaded successfully!", flush=True)
     except Exception as e:

@@ -3647,7 +3647,7 @@ def test_dag_flow():
         res_claim = client.post(f'/tasks/{embed_task["id"]}/claim', json={"worker_id": "test-worker"}, headers=headers)
         lease_token = res_claim.json['lease_token']
         
-        storage_uri, checksum = save_artifact_to_disk(pipeline_id, embed_task["id"], "vector_index", {"collection": "scaleflow_chunks", "vector_count": 1, "embedding_model": "all-MiniLM-L6-v2", "dimension": 384, "qdrant_upserted": True, "chunk_refs": []})
+        storage_uri, checksum = save_artifact_to_disk(pipeline_id, embed_task["id"], "vector_index", {"collection": "scaleflow_chunks", "vector_count": 1, "embedding_model": "BAAI/bge-base-en-v1.5", "dimension": 768, "qdrant_upserted": True, "chunk_refs": []})
         res_art = client.post('/artifacts', json={
             "pipeline_id": pipeline_id,
             "task_id": embed_task["id"],

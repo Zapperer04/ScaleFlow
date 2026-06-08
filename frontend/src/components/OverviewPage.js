@@ -147,6 +147,7 @@ const OverviewPage = ({
 
       const response = await createRetrievalPipeline(pipelinePayload);
       const queryPipelineId = response.pipeline_id;
+      const startTime = Date.now();
 
       // Poll until synthesized answer is complete
       let attempts = 0;
@@ -165,6 +166,10 @@ const OverviewPage = ({
       }
 
       const answerObj = answerData?.final_answer || answerData;
+      if (answerData && answerData.pipeline_id) {
+        answerObj.pipeline_id = answerData.pipeline_id;
+      }
+      answerObj.elapsed_seconds = (Date.now() - startTime) / 1000;
       setRagAnswer(answerObj);
       
       const retrieved = answerData?.retrieved_context?.results || answerData?.retrieved_chunks || [];
