@@ -1,153 +1,369 @@
 import re
 import sys
 import os
+from typing import List, Dict
 
 # Adjust path to find config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
-def _is_heading(line: str) -> bool:
-    stripped = line.strip()
-    # Markdown-style headings
-    if re.match(r'^#{1,4}\s', stripped):
+
+# Section detection patterns (as requested)
+SECTION_PATTERNS = [
+    r'^[A-Z][A-Z\s]{2,}$',
+    r'^\d+\.\s+[A-Z]',
+    r'^#{1,3}\s',
+    r'^(Education|Experience|Technical Skills|Skills|Projects|Summary|Objective|References)',
+    r'^(Introduction|Methodology|Results|Conclusion|Abstract|References)',
+    r'^(Chapter|Section|Part)\s+\d+'
+]
+
+
+def detect_content_type(text: str) -> str:
+    lines = [l for l in text.strip().split('\n') if l.strip()]
+    if not lines:
+        return 'paragraph'
+
+    # Table: contains | characters in multiple lines
+    if sum(1 for l in lines if '|' in l) >= 2:
+        return 'table'
+
+    # List: majority of lines start with bullet/number
+    bullet_lines = sum(1 for l in lines
+                      if l.strip().startswith(('•', '-', '*', '–'))
+                      or re.match(r'^\d+[\.\)]\s', l.strip()))
+    if bullet_lines / max(len(lines), 1) > 0.5:
+        return 'list'
+
+    # Heading: single short line
+    if len(lines) == 1 and len(text.strip()) < 100 and len(text.strip().split()) <= 6:
+        return 'heading'
+
+    return 'paragraph'
+
+
+def _match_section_header(line: str) -> bool:
+    s = line.strip()
+    if not s:
+        return False
+    
+    # Section headers must be reasonably short
+    if len(s) > 80 or len(s.split()) > 10:
+        return False
+        
+    # If the line ends with a period and has more than 3 words, it's likely a list item or sentence, not a header
+    if s.endswith('.') and len(s.split()) > 3:
+        return False
+
+    # The first pattern is strictly uppercase, handle it separately or use regex flags inline
+    if re.match(r'^[A-Z][A-Z\s]{2,}$', s):
         return True
-    # ALL CAPS lines of moderate length (section titles)
-    if (len(stripped) > 4 and len(stripped) < 80
-            and stripped == stripped.upper() and stripped.replace(" ", "").isalpha()):
-        return True
-    # Numbered sections like "1.2 Introduction" or "Chapter 3"
-    if re.match(r'^(chapter|section|appendix|part)?\s*\d+[.\d]*\s+\w', stripped, re.IGNORECASE):
-        return True
+    
+    for p in SECTION_PATTERNS[1:]:
+        if p == r'^\d+\.\s+[A-Z]':
+            if re.match(p, s):
+                return True
+        else:
+            if re.match(p, s, re.IGNORECASE):
+                return True
     return False
 
-def _words(s: str) -> int:
+
+def _token_count(s: str) -> int:
+    # Rough token approximation using whitespace-split words
     return len(s.split())
 
-def _get_overlap_text(paragraph: str) -> str:
-    """
-    Extract the end of the paragraph representing approximately CHUNK_OVERLAP_WORDS to CHUNK_OVERLAP_MAX_WORDS,
-    preserving sentence boundaries.
-    """
-    if not paragraph:
-        return ""
-    sentences = re.split(r'(?<=[.!?])\s+', paragraph)
-    if not sentences:
-        return ""
-    
-    current_block = []
-    current_words = 0
-    overlap_target = config.CHUNK_OVERLAP_WORDS
-    overlap_max = config.CHUNK_OVERLAP_MAX_WORDS
-    
-    for sent in reversed(sentences):
-        sent_words = len(sent.split())
-        if current_words + sent_words > overlap_max and current_block:
-            break
-        current_block.insert(0, sent)
-        current_words += sent_words
-        if current_words >= overlap_target:  # Target CHUNK_OVERLAP_WORDS
-            break
-            
-    res = " ".join(current_block)
-    if len(res.split()) > overlap_max:
-        res = " ".join(res.split()[-int(overlap_max * 0.75):])
-    return res
 
-def chunk_text(text: str) -> list[str]:
-    """
-    Split text into coherent, retrieval-optimised chunks:
-    - Paragraph-aware: never splits a paragraph mid-sentence
-    - Heading-aware: detected headings start fresh chunks
-    - Target size: configurable CHUNK_TARGET_WORDS
-    - Overlap size: configurable CHUNK_OVERLAP_WORDS
-    - Min chunk: configurable CHUNK_MIN_WORDS
-    - Max chunks: configurable MAX_CHUNKS
-    """
-    if not text:
-        return []
-        
-    target_words = config.CHUNK_TARGET_WORDS
-    min_words = config.CHUNK_MIN_WORDS
-    max_chunks = config.MAX_CHUNKS
+def _split_sentences(text: str) -> List[str]:
+    # naive sentence splitter that preserves punctuation
+    return [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
 
-    # ── step 1: split into paragraphs ────────────────────────────────────────
-    raw_paragraphs = re.split(r'\n{2,}', text)
-    paragraphs = []
-    for p in raw_paragraphs:
-        p = p.strip()
-        if not p:
-            continue
-        # Break at headings within a paragraph block
-        lines = p.splitlines()
-        current_block: list[str] = []
-        for line in lines:
-            if _is_heading(line) and current_block:
-                paragraphs.append(" ".join(current_block).strip())
-                current_block = [line]
-            else:
-                current_block.append(line)
-        if current_block:
-            paragraphs.append(" ".join(current_block).strip())
 
-    # Split overly large paragraphs into smaller sub-paragraphs (e.g. by sentence)
-    split_paragraphs = []
-    for para in paragraphs:
-        if _words(para) <= target_words:
-            split_paragraphs.append(para)
-        else:
-            sentences = re.split(r'(?<=[.!?])\s+', para)
-            current_sent_block: list[str] = []
-            current_sent_words = 0
-            for sent in sentences:
-                sent_words = _words(sent)
-                if current_sent_words + sent_words > target_words and current_sent_block:
-                    split_paragraphs.append(" ".join(current_sent_block))
-                    current_sent_block = []
-                    current_sent_words = 0
-                current_sent_block.append(sent)
-                current_sent_words += sent_words
-            if current_sent_block:
-                split_paragraphs.append(" ".join(current_sent_block))
-    paragraphs = split_paragraphs
+def _merge_sentences_to_chunks(sentences: List[str], max_tokens: int, overlap_tokens: int) -> List[str]:
+    chunks: List[str] = []
+    current: List[str] = []
+    current_tokens = 0
 
-    # ── step 2: accumulate paragraphs into chunks ─────────────────────────────
-    chunks: list[str] = []
-    current_chunk_parts: list[str] = []
-    current_word_count = 0
-    last_paragraph = ""   # kept for overlap bridge
+    for sent in sentences:
+        tok = _token_count(sent)
+        # If a single sentence exceeds max_tokens, emit it alone (can't split mid-sentence)
+        if tok >= max_tokens and current:
+            chunks.append(' '.join(current).strip())
+            current = []
+            current_tokens = 0
 
-    for para in paragraphs:
-        para_words = _words(para)
+        if current_tokens + tok > max_tokens and current:
+            chunks.append(' '.join(current).strip())
+            # overlap: keep last sentences until overlap_tokens satisfied
+            overlap_block: List[str] = []
+            overlap_count = 0
+            for s in reversed(current):
+                s_tok = _token_count(s)
+                if overlap_count + s_tok > overlap_tokens and overlap_block:
+                    break
+                overlap_block.insert(0, s)
+                overlap_count += s_tok
+            current = list(overlap_block)
+            current_tokens = overlap_count
 
-        # A heading or the addition of this paragraph would overflow — flush
-        if (_is_heading(para) or current_word_count + para_words > target_words) \
-                and current_chunk_parts:
-            chunk_text_val = "\n\n".join(current_chunk_parts).strip()
-            if _words(chunk_text_val) >= min_words:
-                chunks.append(chunk_text_val)
+        current.append(sent)
+        current_tokens += tok
 
-            # Overlap: carry last paragraph's end into next chunk
-            overlap_text = _get_overlap_text(last_paragraph) if last_paragraph else ""
-            current_chunk_parts = [overlap_text] if overlap_text else []
-            current_word_count = _words(overlap_text) if current_chunk_parts else 0
-
-        current_chunk_parts.append(para)
-        current_word_count += para_words
-        last_paragraph = para
-
-    # Flush final chunk
-    if current_chunk_parts:
-        chunk_text_val = "\n\n".join(current_chunk_parts).strip()
-        if _words(chunk_text_val) >= min_words:
-            chunks.append(chunk_text_val)
-
-    # Safety net for very short documents:
-    if not chunks and text.strip():
-        chunks.append(text.strip())
-
-    # ── step 3: resource cap ─────────────────────────────────────────────────
-    if len(chunks) > max_chunks:
-        raise RuntimeError(f"Chunk explosion detected: Generated {len(chunks)} chunks (limit is {max_chunks}).")
+    if current:
+        chunks.append(' '.join(current).strip())
 
     return chunks
 
+
+def chunk_text(text: str, page_number: int = 0) -> List[Dict]:
+    """
+    Intelligent semantic segmentation: returns list of dicts { 'text': ..., 'metadata': {...} }
+    Metadata includes: section, content_type, page_number, token_count, char_count
+    """
+    if not text:
+        return []
+
+    # Configurable parameters with sensible defaults
+    MAX_TOKENS = getattr(config, 'CHUNK_MAX_TOKENS', 400)
+    OVERLAP_TOKENS = getattr(config, 'CHUNK_OVERLAP_TOKENS', 50)
+    MIN_CHARS = getattr(config, 'CHUNK_MIN_CHARS', 50)
+    MAX_CHUNKS = getattr(config, 'MAX_CHUNKS', 1500)
+
+    lines = text.splitlines()
+
+    # Step 1: detect sections by scanning for headers
+    sections: List[Dict] = []
+    current_section = {'name': 'unknown', 'lines': []}
+
+    for line in lines:
+        if _match_section_header(line):
+            # start new section
+            if current_section['lines'] or current_section['name'] != 'unknown':
+                sections.append(current_section)
+            hdr = line.strip()
+            current_section = {'name': hdr, 'lines': []}
+        else:
+            current_section['lines'].append(line)
+
+    if current_section['lines'] or current_section['name'] != 'unknown':
+        sections.append(current_section)
+
+    # If we didn't detect any sections, treat whole text as one section
+    if not sections:
+        sections = [{'name': 'unknown', 'lines': lines}]
+
+    # Propagate empty parent headers context to sub-sections
+    propagated_sections = []
+    active_parent = None
+    for sec in sections:
+        sec_name = sec.get('name') or 'unknown'
+        sec_text = '\n'.join(sec.get('lines', [])).strip()
+        
+        # If a section is empty (contains no lines/text) and is a header, it's a parent header (e.g., "Chapter 4")
+        if not sec_text and sec_name != 'unknown':
+            active_parent = sec_name
+            continue
+            
+        # If active_parent is set, prefix or associate the current section with it
+        full_sec_name = sec_name
+        if active_parent and sec_name != 'unknown':
+            # If the current section is also a top-level header (e.g. Chapter), we reset active_parent
+            if re.match(r'^(Chapter|Part|Volume)\s+\d+', sec_name, re.IGNORECASE):
+                active_parent = None
+                full_sec_name = sec_name
+            else:
+                full_sec_name = f"{active_parent} > {sec_name}"
+            
+        propagated_sections.append({
+            'name': full_sec_name,
+            'lines': sec.get('lines', [])
+        })
+    sections = propagated_sections
+
+    segments: List[Dict] = []
+    for sec_idx, sec in enumerate(sections):
+        sec_name = sec.get('name') or 'unknown'
+        sec_text = '\n'.join(sec.get('lines', [])).strip()
+        if not sec_text:
+            continue
+
+        # Split section into paragraphs but preserve list blocks and tables
+        raw_paragraphs = re.split(r'\n{2,}', sec_text)
+        for para_idx, para in enumerate(raw_paragraphs):
+            para = para.strip()
+            if not para:
+                continue
+
+            ctype = detect_content_type(para)
+            parent_chunk_id = f"p{page_number}_s{sec_idx}_pa{para_idx}"
+
+            # If list or table, keep item-level granularity
+            if ctype == 'list':
+                items = [l for l in para.splitlines() if l.strip()]
+                # Each list item should not be split across chunks
+                for item_idx, item in enumerate(items):
+                    if len(item) < MIN_CHARS and len(items) > 1:
+                        if len(item.strip()) < 10:
+                            continue
+                    
+                    # Section-aware heading preservation
+                    formatted_text = item.strip()
+                    if sec_name != 'unknown':
+                        formatted_text = f"[Section: {sec_name}] {formatted_text}"
+
+                    segments.append({
+                        'text': formatted_text,
+                        'metadata': {
+                            'section': sec_name,
+                            'content_type': 'list',
+                            'page_number': page_number,
+                            'prev_page_number': page_number - 1 if page_number > 1 else None,
+                            'next_page_number': page_number + 1,
+                            'parent_chunk_id': parent_chunk_id,
+                            'child_chunk_id': f"{parent_chunk_id}_l{item_idx}",
+                            'token_count': _token_count(formatted_text),
+                            'char_count': len(formatted_text)
+                        }
+                    })
+                continue
+
+            if ctype == 'table':
+                # Keep entire table paragraph as one segment (do not split rows)
+                if len(para) >= MIN_CHARS:
+                    formatted_text = para
+                    if sec_name != 'unknown':
+                        formatted_text = f"[Section: {sec_name}] {formatted_text}"
+
+                    segments.append({
+                        'text': formatted_text,
+                        'metadata': {
+                            'section': sec_name,
+                            'content_type': 'table',
+                            'page_number': page_number,
+                            'prev_page_number': page_number - 1 if page_number > 1 else None,
+                            'next_page_number': page_number + 1,
+                            'parent_chunk_id': parent_chunk_id,
+                            'child_chunk_id': f"{parent_chunk_id}_tbl",
+                            'token_count': _token_count(formatted_text),
+                            'char_count': len(formatted_text)
+                        }
+                    })
+                continue
+
+            # Paragraph or mixed content: split by sentences and then merge into chunks
+            sentences = _split_sentences(para)
+            if not sentences:
+                # fallback: treat as single paragraph
+                if len(para) >= MIN_CHARS or ctype == 'heading':
+                    formatted_text = para
+                    if sec_name != 'unknown':
+                        formatted_text = f"[Section: {sec_name}] {formatted_text}"
+
+                    segments.append({
+                        'text': formatted_text,
+                        'metadata': {
+                            'section': sec_name,
+                            'content_type': ctype,
+                            'page_number': page_number,
+                            'prev_page_number': page_number - 1 if page_number > 1 else None,
+                            'next_page_number': page_number + 1,
+                            'parent_chunk_id': parent_chunk_id,
+                            'child_chunk_id': f"{parent_chunk_id}_fb",
+                            'token_count': _token_count(formatted_text),
+                            'char_count': len(formatted_text)
+                        }
+                    })
+                continue
+
+            merged = _merge_sentences_to_chunks(sentences, MAX_TOKENS, OVERLAP_TOKENS)
+            for m_idx, m in enumerate(merged):
+                # Keep if it meets the length requirement, is a heading, or is the only content generated from this block
+                if len(m) < MIN_CHARS and ctype != 'heading' and len(merged) > 1:
+                    continue
+
+                formatted_text = m
+                if sec_name != 'unknown':
+                    formatted_text = f"[Section: {sec_name}] {formatted_text}"
+
+                segments.append({
+                    'text': formatted_text,
+                    'metadata': {
+                        'section': sec_name,
+                        'content_type': detect_content_type(m),
+                        'page_number': page_number,
+                        'prev_page_number': page_number - 1 if page_number > 1 else None,
+                        'next_page_number': page_number + 1,
+                        'parent_chunk_id': parent_chunk_id,
+                        'child_chunk_id': f"{parent_chunk_id}_c{m_idx}",
+                        'token_count': _token_count(formatted_text),
+                        'char_count': len(formatted_text)
+                    }
+                })
+
+    # final safety cap
+    if len(segments) > MAX_CHUNKS:
+        raise RuntimeError(f"Chunk explosion detected: Generated {len(segments)} segments (limit is {MAX_CHUNKS}).")
+
+    return segments
+
+
+def chunk_text_parent_child(text: str) -> dict:
+    """
+    Generate parent chunks of target 1200 words [800, 1600]
+    and child chunks of target 300 words with 50 words overlap.
+    Returns:
+        {"parents": {parent_id: text}, "children": [{"text": text, "parent_id": id, "child_id": id}]}
+    """
+    if not text:
+        return {"parents": {}, "children": []}
+        
+    paragraphs = re.split(r'\n{2,}', text.strip())
+    parents = {}
+    children = []
+    
+    current_parent = []
+    current_parent_words = 0
+    parent_id_counter = 0
+    child_id_counter = 0
+    
+    def process_parent(p_paras, p_id):
+        p_text = "\n\n".join(p_paras).strip()
+        parents[p_id] = p_text
+        
+        words = p_text.split()
+        target_child_len = 300
+        overlap_len = 50
+        
+        i = 0
+        nonlocal child_id_counter
+        while i < len(words):
+            child_words = words[i:i + target_child_len]
+            if not child_words:
+                break
+            child_text = " ".join(child_words)
+            children.append({
+                "text": child_text,
+                "parent_id": p_id,
+                "child_id": f"child_{child_id_counter}"
+            })
+            child_id_counter += 1
+            i += (target_child_len - overlap_len)
+            
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+        p_words = len(para.split())
+        if current_parent_words + p_words > 1200 and current_parent_words >= 800:
+            process_parent(current_parent, f"parent_{parent_id_counter}")
+            parent_id_counter += 1
+            current_parent = [para]
+            current_parent_words = p_words
+        else:
+            current_parent.append(para)
+            current_parent_words += p_words
+            
+    if current_parent:
+        process_parent(current_parent, f"parent_{parent_id_counter}")
+        
+    return {"parents": parents, "children": children}

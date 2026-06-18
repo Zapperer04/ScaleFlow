@@ -1,3 +1,0 @@
-ScaleFlow/Categoryl Di Noisy DocumentTest
-Heartbeat intervalsare trackede every10 seconds
-Background noise will be simulated here.

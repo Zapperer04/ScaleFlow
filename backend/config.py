@@ -25,10 +25,26 @@ CHUNK_OVERLAP_WORDS = int(os.getenv("CHUNK_OVERLAP_WORDS", "55"))
 CHUNK_OVERLAP_MAX_WORDS = int(os.getenv("CHUNK_OVERLAP_MAX_WORDS", "100"))
 MAX_CHARACTER_LIMIT = int(os.getenv("MAX_CHARACTER_LIMIT", "2000000"))
 
+# New token/char based chunking defaults for intelligent chunker
+CHUNK_MAX_TOKENS = int(os.getenv("CHUNK_MAX_TOKENS", "400"))
+CHUNK_OVERLAP_TOKENS = int(os.getenv("CHUNK_OVERLAP_TOKENS", "50"))
+CHUNK_MIN_CHARS = int(os.getenv("CHUNK_MIN_CHARS", "50"))
+
 # 2. Quality / Coherence Thresholds
-MIN_PRINTABLE_RATIO = float(os.getenv("MIN_PRINTABLE_RATIO", "0.85"))
-MIN_DICTIONARY_WORD_RATIO = float(os.getenv("MIN_DICTIONARY_WORD_RATIO", "0.20"))
-MIN_TEXT_COHERENCE_SCORE = float(os.getenv("MIN_TEXT_COHERENCE_SCORE", "60.0"))
+MIN_PRINTABLE_RATIO = float(os.getenv("MIN_PRINTABLE_RATIO", "0.80"))
+MIN_QUALITY_CONFIDENCE = float(os.getenv("MIN_QUALITY_CONFIDENCE", "50.0"))
+
+# Signal Ensemble Weights (DIGITAL / MIXED)
+WEIGHT_WORD_LENGTH_DIGITAL = float(os.getenv("WEIGHT_WORD_LENGTH_DIGITAL", "40.0"))
+WEIGHT_WHITESPACE_DIGITAL = float(os.getenv("WEIGHT_WHITESPACE_DIGITAL", "30.0"))
+WEIGHT_LINE_COHERENCE_DIGITAL = float(os.getenv("WEIGHT_LINE_COHERENCE_DIGITAL", "30.0"))
+
+# Signal Ensemble Weights (SCANNED)
+WEIGHT_WORD_LENGTH_SCANNED = float(os.getenv("WEIGHT_WORD_LENGTH_SCANNED", "20.0"))
+WEIGHT_WHITESPACE_SCANNED = float(os.getenv("WEIGHT_WHITESPACE_SCANNED", "20.0"))
+WEIGHT_LINE_COHERENCE_SCANNED = float(os.getenv("WEIGHT_LINE_COHERENCE_SCANNED", "20.0"))
+WEIGHT_OCR_CONFUSION = float(os.getenv("WEIGHT_OCR_CONFUSION", "20.0"))
+WEIGHT_LINE_REPETITION = float(os.getenv("WEIGHT_LINE_REPETITION", "20.0"))
 
 # 3. OCR / Parsing Config
 MIN_OCR_CONFIDENCE = float(os.getenv("MIN_OCR_CONFIDENCE", "70.0"))
@@ -91,3 +107,9 @@ PREPROCESS_ENABLE_SHARPEN     = os.getenv("PREPROCESS_ENABLE_SHARPEN", "False").
 # but its bin directory is not yet on PATH (e.g. after a fresh winget install).
 PREPROCESS_POPPLER_PATH       = os.getenv("PREPROCESS_POPPLER_PATH", "")
 
+PREPROCESS_ENHANCE_TIMEOUT_SECS = 60
+
+# 9. Qdrant Multi-Collection Config
+QDRANT_PARAGRAPH_COLLECTION = "scaleflow_paragraphs"
+QDRANT_TABLE_COLLECTION = "scaleflow_tables"
+QDRANT_COLLECTION_NAME = "scaleflow_chunks"  # keep as unified fallback

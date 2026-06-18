@@ -12,7 +12,6 @@ import PipelineDashboard from './components/PipelineDashboard';
 import WorkersPage from './components/WorkersPage';
 import ReplayPage from './components/ReplayPage';
 import ArchitectureOverview from './components/ArchitectureOverview';
-import InterviewGuide from './components/InterviewGuide';
 import DiagnosticsPage from './components/DiagnosticsPage';
 import TaskModal from './components/TaskModal';
 import ValidationLab from './components/ValidationLab';
@@ -294,13 +293,7 @@ function App() {
               <Layers size={18} />
               System Architecture
             </button>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'interview' ? 'active' : ''}`}
-              onClick={() => handleNavigateToView('interview')}
-            >
-              <BookOpen size={18} />
-              Interview Guide
-            </button>
+            
             <button 
               className={`sidebar-nav-item ${activeView === 'diagnostics' ? 'active' : ''}`}
               onClick={() => handleNavigateToView('diagnostics')}
@@ -370,7 +363,7 @@ function App() {
               {activeView === 'vectors' && 'Vector Search Observability'}
               {activeView === 'replay' && 'Deterministic Time Travel Replay'}
               {activeView === 'architecture' && 'ScaleFlow System Architecture'}
-              {activeView === 'interview' && 'Engineering Interview Guide'}
+              
               {activeView === 'diagnostics' && 'Diagnostics & Dead-Letter Queue'}
             </span>
             
@@ -471,7 +464,7 @@ function App() {
 
           {activeView === 'architecture' && <ArchitectureOverview />}
 
-          {activeView === 'interview' && <InterviewGuide />}
+          
 
           {activeView === 'diagnostics' && <DiagnosticsPage />}
         </div>

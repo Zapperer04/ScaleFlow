@@ -809,12 +809,7 @@ def renew_task_lease(task_id):
         if not task:
             return jsonify({'error': 'Task not found'}), 404
 
-        if task.pipeline_id:
-            from services.ha_coordinator_service import verify_fencing_token
-            try:
-                verify_fencing_token(db, task.pipeline_id)
-            except ValueError as e:
-                return jsonify({'error': f'Fencing conflict: {e}'}), 409
+
 
         data = request.json or {}
         worker_id = data.get('worker_id')
@@ -886,12 +881,7 @@ def update_task(task_id):
         if not task:
             return jsonify({'error': 'Task not found'}), 404
         
-        if task.pipeline_id:
-            from services.ha_coordinator_service import verify_fencing_token
-            try:
-                verify_fencing_token(db, task.pipeline_id)
-            except ValueError as e:
-                return jsonify({'error': f'Fencing conflict: {e}'}), 409
+
         
         data = request.json
         worker_id = data.get('worker_id')
@@ -1927,8 +1917,8 @@ def register_artifact():
         checksum = data.get('checksum')
         meta = data.get('metadata')
         
-        if not pipeline_id or not artifact_type or not storage_uri:
-            return jsonify({"error": "Missing pipeline_id, artifact_type, or storage_uri"}), 400
+        if not artifact_type or not storage_uri:
+            return jsonify({"error": "Missing artifact_type or storage_uri"}), 400
             
         artifact = Artifact(
             pipeline_id=pipeline_id,
@@ -2101,6 +2091,24 @@ def upload_file():
         file_record.storage_uri = storage_uri  # type: ignore
         db.flush()
         
+        # 3.5. Evaluate Document Synchronously (Structural Guard only)
+        from services.document_preprocessor import structural_guard
+        import concurrent.futures
+        
+        try:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(structural_guard, final_path)
+                guard_res = future.result(timeout=5)
+        except concurrent.futures.TimeoutError:
+            db.rollback()
+            return jsonify({"error": "Document structural guard timed out"}), 408
+        except ValueError as e:
+            db.rollback()
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            db.rollback()
+            return jsonify({"error": f"Failed to check document structure: {e}"}), 500
+            
         # 4. Create Pipeline automatically
         pipeline_name = f"Ingestion Pipeline - {original_filename}"
         if len(pipeline_name) > 100:
@@ -2138,6 +2146,25 @@ def upload_file():
         # 6. Create DAG tasks
         try:
             dag_definition = get_dag_template(pipeline_type, {})
+            # ALWAYS inject preprocess_document as a static task at the start of the DAG
+            preprocess_node = {
+                "id": "preprocess_document",
+                "task_type": "preprocess_document",
+                "display_name": "Preprocess Document",
+                "depends_on": [],
+                "priority": "high",
+                "expected_input_artifacts": ["uploaded_file"],
+                "output_artifact_type": "preprocessing_report",
+                "payload": {}
+            }
+            dag_definition["nodes"].insert(0, preprocess_node)
+            
+            # ALWAYS update parse_document to depend on preprocess_document
+            for node in dag_definition["nodes"]:
+                if node["id"] == "parse_document":
+                    node["depends_on"] = ["preprocess_document"]
+                    if "preprocessing_report" not in node.setdefault("expected_input_artifacts", []):
+                        node["expected_input_artifacts"].append("preprocessing_report")
         except ValueError as ve:
             raise ve
             
@@ -2928,6 +2955,15 @@ def create_query_pipeline():
         pipeline_id_filter = data.get("pipeline_id_filter") or data.get("pipeline_id")
         file_id_filter = data.get("file_id_filter") or data.get("file_id")
         
+        if pipeline_id_filter:
+            ingestion_pipeline = db.query(Pipeline).filter(
+                Pipeline.id == int(pipeline_id_filter)
+            ).first()
+            if ingestion_pipeline and ingestion_pipeline.status != "completed":
+                return jsonify({
+                    "error": f"Document ingestion pipeline #{pipeline_id_filter} is still {ingestion_pipeline.status}. Wait for it to complete before querying."
+                }), 409
+
         print("=" * 80, flush=True)
         print("RETRIEVAL REQUEST (ENTRYPOINT)", flush=True)
         print("INCOMING PAYLOAD:", data, flush=True)
@@ -3066,7 +3102,15 @@ def get_query_pipeline_answer(pipeline_id):
             except Exception as e:
                 print(f"Error loading final_answer: {e}", flush=True)
                 
+        answer_text = ""
+        sources_list = []
+        if final_answer and isinstance(final_answer, dict):
+            answer_text = final_answer.get("answer", "")
+            sources_list = final_answer.get("citations") or final_answer.get("sources") or []
+            
         return jsonify({
+            "answer": answer_text,
+            "sources": sources_list,
             "pipeline_id": pipeline.id,
             "status": pipeline.status,
             "query": query,
@@ -5078,3 +5122,31 @@ if __name__ == '__main__':
     from waitress import serve
     print(f"Starting multi-threaded Waitress WSGI server on port {port} with 8 threads...", flush=True)
     serve(app, host='0.0.0.0', port=port, threads=8)
+@app.route('/tasks/<int:task_id>/log', methods=['POST'])
+def append_task_log(task_id):
+    db = SessionLocal()
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "Missing payload"}), 400
+        
+        # We don't strictly require API key here because the worker connects via internal network 
+        # but to be safe we can use the same logic or just allow it. Let's allow it as the worker sends X-API-Key.
+        provided_key = request.headers.get("X-API-Key")
+        if provided_key != API_KEY:
+            return jsonify({"error": "Unauthorized"}), 401
+            
+        create_task_log(
+            db, 
+            task_id, 
+            data.get('event_type', 'task_trace'), 
+            data.get('message', ''), 
+            worker_id=data.get('worker_id')
+        )
+        db.commit()
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()

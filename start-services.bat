@@ -30,7 +30,21 @@ goto INVALID
 :DOCKER
 echo.
 echo 🐳 Starting Redis and 3 Workers using Docker Compose...
-docker compose up
+docker info >nul 2>&1
+if %errorlevel% equ 0 goto DOCKER_ONLINE_1
+
+echo   [INFO] Docker is not running. Starting Docker Desktop...
+start "" "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+echo   [INFO] Waiting for Docker Engine to initialize (this may take a minute)...
+
+:WAIT_DOCKER_1
+timeout /t 5 >nul
+docker info >nul 2>&1
+if %errorlevel% neq 0 goto WAIT_DOCKER_1
+echo   [SUCCESS] Docker Engine is now online.
+
+:DOCKER_ONLINE_1
+docker compose up redis worker1 worker2 worker3 qdrant postgres
 pause
 goto EXIT
 
@@ -65,15 +79,38 @@ echo.
 echo ⚡ Orchestrating ScaleFlow Startup Sequence...
 echo.
 
+:: Check backend virtual environment first to prevent silent backend launch failures
+if not exist backend\venv (
+    echo [ERROR] Virtual environment 'venv' not found in backend directory.
+    echo Please run 'python -m venv venv' and install 'requirements.txt' inside 'backend' folder first.
+    pause
+    goto EXIT
+)
+
 :: 1. Launch Redis and Workers in Docker (in a new window if docker is available)
-echo - Checking Docker daemon and starting containers...
-start "ScaleFlow - Docker Workers & Redis" cmd /c "docker compose up"
+echo - Checking Docker daemon...
+docker info >nul 2>&1
+if %errorlevel% equ 0 goto DOCKER_ONLINE_4
+
+echo   [INFO] Docker is not running. Starting Docker Desktop...
+start "" "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+echo   [INFO] Waiting for Docker Engine to initialize (this may take a minute)...
+
+:WAIT_DOCKER_4
+timeout /t 5 >nul
+docker info >nul 2>&1
+if %errorlevel% neq 0 goto WAIT_DOCKER_4
+echo   [SUCCESS] Docker Engine is now online.
+
+:DOCKER_ONLINE_4
+echo - Starting containers...
+start "ScaleFlow - Docker Workers & Redis" cmd /c "docker compose up redis worker1 worker2 worker3 qdrant postgres"
 
 :: 2. Launch Flask API Backend
 echo - Launching Flask API Backend...
-start "ScaleFlow - Flask Backend API" cmd /c "cd backend && venv\Scripts\python.exe app.py"
+start "ScaleFlow - Flask API Backend" cmd /c "cd backend && venv\Scripts\python.exe app.py"
 
-:: 3. Launch React Frontend
+:: 3. Launch React Dashboard Frontend
 echo - Launching React Dashboard Frontend...
 start "ScaleFlow - React Frontend" cmd /c "cd frontend && npm start"
 

@@ -104,10 +104,10 @@ const VectorSearchPage = () => {
       // Pull answer
       let attempts = 0;
       let answerData = null;
-      while (attempts < 10) {
+      while (attempts < 40) {
         await new Promise(r => setTimeout(r, 1000));
         answerData = await fetchRetrievalPipelineAnswer(pipelineId);
-        if (answerData && (answerData.answer || answerData.status === 'completed' || answerData.status === 'failed')) {
+        if (answerData && ((answerData.final_answer && answerData.final_answer.answer) || answerData.answer || answerData.status === 'completed' || answerData.status === 'failed')) {
           break;
         }
         attempts++;
@@ -118,7 +118,9 @@ const VectorSearchPage = () => {
       }
 
       setRagAnswer(answerData);
-      if (answerData?.retrieved_chunks) {
+      if (answerData?.retrieved_context?.results) {
+        setResults(answerData.retrieved_context.results);
+      } else if (answerData?.retrieved_chunks) {
         setResults(answerData.retrieved_chunks);
       }
       
@@ -330,7 +332,7 @@ const VectorSearchPage = () => {
             <h2 style={{ fontSize: '1.1rem', margin: 0, fontWeight: 700, color: '#fff' }}>Synthesized RAG Answer</h2>
           </div>
           <div style={{ fontSize: '1rem', color: '#cbd5e1', lineHeight: 1.6, whiteSpace: 'pre-wrap', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.04)' }}>
-            {ragAnswer.answer}
+            {ragAnswer.final_answer?.answer || ragAnswer.answer}
           </div>
           <div style={{ display: 'flex', gap: '16px', marginTop: '12px', fontSize: '0.75rem', color: '#94a3b8' }}>
             <span>Pipeline: #{ragAnswer.pipeline_id}</span>
@@ -369,6 +371,14 @@ const VectorSearchPage = () => {
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {hit.rerank_score !== undefined && hit.rerank_score !== null && (
+                        <>
+                          <span style={{ fontSize: '0.75rem', color: '#a78bfa', fontWeight: 600 }}>Rerank Score:</span>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#a78bfa', marginRight: '12px' }}>
+                            {typeof hit.rerank_score === 'number' ? hit.rerank_score.toFixed(4) : hit.rerank_score}
+                          </span>
+                        </>
+                      )}
                       <span style={{ fontSize: '0.75rem', color: '#cbd5e1' }}>Similarity Score:</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <div className="progress-bar-outer" style={{ width: '80px', height: '6px', margin: 0 }}>

@@ -1,5 +1,0 @@
-scale Flow Category C: Skewed Document Test
-
-Replication across nodesensures reliability.
-
-Thisdocument hasa significant rotation/skew angle.

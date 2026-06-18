@@ -9,35 +9,64 @@ from services.vector_store import search_similar
 def retrieve_context(query_vector: list, pipeline_id: int, top_k: int = None, query: str = "") -> dict:
     """
     Retrieve semantic context chunks from vector store.
-    
-    Parameters
-    ----------
-    query_vector : dense vector representation of the query
-    pipeline_id  : document-scoped filter constraint
-    top_k        : number of results to fetch
-    query        : optional original query text
-    
-    Returns
-    -------
-    Dictionary of retrieval results.
+    Delegates to retrieve_and_rerank to get the benefits of multi-collection search,
+    deduplication, and reranking.
     """
     if top_k is None:
         top_k = config.DEFAULT_RETRIEVAL_TOP_K
         
-    filters = {"pipeline_id": pipeline_id}
+    return retrieve_and_rerank(query_vector=query_vector, pipeline_id=pipeline_id, top_k=top_k, query=query)
+
+from services.reranker_service import rerank
+
+def detect_query_intent(query: str) -> list[str]:
+    # Cleaned up: remove all keyword-driven collection routing. Search all relevant collections uniformly.
+    return [config.QDRANT_PARAGRAPH_COLLECTION, config.QDRANT_TABLE_COLLECTION]
+
+def retrieve_and_rerank(query_vector: list, pipeline_id: int, top_k: int = 5, query: str = "") -> dict:
+    """
+    Retrieve and rerank retrieved chunks.
+    pipeline_id=None performs a global search across all indexed documents.
+    """
+    collections = detect_query_intent(query)
     
-    # Qdrant similarity search
-    results = search_similar("scaleflow_chunks", query_vector, top_k=top_k, filters=filters)
+    # Print search collections log for worker telemetry / visibility
+    print(f"[RETRIEVAL] SEARCHING COLLECTIONS: {collections} for query: '{query}'", flush=True)
     
-    # Filter by MIN_RETRIEVAL_SCORE
-    min_score = config.MIN_RETRIEVAL_SCORE
-    filtered_results = [r for r in results if float(r.get("score") or 0.0) >= min_score or r.get("chunk_index") == -1]
+    # Only filter by pipeline_id when explicitly provided
+    filters = {"pipeline_id": pipeline_id} if pipeline_id is not None else None
+
+    all_candidates = []
+    for collection in collections:
+        results = search_similar(
+            collection_name=collection,
+            query_vector=query_vector,
+            top_k=top_k * 3,  # retrieve 3x more for reranker to work with
+            filters=filters
+        )
+        all_candidates.extend(results)
     
-    # Fallback: if scoped to a specific pipeline and nothing passed, bypass threshold
-    if not filtered_results and results:
-        filtered_results = results
-        
+    if not all_candidates:
+        return {
+            "query": query,
+            "results": []
+        }
+    
+    # Deduplicate by normalized text content to avoid duplicate chunks from multiple runs
+    seen = set()
+    unique_candidates = []
+    for c in all_candidates:
+        text_content = (c.get("chunk_text") or c.get("text") or "").strip()
+        if text_content and text_content not in seen:
+            seen.add(text_content)
+            unique_candidates.append(c)
+    
+    # Step 3: Rerank
+    reranked = rerank(query, unique_candidates, top_k=top_k)
+    
     return {
         "query": query,
-        "results": filtered_results
+        "results": reranked
     }
+
+

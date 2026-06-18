@@ -4,29 +4,14 @@ TEMPLATES = {
     "document_processing_demo": {
         "name": "Document Processing Demo",
         "nodes": [
-            # ── Stage 1: Pre-parse quality evaluation and enhancement ──────────
-            # Evaluates blur, DPI, contrast, skew, noise, and content flags
-            # (handwriting, signature, tables, image regions).
-            # Applies image enhancement if quality is below thresholds.
-            # Hard-rejects encrypted or corrupted PDFs before any parsing work begins.
-            {
-                "id": "preprocess_document",
-                "task_type": "preprocess_document",
-                "display_name": "Preprocess Document",
-                "depends_on": [],
-                "priority": "high",
-                "expected_input_artifacts": [],
-                "output_artifact_type": "preprocessing_report",
-                "payload": {}
-            },
-            # ── Stage 2: Parse (uses enhanced file if preprocessing produced one) ─
+            # ── Stage 2: Parse (enhance_document may be dynamically injected before this by app.py) ─
             {
                 "id": "parse_document",
                 "task_type": "parse_document",
                 "display_name": "Parse Document",
-                "depends_on": ["preprocess_document"],
+                "depends_on": [],
                 "priority": "high",
-                "expected_input_artifacts": ["preprocessing_report"],
+                "expected_input_artifacts": ["preprocessing_report", "uploaded_file"],
                 "output_artifact_type": "parsed_text",
                 "payload": {}
             },

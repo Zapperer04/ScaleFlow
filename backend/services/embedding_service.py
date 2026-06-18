@@ -35,8 +35,9 @@ def get_embedding_model():
         if config.EMBEDDING_QUANTIZATION:
             logger.info("Applying eager-mode dynamic quantization to embedding model...")
             auto_model = loaded_model[0].auto_model
+            import torch.nn as nn
             quantized_auto_model = torch.quantization.quantize_dynamic(
-                auto_model, {torch.nn.Linear}, dtype=torch.qint8
+                auto_model, {nn.Linear}, dtype=torch.qint8
             )
             loaded_model[0].auto_model = quantized_auto_model
             logger.info("Dynamic quantization applied successfully!")

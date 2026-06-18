@@ -98,12 +98,12 @@ class Pipeline(Base):
             'name': self.name,
             'pipeline_type': self.pipeline_type,
             'status': self.status,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'started_at': self.started_at.isoformat() if self.started_at else None,
-            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'started_at': self.started_at.isoformat() + 'Z' if self.started_at else None,
+            'completed_at': self.completed_at.isoformat() + 'Z' if self.completed_at else None,
             'error_message': self.error_message,
             'owner_instance_id': self.owner_instance_id,
-            'owner_lease_expires_at': self.owner_lease_expires_at.isoformat() if self.owner_lease_expires_at else None,
+            'owner_lease_expires_at': self.owner_lease_expires_at.isoformat() + 'Z' if self.owner_lease_expires_at else None,
             'ownership_version': self.ownership_version,
             'is_critical': self.is_critical
         }
@@ -129,7 +129,7 @@ class Artifact(Base):
             'storage_uri': self.storage_uri,
             'metadata_json': json.loads(self.metadata_json) if self.metadata_json else None,
             'checksum': self.checksum,
-            'created_at': self.created_at.isoformat() if self.created_at else None
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None
         }
 
 class TaskDependency(Base):
@@ -153,7 +153,7 @@ class TaskLog(Base):
             'event_type': self.event_type,
             'message': self.message,
             'worker_id': self.worker_id,
-            'created_at': self.created_at.isoformat() if self.created_at else None
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None
         }
 
 class Task(Base):
@@ -236,22 +236,22 @@ class Task(Base):
             'retry_count': self.retry_count,
             'max_retries': self.max_retries,
             'error_message': self.error_message,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'started_at': self.started_at.isoformat() if self.started_at else None,
-            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'started_at': self.started_at.isoformat() + 'Z' if self.started_at else None,
+            'completed_at': self.completed_at.isoformat() + 'Z' if self.completed_at else None,
             'assigned_worker_id': self.assigned_worker_id,
             'lease_token': self.lease_token,
-            'lease_expires_at': self.lease_expires_at.isoformat() if self.lease_expires_at else None,
+            'lease_expires_at': self.lease_expires_at.isoformat() + 'Z' if self.lease_expires_at else None,
             'recovered_count': self.recovered_count,
             'lease_renewal_count': self.lease_renewal_count,
             'pipeline_id': self.pipeline_id,
             'input_artifact_ids': input_ids,
             'output_artifact_ids': output_ids,
             'blocked_reason': self.blocked_reason,
-            'deferred_at': self.deferred_at.isoformat() if self.deferred_at else None,
+            'deferred_at': self.deferred_at.isoformat() + 'Z' if self.deferred_at else None,
             'queue_wait_duration': round(queue_wait, 2),
             'execution_duration': round(execution, 2),
-            'last_progress_at': self.last_progress_at.isoformat() if self.last_progress_at else None,
+            'last_progress_at': self.last_progress_at.isoformat() + 'Z' if self.last_progress_at else None,
             'progress_json': json.loads(self.progress_json) if self.progress_json else None
         }
 
@@ -277,7 +277,7 @@ class FileRecord(Base):
             'size_bytes': self.size_bytes,
             'status': self.status,
             'pipeline_id': self.pipeline_id,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
             'error_message': self.error_message
         }
 
@@ -309,7 +309,7 @@ class OrchestrationEvent(Base):
             'lease_token': self.lease_token,
             'correlation_id': self.correlation_id,
             'payload_json': json.loads(self.payload_json) if self.payload_json else {},
-            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
             'segment_index': self.segment_index
         }
 
@@ -329,7 +329,7 @@ class OrchestrationSnapshot(Base):
             'pipeline_id': self.pipeline_id,
             'last_event_id': self.last_event_id,
             'snapshot_data': json.loads(self.snapshot_data) if self.snapshot_data else {},
-            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
             'segment_index': self.segment_index
         }
 
@@ -344,7 +344,7 @@ class OrchestratorInstance(Base):
         return {
             'instance_id': self.instance_id,
             'is_leader': self.is_leader,
-            'last_heartbeat': self.last_heartbeat.isoformat() if self.last_heartbeat else None,
+            'last_heartbeat': self.last_heartbeat.isoformat() + 'Z' if self.last_heartbeat else None,
             'status': self.status
         }
 
@@ -369,7 +369,7 @@ class WorkerRegistry(Base):
             'worker_id': self.worker_id,
             'capabilities': caps,
             'resource_limits': res_lim,
-            'last_seen': self.last_seen.isoformat() if self.last_seen else None,
+            'last_seen': self.last_seen.isoformat() + 'Z' if self.last_seen else None,
             'status': self.status
         }
 
@@ -390,6 +390,8 @@ def init_db():
         ("tasks", "output_artifact_ids", "TEXT"),
         ("tasks", "blocked_reason", "TEXT"),
         ("tasks", "deferred_at", "TIMESTAMP"),
+        ("tasks", "last_progress_at", "TIMESTAMP"),
+        ("tasks", "progress_json", "TEXT"),
         
         ("pipelines", "owner_instance_id", "VARCHAR(100)"),
         ("pipelines", "owner_lease_expires_at", "TIMESTAMP"),
@@ -425,4 +427,4 @@ def init_db():
                     conn.execute(text(f"CREATE INDEX {idx_name} ON {table} ({col})"))
             except Exception:
                 pass
-
+

@@ -1,6 +1,0 @@
-Lecture Notes Introduction: tol Distributed Systems
-1. Replication and Consistency modelsguarantee state agreements
-2. Vector clocksare used tocapture causal relationships in messages
-3.1 Raft uses leadere election and consensust tor replicate logssafely.
-4. Paxosi isanothero consensusalgorithm butish harder toi implement
-5. Byzantine fault tolerance handlesarbitrary failuresi including maliciousactors

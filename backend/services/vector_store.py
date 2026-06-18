@@ -2,8 +2,6 @@ import os
 import uuid
 import logging
 from datetime import datetime
-from qdrant_client import QdrantClient
-from qdrant_client.http import models as qmodels
 
 logger = logging.getLogger(__name__)
 
@@ -14,22 +12,92 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
-# Initialize client
-if os.environ.get("DB_MODE") == "sqlite":
-    logger.info("SQLite mode detected: Using in-memory QdrantClient fallback")
-    client = QdrantClient(location=":memory:")
-else:
+# Lazily-initialized Qdrant client so importing this module doesn't require the
+# `qdrant_client` package to be installed (useful for unit/integration tests
+# that mock the upsert/search functions).
+_client = None
+
+def get_client():
+    global _client
+    if _client is not None:
+        return _client
+
     try:
-        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=3.0)
-        client.get_collections()
+        from qdrant_client import QdrantClient
+        from qdrant_client.http import models as qmodels  # noqa: F401
+    except Exception:
+        # qdrant_client is not available; raise a clear ImportError when actually
+        # attempting to use the client.
+        raise
+
+    if os.environ.get("DB_MODE") == "sqlite":
+        logger.info("SQLite mode detected: Using in-memory QdrantClient fallback")
+        _client = QdrantClient(location=":memory:")
+    else:
+        try:
+            _client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=12.0)
+            _client.get_collections()
+        except Exception as e:
+            logger.warning(f"Could not connect to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}: {e}. Falling back to in-memory QdrantClient.")
+            _client = QdrantClient(location=":memory:")
+
+    return _client
+
+COLLECTIONS = {
+    "chunks": config.QDRANT_COLLECTION_NAME,
+    "paragraphs": config.QDRANT_PARAGRAPH_COLLECTION,
+    "tables": config.QDRANT_TABLE_COLLECTION,
+}
+
+def ensure_collections_exist():
+    try:
+        client = get_client()
+        from qdrant_client.http import models as qmodels
+        existing = [c.name for c in client.get_collections().collections]
+        for name in COLLECTIONS.values():
+            if name not in existing:
+                logger.info(f"Creating Qdrant collection: {name}")
+                client.create_collection(
+                    collection_name=name,
+                    vectors_config=qmodels.VectorParams(
+                        size=config.EMBEDDING_DIMENSION,
+                        distance=qmodels.Distance.COSINE
+                    )
+                )
+
+            # Always ensure payload indexes exist (idempotent)
+            _index_specs = [
+                ("pipeline_id", qmodels.PayloadSchemaType.INTEGER),
+                ("file_id", qmodels.PayloadSchemaType.INTEGER),
+                ("section", qmodels.PayloadSchemaType.KEYWORD),
+                ("content_type", qmodels.PayloadSchemaType.KEYWORD),
+            ]
+            for field_name, field_schema in _index_specs:
+                try:
+                    client.create_payload_index(
+                        collection_name=name,
+                        field_name=field_name,
+                        field_schema=field_schema,
+                    )
+                    logger.info(f"Created payload index '{field_name}' on '{name}'")
+                except Exception:
+                    pass  # index already exists
     except Exception as e:
-        logger.warning(f"Could not connect to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}: {e}. Falling back to in-memory QdrantClient.")
-        client = QdrantClient(location=":memory:")
+        logger.error(f"Failed to ensure collections exist: {e}")
+
+_ensured_collections = set()
 
 def ensure_collection(collection_name="scaleflow_chunks", vector_size=None):
+    global _ensured_collections
+    if collection_name in _ensured_collections:
+        return True
+        
     if vector_size is None:
         vector_size = config.EMBEDDING_DIMENSION
     try:
+        client = get_client()
+        from qdrant_client.http import models as qmodels
+
         collections = client.get_collections().collections
         exists = any(c.name == collection_name for c in collections)
         if not exists:
@@ -41,20 +109,47 @@ def ensure_collection(collection_name="scaleflow_chunks", vector_size=None):
                     distance=qmodels.Distance.COSINE
                 )
             )
+            # Create payload indexes on the newly created collection
+            _index_specs = [
+                ("pipeline_id", qmodels.PayloadSchemaType.INTEGER),
+                ("file_id", qmodels.PayloadSchemaType.INTEGER),
+                ("section", qmodels.PayloadSchemaType.KEYWORD),
+                ("content_type", qmodels.PayloadSchemaType.KEYWORD),
+            ]
+            for field_name, field_schema in _index_specs:
+                try:
+                    client.create_payload_index(
+                        collection_name=collection_name,
+                        field_name=field_name,
+                        field_schema=field_schema,
+                    )
+                    logger.info(f"Created payload index '{field_name}' on '{collection_name}'")
+                except Exception:
+                    pass
+        _ensured_collections.add(collection_name)
         return True
     except Exception as e:
         logger.error(f"Failed to ensure Qdrant collection {collection_name}: {e}")
         return False
 
-def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metadata=None):
-    collection_name = "scaleflow_chunks"
-    
+def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metadata=None, collection_name=None):
+    if collection_name is None:
+        collection_name = config.QDRANT_COLLECTION_NAME
+        
     print("=" * 80, flush=True)
     print("QDRANT INSERTION COLLECTION NAME:", collection_name, flush=True)
     print("=" * 80, flush=True)
 
     import time
     t_lookup_start = time.perf_counter()
+    # Ensure client is available and collection exists
+    try:
+        client = get_client()
+        from qdrant_client.http import models as qmodels
+    except Exception as e:
+        logger.error(f"Qdrant client not available: {e}")
+        return False, 0.0, 0.0
+
     has_collection = ensure_collection(collection_name, config.EMBEDDING_DIMENSION)
     lookup_duration = time.perf_counter() - t_lookup_start
 
@@ -79,9 +174,23 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
         point_id = str(uuid.uuid4())
         
         # Build payload
+        stored_pipeline_id = pipeline_id
+        if pipeline_id is not None:
+            try:
+                stored_pipeline_id = int(pipeline_id)
+            except (ValueError, TypeError):
+                pass
+                
+        stored_file_id = file_id
+        if file_id is not None:
+            try:
+                stored_file_id = int(file_id)
+            except (ValueError, TypeError):
+                pass
+
         payload = {
-            "pipeline_id": pipeline_id,
-            "file_id": file_id,
+            "pipeline_id": stored_pipeline_id,
+            "file_id": stored_file_id,
             "task_id": task_id,
             "chunk_index": i,
             "chunk_text": chunk_text,
@@ -90,17 +199,33 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             "created_at": datetime.utcnow().isoformat(),
             
             # Compatibility keys for step 3
-            "document_id": file_id,
+            "document_id": stored_file_id,
             "filename": global_meta.get("original_filename") if global_meta else None,
             "chunk_id": i,
-            "text": chunk_text
+            "text": chunk_text,
+            
+            # Default metadata fields
+            "section": "unknown",
+            "content_type": "paragraph",
+            "token_count": 0,
+            "page_number": 0
         }
         
         # Merge chunk-specific metadata fields
         if chunk_meta_list and i < len(chunk_meta_list):
             c_meta = chunk_meta_list[i]
             if isinstance(c_meta, dict):
+                if "metadata" in c_meta and isinstance(c_meta["metadata"], dict):
+                    c_meta = c_meta["metadata"]
                 payload.update(c_meta)
+        
+        # Add collection_source to chunk metadata in Qdrant payload
+        if collection_name == config.QDRANT_TABLE_COLLECTION:
+            payload["collection_source"] = "tables"
+        elif collection_name == config.QDRANT_PARAGRAPH_COLLECTION:
+            payload["collection_source"] = "paragraphs"
+        else:
+            payload["collection_source"] = "tables" if payload.get("content_type") == "table" else "paragraphs"
         
         points.append(
             qmodels.PointStruct(
@@ -143,16 +268,25 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
     print("QDRANT RETRIEVAL COLLECTION NAME:", collection_name, flush=True)
     print("=" * 80, flush=True)
     try:
+        ensure_collection(collection_name, config.EMBEDDING_DIMENSION)
+        client = get_client()
+        from qdrant_client.http import models as qmodels
         # Build filter if present
         q_filter = None
         if filters:
             conditions = []
             for key, val in filters.items():
                 if val is not None:
+                    val_to_match = val
+                    if key in ("pipeline_id", "file_id"):
+                        try:
+                            val_to_match = int(val)
+                        except (ValueError, TypeError):
+                            pass
                     conditions.append(
                         qmodels.FieldCondition(
                             key=key,
-                            match=qmodels.MatchValue(value=val)
+                            match=qmodels.MatchValue(value=val_to_match)
                         )
                     )
             if conditions:
@@ -170,6 +304,8 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
             results.append({
                 "score": round(hit.score, 4),
                 "chunk_text": hit.payload.get("chunk_text"),
+                "text": hit.payload.get("text") or hit.payload.get("chunk_text"),
+                "section": hit.payload.get("section", "unknown"),
                 "pipeline_id": hit.payload.get("pipeline_id"),
                 "file_id": hit.payload.get("file_id"),
                 "task_id": hit.payload.get("task_id"),
@@ -195,6 +331,7 @@ def get_collection_stats(collection_name="scaleflow_chunks"):
     try:
         # Ensure collection configured
         ensure_collection(collection_name, config.EMBEDDING_DIMENSION)
+        client = get_client()
         info = client.get_collection(collection_name=collection_name)
         return {
             "collection": collection_name,
@@ -211,3 +348,10 @@ def get_collection_stats(collection_name="scaleflow_chunks"):
             "status": "error",
             "error": str(e)
         }
+
+# For backward compatibility with import references to `from services.vector_store import client`
+class _ClientProxy:
+    def __getattr__(self, name):
+        return getattr(get_client(), name)
+client = _ClientProxy()
+

@@ -14,7 +14,7 @@ import config
 from services.document_preprocessor import evaluate_document
 from services.pdf_parser import parse_pdf
 from services.chunking_service import chunk_text
-from services.quality_gate_service import evaluate_text_quality
+from services.quality_gate_service import compute_quality_score
 from worker import handle_preprocess_document, handle_parse_document, handle_chunk_text, handle_generate_embeddings, handle_summarize_document
 
 def run_integration_test():
@@ -31,11 +31,9 @@ def run_integration_test():
     print("\n--- 1. Testing preprocessor evaluation directly ---")
     report = evaluate_document(test_pdf)
     print(f"Document Type: {report.document_type}")
-    print(f"Routing Confidence: {report.routing_confidence}")
     print(f"Extractable Text Ratio: {report.extractable_text_ratio:.2%}")
-    print(f"Image Area Ratio: {report.image_area_ratio:.2%}")
-    print(f"Page Text Density: {report.page_text_density}")
-    print(f"OCR Text Ratio: {report.ocr_text_ratio}")
+    print(f"Needs Enhancement: {report.needs_enhancement}")
+    print(f"Overall Quality Score: {report.overall_quality_score}")
     
     # Mock payload & input_artifacts for worker handlers
     payload = {
@@ -54,11 +52,10 @@ def run_integration_test():
     print("\n--- 2. Testing preprocess handler ---")
     preprocess_res = handle_preprocess_document(payload, {})
     print(f"Preprocess Handler Keys: {list(preprocess_res.keys())}")
-    print(f"Preprocess Content Summary: {preprocess_res.get('content_summary')}")
     
     # 3. Test Parse Handler
     print("\n--- 3. Testing parse handler ---")
-    input_artifacts = {"preprocess_document": preprocess_res}
+    input_artifacts = {"preprocessing_report": preprocess_res}
     parse_res = handle_parse_document(payload, input_artifacts)
     print(f"Parse Handler Keys: {list(parse_res.keys())}")
     print(f"Document Type: {parse_res.get('document_type')}")

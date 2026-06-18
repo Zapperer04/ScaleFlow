@@ -11,10 +11,13 @@ services:
       DB_MODE: "postgres"
       API_KEY: "${API_KEY:-dev_secret_api_key}"
       PYTHONUNBUFFERED: "1"
+      HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
+      HUGGINGFACE_HUB_VERBOSITY: "error"
+      BACKPRESSURE_ENABLED: "False"
     ports:
       - "5000:5000"
     volumes:
-      - ./backend/storage:/app/storage
+      - ./backend:/app
     depends_on:
       redis:
         condition: service_healthy
@@ -46,7 +49,7 @@ services:
     build: ./backend
     command: ["python", "-u", "worker.py"]
     environment:
-      API_URL: "http://backend:5000"
+      API_URL: "http://host.docker.internal:5000"
       REDIS_HOST: "redis"
       QDRANT_HOST: "qdrant"
       WORKER_ID: "worker-1"
@@ -55,22 +58,26 @@ services:
       MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.05}"
       MIN_DICTIONARY_WORD_RATIO: "${MIN_DICTIONARY_WORD_RATIO:-0.20}"
       WORKER_CAPABILITIES: "default,cpu_heavy,embedding_gpu,summarization_llm,retrieval_optimized,io_heavy"
+      HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
+      HUGGINGFACE_HUB_VERBOSITY: "error"
+      BACKPRESSURE_ENABLED: "False"
     volumes:
-      - ./backend/storage:/app/storage
+      - ./backend:/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      backend:
-        condition: service_healthy
       redis:
         condition: service_healthy
       qdrant:
         condition: service_started
     restart: unless-stopped
 
+
   worker2:
     build: ./backend
     command: ["python", "-u", "worker.py"]
     environment:
-      API_URL: "http://backend:5000"
+      API_URL: "http://host.docker.internal:5000"
       REDIS_HOST: "redis"
       QDRANT_HOST: "qdrant"
       WORKER_ID: "worker-2"
@@ -79,22 +86,26 @@ services:
       MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.05}"
       MIN_DICTIONARY_WORD_RATIO: "${MIN_DICTIONARY_WORD_RATIO:-0.20}"
       WORKER_CAPABILITIES: "default,cpu_heavy,embedding_gpu,summarization_llm,retrieval_optimized,io_heavy"
+      HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
+      HUGGINGFACE_HUB_VERBOSITY: "error"
+      BACKPRESSURE_ENABLED: "False"
     volumes:
-      - ./backend/storage:/app/storage
+      - ./backend:/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      backend:
-        condition: service_healthy
       redis:
         condition: service_healthy
       qdrant:
         condition: service_started
     restart: unless-stopped
 
+
   worker3:
     build: ./backend
     command: ["python", "-u", "worker.py"]
     environment:
-      API_URL: "http://backend:5000"
+      API_URL: "http://host.docker.internal:5000"
       REDIS_HOST: "redis"
       QDRANT_HOST: "qdrant"
       WORKER_ID: "worker-3"
@@ -103,16 +114,20 @@ services:
       MIN_RETRIEVAL_SCORE: "${MIN_RETRIEVAL_SCORE:-0.05}"
       MIN_DICTIONARY_WORD_RATIO: "${MIN_DICTIONARY_WORD_RATIO:-0.20}"
       WORKER_CAPABILITIES: "default,cpu_heavy,embedding_gpu,summarization_llm,retrieval_optimized,io_heavy"
+      HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
+      HUGGINGFACE_HUB_VERBOSITY: "error"
+      BACKPRESSURE_ENABLED: "False"
     volumes:
-      - ./backend/storage:/app/storage
+      - ./backend:/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      backend:
-        condition: service_healthy
       redis:
         condition: service_healthy
       qdrant:
         condition: service_started
     restart: unless-stopped
+
 
   redis:
     image: redis:latest

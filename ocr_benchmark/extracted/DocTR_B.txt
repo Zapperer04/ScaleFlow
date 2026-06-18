@@ -1,3 +1,0 @@
-ScaleFlow : Category B Low DPI Document
-Distributed ledger syste ms require high throughput
-This low resolution text must be upsca led L forOCR

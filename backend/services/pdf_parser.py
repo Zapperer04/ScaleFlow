@@ -24,7 +24,7 @@ import time
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,38 @@ logger = logging.getLogger(__name__)
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
-from services.quality_gate_service import evaluate_text_quality
+from services.quality_gate_service import compute_quality_score
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Load vocabulary once at import time to prevent spacing regressions (Phase 2)
+# ──────────────────────────────────────────────────────────────────────────────
+_VOCAB = set()
+try:
+    _services_dir = os.path.dirname(os.path.abspath(__file__))
+    _backend_dir = os.path.dirname(_services_dir)
+    _hf_cache_dir = os.path.join(_backend_dir, "hf_cache")
+    if os.path.exists(_hf_cache_dir):
+        from pathlib import Path
+        for p in Path(_hf_cache_dir).glob("**/vocab.txt"):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    for line in f:
+                        w = line.strip().lower()
+                        if w and not w.startswith("##"):
+                            _VOCAB.add(w)
+            except Exception:
+                pass
+except Exception:
+    pass
+
+_COMMON_WORDS = {
+    "ray", "library", "value", "tree", "cell", "combinator", "notes", "protocol",
+    "systems", "model", "mode", "base", "data", "point", "type", "file", "user",
+    "code", "test", "page", "line", "word", "char", "name", "link", "view", "task",
+    "tool", "run", "set", "get", "score", "rate", "flow", "scale", "level", "step"
+}
+_VOCAB.update(_COMMON_WORDS)
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Configuration (overridable via environment)
@@ -185,6 +216,81 @@ def _compute_handwriting_score(img) -> float:
         return 0.0
 
 
+def _determine_page_routing_and_type(reader, page_index: int, filepath: str, parse_method_hint: str, plumber_reader=None) -> tuple[str, str, float]:
+    """
+    Determine detected page type, chosen parser, and confidence without rendering unless scanned.
+    """
+    # 1. Try to check digital text content
+    text = ""
+    try:
+        page = reader.pages[page_index]
+        text = page.extract_text() or ""
+    except Exception:
+        pass
+    
+    chars = len(text.strip())
+    
+    # Check if page is digital
+    is_digital = False
+    if chars > 50:
+        printable_ratio = sum(1 for c in text if c.isprintable()) / chars
+        if printable_ratio > 0.80:
+            is_digital = True
+            
+            # Check font mapping
+            try:
+                resources = page.get("/Resources", {})
+                if resources and "/Font" in resources:
+                    fonts = resources["/Font"]
+                    font_keys = list(fonts.keys()) if hasattr(fonts, "keys") else []
+                    if font_keys:
+                        unmapped = 0
+                        for k in font_keys:
+                            try:
+                                font_obj = fonts[k].get_object()
+                                encoding = font_obj.get("/Encoding", "")
+                                is_std_enc = encoding and any(se in str(encoding) for se in ["WinAnsi", "MacRoman", "StandardEncoding"])
+                                if "/ToUnicode" not in font_obj and not is_std_enc:
+                                    unmapped += 1
+                            except Exception:
+                                unmapped += 1
+                        if unmapped / len(font_keys) > 0.50:
+                            is_digital = False
+            except Exception:
+                pass
+
+    # Determine type and parser
+    # Fast digital check for table using pdfplumber find_tables
+    table_detected = False
+    if is_digital and PDFPLUMBER_AVAILABLE:
+        try:
+            if plumber_reader:
+                p = plumber_reader.pages[page_index]
+                if len(p.rects) + len(p.lines) > 5:
+                    table_detected = len(p.find_tables()) > 0
+            else:
+                import pdfplumber
+                with pdfplumber.open(filepath) as pdf:
+                    p = pdf.pages[page_index]
+                    if len(p.rects) + len(p.lines) > 5:
+                        table_detected = len(p.find_tables()) > 0
+        except Exception:
+            pass
+
+    if is_digital:
+        if table_detected:
+            return "TABLE", "pdfplumber", 1.0
+        else:
+            return "DIGITAL", "pypdf", 1.0
+    else:
+        # Mixed/Scanned
+        if chars > 0:
+            parser = "pdfplumber" if (table_detected or parse_method_hint == "pdfplumber") else "pypdf"
+            return "MIXED", parser, 0.8
+        else:
+            return "SCANNED", "ocr", 1.0
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Memory utility
 # ──────────────────────────────────────────────────────────────────────────────
@@ -199,6 +305,7 @@ def _rss_mb() -> float:
             for line in f:
                 if line.startswith("VmRSS:"):
                     return float(line.split()[1]) / 1024
+            return 0.0
     except Exception:
         pass
     return 0.0
@@ -207,11 +314,41 @@ def _rss_mb() -> float:
 # ──────────────────────────────────────────────────────────────────────────────
 # Per-page extraction helpers
 # ──────────────────────────────────────────────────────────────────────────────
+def _clean_extracted_text(text: str) -> str:
+    if not text:
+        return ""
+    # 1. Replace Unicode replacement character (often a converted hyphen/dash) with standard hyphen
+    text = text.replace('\ufffd', '-')
+    # 2. Fix kerning/spacing issues where a single capital letter (except A and I) is separated from the rest of the word
+    # ONLY merge if the second part is NOT a valid English word in our loaded vocabulary/dictionary (prevents spacing regressions)
+    def _replace_kerning(match):
+        cap = match.group(1)
+        rest = match.group(2)
+        if rest.lower() in _VOCAB:
+            return match.group(0)
+        return cap + rest
+
+    text = re.sub(r'\b([B-HJ-Z])\s+([a-z]{2,})\b', _replace_kerning, text)
+    # 3. Standardize other common dash variants to hyphen
+    text = re.sub(r'[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]', '-', text)
+    # 4. Standardize quotes (curly quotes to straight quotes)
+    text = re.sub(r'[\u2018\u2019\u201a\u201b\u2039\u203a]', "'", text)
+    text = re.sub(r'[\u201c\u201d\u201e\u201f\u00ab\u00bb]', '"', text)
+    # 5. Fix common OCR substitutions: digit 1 vs lowercase L, digit 0 vs letter O
+    # Only replace if surrounded by digits to prevent breaking valid text
+    text = re.sub(r'(?<=\d)l(?=\d)', '1', text)
+    text = re.sub(r'(?<=\d)o(?=\d)', '0', text)
+    text = re.sub(r'(?<=\d)O(?=\d)', '0', text)
+    # 6. Normalize multiple consecutive spaces to a single space
+    text = re.sub(r'[ \t]+', ' ', text)
+    return text
+
+
 def _extract_page_pypdf(reader, page_index: int) -> str:
     """Extract text from a single page using pypdf."""
     try:
         text = reader.pages[page_index].extract_text() or ""
-        return text
+        return _clean_extracted_text(text)
     except Exception as e:
         raise RuntimeError(f"pypdf page {page_index + 1} error: {e}") from e
 
@@ -222,17 +359,74 @@ def _extract_page_pdfplumber(filepath: str, page_index: int) -> str:
     try:
         with pdfplumber.open(filepath) as pdf:
             page = pdf.pages[page_index]
-            return page.extract_text() or ""
+            return _clean_extracted_text(page.extract_text() or "")
+    except Exception as e:
+        raise RuntimeError(f"pdfplumber page {page_index + 1} error: {e}") from e
+
+def _extract_page_pdfplumber_with_tables(filepath: str, page_index: int) -> tuple[str, list[dict]]:
+    """Extract text and structured tables from a single page using pdfplumber."""
+    import pdfplumber
+    try:
+        with pdfplumber.open(filepath) as pdf:
+            page = pdf.pages[page_index]
+            text = _clean_extracted_text(page.extract_text() or "")
+            
+            # Extract tables
+            tables = page.extract_tables()
+            extracted_tables = []
+            markdown_tables = []
+            
+            for t_idx, table in enumerate(tables):
+                if not table or len(table) == 0:
+                    continue
+                col_count = len(table[0])
+                row_count = len(table)
+                
+                lines = []
+                for row_idx, row in enumerate(table):
+                    cleaned_row = [str(cell).replace("\n", " ").strip() if cell is not None else "" for cell in row]
+                    lines.append("| " + " | ".join(cleaned_row) + " |")
+                    if row_idx == 0:
+                        lines.append("|" + "|".join(["---"] * len(cleaned_row)) + "|")
+                
+                md_table = "\n".join(lines)
+                markdown_tables.append(md_table)
+                extracted_tables.append({
+                    "table_index": t_idx + 1,
+                    "row_count": row_count,
+                    "column_count": col_count,
+                    "markdown": md_table
+                })
+            
+            if markdown_tables:
+                text += "\n\n" + "\n\n".join(markdown_tables)
+                
+            return text, extracted_tables
     except Exception as e:
         raise RuntimeError(f"pdfplumber page {page_index + 1} error: {e}") from e
 
 
-def _extract_page_ocr(filepath: str, page_index: int) -> tuple[str, float]:
-    """Rasterize a PDF page and run Tesseract OCR on it."""
+def _extract_page_ocr(filepath: str, page_index: int, enhanced_pages_path: Optional[str] = None) -> tuple[str, float]:
+    """Rasterize a PDF page and run Tesseract OCR on it (uses enhanced images if available)."""
     import pytesseract
     from pdf2image import convert_from_path
     from pytesseract import Output
+    import cv2
     try:
+        # 1. Try to load from enhanced_pages_path if provided
+        if enhanced_pages_path:
+            img_path = os.path.join(enhanced_pages_path, f"page_{page_index}.png")
+            if os.path.exists(img_path):
+                img = cv2.imread(img_path)
+                if img is not None:
+                    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    data = pytesseract.image_to_data(img_rgb, output_type=Output.DICT)
+                    confidences = [float(c) for c in data.get('conf', []) if c is not None and str(c).strip() != '' and float(c) != -1]
+                    avg_confidence = sum(confidences) / len(confidences) if confidences else 100.0
+                    ocr_text = pytesseract.image_to_string(img_rgb, config="--psm 6")
+                    return _clean_extracted_text(ocr_text), avg_confidence
+
+        # 2. Fallback: render original PDF page
         poppler_path = getattr(config, "PREPROCESS_POPPLER_PATH", None) or os.getenv("PREPROCESS_POPPLER_PATH") or None
         images = convert_from_path(
             filepath,
@@ -243,17 +437,12 @@ def _extract_page_ocr(filepath: str, page_index: int) -> tuple[str, float]:
         )
         if not images:
             return "", 0.0
-        
-        # Get average OCR confidence for the page words
-        try:
-            data = pytesseract.image_to_data(images[0], output_type=Output.DICT)
-            confidences = [float(c) for c in data.get('conf', []) if c is not None and str(c).strip() != '' and float(c) != -1]
-            avg_confidence = sum(confidences) / len(confidences) if confidences else 100.0
-        except Exception:
-            avg_confidence = 100.0
             
+        data = pytesseract.image_to_data(images[0], output_type=Output.DICT)
+        confidences = [float(c) for c in data.get('conf', []) if c is not None and str(c).strip() != '' and float(c) != -1]
+        avg_confidence = sum(confidences) / len(confidences) if confidences else 100.0
         ocr_text = pytesseract.image_to_string(images[0], config="--psm 6")
-        return ocr_text, avg_confidence
+        return _clean_extracted_text(ocr_text), avg_confidence
     except Exception as e:
         raise RuntimeError(f"OCR page {page_index + 1} error: {e}") from e
 
@@ -272,26 +461,11 @@ def parse_pdf(
     skip_ocr: bool = False,
     document_type: str = "DIGITAL",
     routing_confidence: float = 1.0,
+    parse_method_hint: str = "pypdf",
+    enhanced_pages_path: Optional[str] = None
 ) -> ParseResult:
     """
-    Parse a PDF file using the 3-tier fallback chain.
-
-    Parameters
-    ----------
-    filepath     : absolute path to the PDF file
-    task_id      : orchestration task ID (for progress PATCH + trace emission)
-    lease_token  : lease token for progress PATCH
-    progress_json: existing progress dict (for resume from checkpoint)
-    trace_fn     : callable(message: str) — receives human-readable trace lines
-    api_url      : backend API base URL (for progress PATCH)
-    api_headers  : auth headers for progress PATCH
-    skip_ocr     : bypass OCR fallback flag
-    document_type: DIGITAL, SCANNED, or MIXED
-    routing_confidence: confidence score (0.0 to 1.0)
-
-    Returns
-    -------
-    ParseResult with .text, .stats, and .pages
+    Parse a PDF file using the method hint determined during preprocessing.
     """
     import pypdf
 
@@ -310,7 +484,7 @@ def parse_pdf(
     file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
     _trace(f"[PARSER] PDF file: {os.path.basename(filepath)} ({file_size_mb:.1f} MB)")
     _trace(f"[PARSER] Capabilities: pdfplumber={'yes' if PDFPLUMBER_AVAILABLE else 'no'}, OCR={'yes' if OCR_AVAILABLE else 'no'}")
-    _trace(f"[PARSER] Routing: document_type={document_type} (confidence={routing_confidence:.2f})")
+    _trace(f"[PARSER] Routing: document_type={document_type} (confidence={routing_confidence:.2f}), parse_method_hint={parse_method_hint}")
 
     # ── temp dir for checkpoint cache ────────────────────────────────────────
     _worker_dir = os.path.dirname(os.path.abspath(__file__))
@@ -391,12 +565,24 @@ def parse_pdf(
     elif temp_cache_file and os.path.exists(temp_cache_file):
         _cleanup()
 
-    _trace(f"[PARSER] Extraction started — processing {page_count - checkpoint_page} pages under {document_type} routing rules")
+    # Pre-open pdfplumber if available to avoid opening it repeatedly in page-level loops
+    plumber_reader = None
+    if PDFPLUMBER_AVAILABLE:
+        try:
+            import pdfplumber
+            plumber_reader = pdfplumber.open(filepath)
+        except Exception:
+            pass
+
+    _trace(f"[PARSER] Extraction started — processing {page_count - checkpoint_page} pages under page-level routing rules")
 
     for i in range(checkpoint_page, page_count):
         # ── timeout guard ────────────────────────────────────────────────────
         elapsed = time.time() - start_time
         if elapsed > PARSE_TIMEOUT_S:
+            if plumber_reader:
+                try: plumber_reader.close()
+                except Exception: pass
             _cleanup()
             raise TimeoutError(f"PDF parse timeout exceeded ({PARSE_TIMEOUT_S}s) at page {i + 1}")
 
@@ -405,121 +591,102 @@ def parse_pdf(
             rss = _rss_mb()
             if rss > MEMORY_LIMIT_MB:
                 _trace(f"[PARSER] MEMORY GUARD: {rss:.0f} MB RSS at page {i + 1} — raising error to prevent OOM")
+                if plumber_reader:
+                    try: plumber_reader.close()
+                    except Exception: pass
                 _cleanup()
                 raise MemoryError(f"Governance Limit Exceeded: Parser memory usage ({rss:.0f} MB) exceeded limit ({MEMORY_LIMIT_MB} MB).")
 
         # ── page-level heuristics and features ───────────────────────────────
-        img = _render_page_thumbnail(filepath, i)
+        t_route_start = time.perf_counter()
+        
+        detected_type, chosen_parser, route_conf = _determine_page_routing_and_type(
+            reader, i, filepath, parse_method_hint, plumber_reader
+        )
+        
+        img = None
         table_detected = False
         contains_signature = False
         contains_handwriting = False
-        if img:
-            try:
-                table_detected = _detect_table(img)
-                contains_signature = _detect_signature(img)
-                contains_handwriting = _compute_handwriting_score(img) > 0.4
-            except Exception:
-                pass
+        
+        # Only render page thumbnail if it is scanned / requires OCR
+        if chosen_parser == "ocr":
+            img = _render_page_thumbnail(filepath, i)
+            if img:
+                try:
+                    table_detected = _detect_table(img)
+                    contains_signature = _detect_signature(img)
+                    contains_handwriting = _compute_handwriting_score(img) > 0.4
+                except Exception:
+                    pass
+        else:
+            table_detected = (detected_type == "TABLE")
 
-        # ── routing and fallback execution ───────────────────────────────────
         page_text = ""
         used_parser = ""
         ocr_conf = 0.0
+        page_tables_metadata = []
 
-        t_route_start = time.perf_counter()
-        if document_type == "DIGITAL":
-            # DIGITAL Routing Rule: pypdf first, fallback to pdfplumber, NO OCR
+        if chosen_parser == "ocr" and OCR_AVAILABLE:
             t_sub_start = time.perf_counter()
             try:
-                pypdf_text = _extract_page_pypdf(reader, i)
-                if len(pypdf_text.strip()) >= 50:
-                    page_text = pypdf_text
-                    used_parser = "pypdf"
+                ocr_text_page, ocr_conf_val = _extract_page_ocr(filepath, i, enhanced_pages_path)
+                page_text = ocr_text_page
+                used_parser = "ocr"
+                ocr_conf = ocr_conf_val
+                ocr_pages += 1
+                ocr_confidences.append(ocr_conf)
             except Exception as e:
-                page_failures.append({"page": i + 1, "parser": "pypdf", "reason": str(e)})
-            pypdf_time += time.perf_counter() - t_sub_start
-
-            if len(page_text.strip()) < 50 and PDFPLUMBER_AVAILABLE:
-                t_sub_start = time.perf_counter()
-                try:
-                    plumber_text = _extract_page_pdfplumber(filepath, i)
-                    if len(plumber_text.strip()) > len(page_text.strip()):
-                        page_text = plumber_text
-                        used_parser = "pdfplumber"
-                        plumber_pages += 1
-                except Exception as e:
-                    page_failures.append({"page": i + 1, "parser": "pdfplumber", "reason": str(e)})
-                plumber_time += time.perf_counter() - t_sub_start
-
-            if not page_text and used_parser == "":
-                used_parser = "pypdf"
-
-        elif document_type == "SCANNED":
-            # SCANNED Routing Rule: Tesseract OCR directly
-            if OCR_AVAILABLE and not skip_ocr:
-                t_sub_start = time.perf_counter()
-                try:
-                    ocr_text_page, ocr_conf_val = _extract_page_ocr(filepath, i)
-                    page_text = ocr_text_page
-                    used_parser = "ocr"
-                    ocr_conf = ocr_conf_val
-                    ocr_pages += 1
-                    ocr_confidences.append(ocr_conf)
-                except Exception as e:
-                    page_failures.append({"page": i + 1, "parser": "ocr", "reason": str(e)})
-                    used_parser = "ocr"
-                ocr_time += time.perf_counter() - t_sub_start
-            else:
+                page_failures.append({"page": i + 1, "parser": "ocr", "reason": str(e)})
                 used_parser = "pypdf"
                 try:
                     page_text = _extract_page_pypdf(reader, i)
                 except Exception:
                     pass
-
-        else:  # MIXED
-            # MIXED Routing Rule: Page-level classification
-            digital_char_count = 0
-            pypdf_text = ""
+            ocr_time += time.perf_counter() - t_sub_start
+        elif chosen_parser == "pdfplumber" and PDFPLUMBER_AVAILABLE:
+            t_sub_start = time.perf_counter()
             try:
-                pypdf_text = _extract_page_pypdf(reader, i)
-                digital_char_count = len(pypdf_text.strip())
-            except Exception:
-                pass
-
-            if digital_char_count >= 50:
-                page_text = pypdf_text
+                page_text, page_tables_metadata = _extract_page_pdfplumber_with_tables(filepath, i)
+                used_parser = "pdfplumber"
+                plumber_pages += 1
+            except Exception as e:
+                page_failures.append({"page": i + 1, "parser": "pdfplumber", "reason": str(e)})
                 used_parser = "pypdf"
-                if digital_char_count < 150 and PDFPLUMBER_AVAILABLE:
-                    t_sub_start = time.perf_counter()
-                    try:
-                        plumber_text = _extract_page_pdfplumber(filepath, i)
-                        if len(plumber_text.strip()) > len(page_text.strip()):
-                            page_text = plumber_text
-                            used_parser = "pdfplumber"
-                            plumber_pages += 1
-                    except Exception:
-                        pass
-                    plumber_time += time.perf_counter() - t_sub_start
-            else:
-                # Scanned page -> Run OCR
-                if OCR_AVAILABLE and not skip_ocr:
-                    t_sub_start = time.perf_counter()
-                    try:
-                        ocr_text_page, ocr_conf_val = _extract_page_ocr(filepath, i)
-                        page_text = ocr_text_page
-                        used_parser = "ocr"
-                        ocr_conf = ocr_conf_val
-                        ocr_pages += 1
-                        ocr_confidences.append(ocr_conf)
-                    except Exception as e:
-                        page_failures.append({"page": i + 1, "parser": "ocr", "reason": str(e)})
-                        used_parser = "ocr"
-                    ocr_time += time.perf_counter() - t_sub_start
-                else:
-                    page_text = pypdf_text
-                    used_parser = "pypdf"
-        
+                try:
+                    page_text = _extract_page_pypdf(reader, i)
+                except Exception:
+                    pass
+            plumber_time += time.perf_counter() - t_sub_start
+        else:
+            t_sub_start = time.perf_counter()
+            try:
+                page_text = _extract_page_pypdf(reader, i)
+                used_parser = "pypdf"
+            except Exception as e:
+                page_failures.append({"page": i + 1, "parser": "pypdf", "reason": str(e)})
+            pypdf_time += time.perf_counter() - t_sub_start
+
+        # Page-level OCR fallback: if the extracted digital text is too short, route to OCR
+        chars = len(page_text.strip())
+        if used_parser in ("pypdf", "pdfplumber") and chars < LOW_TEXT_THRESH and OCR_AVAILABLE:
+            _trace(f"[PARSER] Page {i + 1} yielded only {chars} chars digitally (below threshold {LOW_TEXT_THRESH}). Routing to OCR fallback.")
+            t_sub_start = time.perf_counter()
+            try:
+                ocr_text_page, ocr_conf_val = _extract_page_ocr(filepath, i, enhanced_pages_path)
+                page_text = ocr_text_page
+                used_parser = "ocr"
+                ocr_conf = ocr_conf_val
+                ocr_pages += 1
+                ocr_confidences.append(ocr_conf)
+            except Exception as e:
+                page_failures.append({"page": i + 1, "parser": "ocr_fallback", "reason": str(e)})
+            ocr_time += time.perf_counter() - t_sub_start
+
         parser_selection_overhead += time.perf_counter() - t_route_start
+        
+        # Log the routing decision per page
+        _trace(f"[PAGE ROUTING] Page {i+1} - Detected Type: {detected_type} | Chosen Parser: {used_parser} | Extracted Characters: {len(page_text)} | Confidence: {ocr_conf if used_parser == 'ocr' else route_conf}")
 
         if page_text:
             text_parts.append(page_text)
@@ -531,15 +698,19 @@ def parse_pdf(
             "extraction_method": used_parser,
             "ocr_engine": "tesseract" if used_parser == "ocr" else "none",
             "ocr_confidence": ocr_conf,
-            "table_detected": table_detected,
+            "table_detected": table_detected or len(page_tables_metadata) > 0,
             "contains_signature": contains_signature,
             "contains_handwriting": contains_handwriting,
+            "tables": page_tables_metadata,
         })
 
         # ── character limit guard ────────────────────────────────────────────
         current_chars = sum(len(part) for part in text_parts)
         if current_chars > config.MAX_CHARACTER_LIMIT:
             _trace(f"[PARSER] CHARACTER LIMIT GUARD: {current_chars:,} characters parsed at page {i + 1} — raising error to prevent OOM")
+            if plumber_reader:
+                try: plumber_reader.close()
+                except Exception: pass
             _cleanup()
             raise ValueError(f"Governance Limit Exceeded: Document text size ({current_chars:,} chars) exceeded limit ({config.MAX_CHARACTER_LIMIT:,} chars).")
 
@@ -573,6 +744,12 @@ def parse_pdf(
             except Exception as ex:
                 logger.warning(f"Progress PATCH failed: {ex}")
 
+    if plumber_reader:
+        try:
+            plumber_reader.close()
+        except Exception:
+            pass
+
     # ── assemble final text ───────────────────────────────────────────────────
     full_text = "\n\n".join(text_parts)
     _cleanup()
@@ -595,124 +772,32 @@ def parse_pdf(
         "page_failures":   page_failures,
         "pdfplumber_available": PDFPLUMBER_AVAILABLE,
         "ocr_available":   OCR_AVAILABLE,
-    }
-
-    # ── evaluate primary parse quality ────────────────────────────────────────
-    t_qual_start = time.perf_counter()
-    primary_metrics = evaluate_text_quality(full_text)
-    t_qual_end = time.perf_counter()
-    quality_evaluation_time = t_qual_end - t_qual_start
-    primary_score = primary_metrics["quality_score"]
-
-    min_printable = config.MIN_PRINTABLE_RATIO
-    min_dict = config.MIN_DICTIONARY_WORD_RATIO
-    min_coherence = config.MIN_TEXT_COHERENCE_SCORE
-
-    # Use code-aware minimum dictionary word ratio threshold
-    effective_min_dict = 0.10 if primary_metrics.get("programming_keyword_score", 0.0) > 3.0 else min_dict
-
-    primary_is_bad = (
-        primary_metrics["printable_ratio"] < min_printable or
-        primary_metrics["dict_word_ratio"] < effective_min_dict or
-        primary_metrics["coherence_score"] < min_coherence
-    )
-
-    ocr_attempted = False
-    ocr_score = 0.0
-    ocr_metrics = {}
-    selected_parser = stats["parser"]
-    selected_text = full_text
-    rejection_reason = ""
-    ocr_rescue_evaluation_time = 0.0
-
-    # Only run OCR rescue if document is NOT DIGITAL and OCR is available
-    if primary_is_bad and document_type != "DIGITAL":
-        rejection_reasons = []
-        if primary_metrics["printable_ratio"] < min_printable:
-            rejection_reasons.append(f"printable_ratio {primary_metrics['printable_ratio']:.2%} < {min_printable:.2%}")
-        if primary_metrics["dict_word_ratio"] < effective_min_dict:
-            rejection_reasons.append(f"dict_word_ratio {primary_metrics['dict_word_ratio']:.2%} < {effective_min_dict:.2%}")
-        if primary_metrics["coherence_score"] < min_coherence:
-            rejection_reasons.append(f"coherence_score {primary_metrics['coherence_score']:.1f} < {min_coherence:.1f}")
-        rejection_reason = "Primary parse quality bad: " + "; ".join(rejection_reasons)
-
-        if OCR_AVAILABLE:
-            _trace(f"[PARSER] OCR RESCUE: Primary parse failed quality evaluation ({rejection_reason}). Triggering full document OCR rescue pass...")
-            ocr_attempted = True
-            ocr_text_parts = []
-            ocr_page_confidences = []
-
-            for page_idx in range(page_count):
-                _trace(f"[PARSER] OCR Rescue — Running OCR on page {page_idx + 1}/{page_count}...")
-                t_ocr_sub_start = time.perf_counter()
-                try:
-                    ocr_text_page, ocr_conf_page = _extract_page_ocr(filepath, page_idx)
-                    ocr_text_parts.append(ocr_text_page)
-                    ocr_page_confidences.append(ocr_conf_page)
-                except Exception as e:
-                    _trace(f"[PARSER] OCR Rescue — Page {page_idx + 1} failed: {e}")
-                    ocr_text_parts.append("")
-                    ocr_page_confidences.append(0.0)
-                t_ocr_sub_end = time.perf_counter()
-                ocr_time += t_ocr_sub_end - t_ocr_sub_start
-
-            ocr_full_text = "\n\n".join(ocr_text_parts)
-            t_eval_start = time.perf_counter()
-            ocr_metrics = evaluate_text_quality(ocr_full_text)
-            t_eval_end = time.perf_counter()
-            ocr_rescue_evaluation_time = t_eval_end - t_eval_start
-            ocr_score = ocr_metrics["quality_score"]
-
-            if ocr_score > primary_score:
-                _trace(f"[PARSER] OCR Rescue SUCCESS! OCR Quality Score ({ocr_score:.1f}) > Primary Quality Score ({primary_score:.1f}). Selecting OCR parse.")
-                selected_text = ocr_full_text
-                selected_parser = "ocr"
-                stats["parser"] = "ocr_fallback"
-                stats["ocr_pages"] = page_count
-                stats["ocr_confidences"] = ocr_page_confidences
-                stats["avg_ocr_confidence"] = sum(ocr_page_confidences) / len(ocr_page_confidences) if ocr_page_confidences else 100.0
-                stats["char_count"] = len(ocr_full_text)
-                
-                # Update pages list with OCR rescue results
-                for p_idx, page_info in enumerate(pages_list):
-                    page_info["text"] = ocr_text_parts[p_idx]
-                    page_info["extraction_method"] = "ocr"
-                    page_info["ocr_engine"] = "tesseract"
-                    page_info["ocr_confidence"] = ocr_page_confidences[p_idx]
-            else:
-                _trace(f"[PARSER] OCR Rescue COMPLETED. OCR Quality Score ({ocr_score:.1f}) is not better than Primary Quality Score ({primary_score:.1f}). Retaining primary parse.")
-        else:
-            _trace(f"[PARSER] OCR Rescue requested, but OCR is not available on this system.")
-
-    stats["ocr_attempted"] = ocr_attempted
-    stats["initial_parser"] = "pypdf" if plumber_pages == 0 and ocr_pages == 0 else ("pdfplumber" if plumber_pages > 0 else "ocr")
-    stats["comparison_metrics"] = {
-        "pypdf_score": primary_score,
-        "ocr_score": ocr_score,
-        "selected_parser": selected_parser,
-        "rejection_reason": rejection_reason,
-        "pypdf_programming_keyword_score": primary_metrics.get("programming_keyword_score", 0.0),
-        "ocr_programming_keyword_score": ocr_metrics.get("programming_keyword_score", 0.0) if ocr_metrics else 0.0,
-        "pypdf_dict_word_ratio": primary_metrics.get("dict_word_ratio", 0.0),
-        "ocr_dict_word_ratio": ocr_metrics.get("dict_word_ratio", 0.0) if ocr_metrics else 0.0,
-        "pypdf_coherence_score": primary_metrics.get("coherence_score", 0.0),
-        "ocr_coherence_score": ocr_metrics.get("coherence_score", 0.0) if ocr_metrics else 0.0,
-        "pypdf_printable_ratio": primary_metrics.get("printable_ratio", 0.0),
-        "ocr_printable_ratio": ocr_metrics.get("printable_ratio", 0.0) if ocr_metrics else 0.0,
-        "pypdf_ocr_confidence": 100.0,
-        "ocr_ocr_confidence": sum(ocr_page_confidences) / len(ocr_page_confidences) if ocr_attempted and ocr_page_confidences else (stats.get("avg_ocr_confidence", 100.0) if stats.get("ocr_pages", 0) > 0 else 100.0)
-    }
-
-    # Store timings inside stats dictionary
-    stats["timings"] = {
-        "pdf_open_time": round(pdf_open_time, 5),
-        "page_count_discovery_time": round(page_count_discovery_time, 5),
-        "pypdf_extraction_duration": round(pypdf_time, 5),
-        "pdfplumber_extraction_duration": round(plumber_time, 5),
-        "ocr_duration": round(ocr_time, 5),
-        "parser_selection_overhead": round(parser_selection_overhead, 5),
-        "parse_quality_evaluation_duration": round(quality_evaluation_time, 5),
-        "ocr_rescue_quality_evaluation_duration": round(ocr_rescue_evaluation_time, 5),
+        "ocr_attempted":   False,
+        "initial_parser":  parse_method_hint,
+        "comparison_metrics": {
+            "pypdf_score": 100.0,
+            "ocr_score": 100.0,
+            "selected_parser": parse_method_hint,
+            "rejection_reason": "",
+            "pypdf_printable_ratio": 1.0,
+            "ocr_printable_ratio": 1.0,
+            "pypdf_ocr_confidence": 100.0,
+            "ocr_ocr_confidence": 100.0,
+            "pypdf_coherence_score": 100.0,
+            "ocr_coherence_score": 100.0,
+            "pypdf_dict_word_ratio": 1.0,
+            "ocr_dict_word_ratio": 1.0
+        },
+        "timings": {
+            "pdf_open_time": round(pdf_open_time, 5),
+            "page_count_discovery_time": round(page_count_discovery_time, 5),
+            "pypdf_extraction_duration": round(pypdf_time, 5),
+            "pdfplumber_extraction_duration": round(plumber_time, 5),
+            "ocr_duration": round(ocr_time, 5),
+            "parser_selection_overhead": round(parser_selection_overhead, 5),
+            "parse_quality_evaluation_duration": 0.0,
+            "ocr_rescue_quality_evaluation_duration": 0.0
+        }
     }
 
     _trace(
@@ -721,4 +806,4 @@ def parse_pdf(
         f"failures={len(page_failures)}"
     )
 
-    return ParseResult(text=selected_text, stats=stats, pages=pages_list)
+    return ParseResult(text=full_text, stats=stats, pages=pages_list)

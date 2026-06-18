@@ -1,7 +1,0 @@
-Page 1 of Large Technical Manual
-This is a paragraph inside the large technical document  It contains structured information, guidelines, and reference
-definitions to simulate technical manual ingestion under high load. ScaleFlow must ingest; chunk, embed, and index this
-document gracefully and report high-resolution timings
-This
-definit
-docun

@@ -181,26 +181,13 @@ def get_uploaded_file_path(pipeline_id):
 # ─────────────────────────────────────────────────────────────────────────────
 # Document Preprocessing — quality evaluation + image enhancement pre-parse
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Document Preprocessing — quality evaluation + image enhancement pre-parse
+# ─────────────────────────────────────────────────────────────────────────────
 def handle_preprocess_document(payload, input_artifacts):
     """
-    Pre-parse document quality evaluation and conditional image enhancement.
-
-    Evaluates: blur, DPI, contrast, skew, noise, extractable text ratio,
-    handwriting score, signature, table, and image-region presence.
-
-    If quality is below configured thresholds, applies enhancement:
-        deskew → upscale → denoise → contrast → sharpen
-    and writes the enhanced PDF to storage/temp/preprocessed_{pipeline_id}.pdf.
-
-    The output path is NOT stored in the returned artifact — it is recovered
-    by handle_parse_document() using the same predictable naming convention.
-    Only the PreprocessingReport dict is stored as the pipeline artifact.
-
-    Hard rejections (always active):
-      - Encrypted PDF
-      - Corrupted / malformed PDF
-    Opt-in rejection (PREPROCESS_REJECT_HANDWRITTEN=True):
-      - Heavily handwritten documents
+    Run Document Preprocessing: Fast Route Probe, Image Quality Assessment, and Enhancement.
     """
     pipeline_id = payload.get('_pipeline_id')
     task_id     = payload.get('_task_id')
@@ -209,93 +196,51 @@ def handle_preprocess_document(payload, input_artifacts):
         print(f"[{WORKER_ID}] {msg}", flush=True)
         emit_task_trace(task_id, msg)
 
-    _trace("[PREPROCESS] Document preprocessing stage started")
+    _trace("[PREPROCESS] Preprocessing stage started")
 
     filepath = get_uploaded_file_path(pipeline_id)
     if not filepath or not os.path.exists(filepath):
         raise FileNotFoundError(
-            "[PREPROCESS] Cannot preprocess: uploaded file not found. "
+            "[PREPROCESS] Uploaded file not found. "
             f"Resolved path: {filepath!r}"
         )
 
-    from services.document_preprocessor import evaluate_document, enhance_document
-
-    # Step 1: Evaluate quality signals
+    from services.document_preprocessor import evaluate_document, run_enhancement_pipeline
+    import dataclasses
+    
+    # Run Phase 2 & 3
     report = evaluate_document(filepath, trace_fn=_trace)
-
-    # Step 2: Hard rejections
-    if report.is_encrypted:
-        raise ValueError(
-            "Document rejected: this PDF is password-protected. "
-            "Please remove the password and re-upload."
-        )
-    if report.is_corrupted:
-        raise ValueError(
-            "Document rejected: this PDF appears to be corrupted or malformed "
-            "and cannot be processed."
-        )
-
-    # Step 3: Opt-in handwriting rejection
-    if report.is_heavily_handwritten and config.PREPROCESS_REJECT_HANDWRITTEN:
-        raise ValueError(
-            "Document rejected: this document appears to be primarily handwritten "
-            f"(handwriting score={report.handwriting_score:.2f}, "
-            f"extractable text ratio={report.extractable_text_ratio:.1%}). "
-            "ScaleFlow is configured to reject heavily handwritten documents "
-            "(PREPROCESS_REJECT_HANDWRITTEN=True)."
-        )
-
-    # Step 4: Protect Clean Digital PDFs
-    # If text is easily extractable, we bypass all image manipulation entirely
-    skip_ocr = False
-    output_path = filepath
-    if report.extractable_text_ratio > 0.80:
-        _trace(f"[PREPROCESS] Document is highly textual ({report.extractable_text_ratio:.1%} extractable). Bypassing enhancement and OCR.")
-        report.needs_enhancement = False
-        skip_ocr = True
-    else:
-        # Step 5: Enhance if needed
-        # Enhanced PDF is written to storage/temp/preprocessed_{pipeline_id}.pdf
-        # handle_parse_document() will find it there by convention.
+    
+    # Run Phase 4
+    if report.needs_enhancement:
         _worker_dir = os.path.dirname(os.path.abspath(__file__))
         _temp_dir   = os.path.join(_worker_dir, "storage", "temp")
-        output_path = enhance_document(
+        
+        # Get page count once, cheaply
+        import pypdf
+        with open(filepath, "rb") as f:
+            _pc = len(pypdf.PdfReader(f).pages)
+            
+        enhanced_dir = run_enhancement_pipeline(
             filepath=filepath,
             report=report,
             pipeline_id=str(pipeline_id),
             output_dir=_temp_dir,
-            trace_fn=_trace,
+            page_count=_pc
         )
-
-        if output_path != filepath:
-            _trace(f"[PREPROCESS] Enhanced file ready: {os.path.basename(output_path)}")
-        else:
-            _trace("[PREPROCESS] Document quality acceptable — no enhancement applied")
-
-    # Return the report dict as the pipeline artifact (no filesystem paths)
-    import dataclasses
+        if enhanced_dir:
+            report.used_enhancement = True
+            report.enhanced_pages_path = enhanced_dir
+            _trace(f"[PREPROCESS] Enhancement complete: saved to {os.path.basename(enhanced_dir)}")
+            
+    # Convert to schema dict
     report_dict = dataclasses.asdict(report)
-    report_dict["content_summary"] = {
-        "has_handwriting":      report.has_handwriting,
-        "has_signature":        report.has_signature,
-        "has_table":            report.has_table,
-        "has_image_region":     report.has_image_region,
-        "is_heavily_handwritten": report.is_heavily_handwritten,
-        "extractable_text_ratio": report.extractable_text_ratio,
-        "overall_quality":      report.overall_quality,
-        "needs_enhancement":    report.needs_enhancement,
-        "document_type":        report.document_type,
-        "routing_confidence":   report.routing_confidence,
-    }
-    report_dict["skip_ocr"] = skip_ocr
     return report_dict
 
 
 def handle_parse_document(payload, input_artifacts):
     """
-    Parse uploaded document via a 3-tier fallback chain:
-    pypdf → pdfplumber → OCR (scanned/image pages only).
-    All parser decisions are emitted as task trace events.
+    Parse uploaded document using the method hint determined during preprocessing.
     """
     text = payload.get('source_text')
     pipeline_id = payload.get('_pipeline_id')
@@ -315,18 +260,6 @@ def handle_parse_document(payload, input_artifacts):
         _trace("[PARSER] Initializing document parser")
         filepath = get_uploaded_file_path(pipeline_id)
 
-        # Check if preprocessing produced an enhanced file at the predictable temp path.
-        # The path is NOT stored in the preprocessing_report artifact to avoid
-        # serializing ephemeral filesystem paths that break under worker restarts.
-        _worker_dir = os.path.dirname(os.path.abspath(__file__))
-        _temp_dir   = os.path.join(_worker_dir, "storage", "temp")
-        preprocessed_path = os.path.join(_temp_dir, f"preprocessed_{pipeline_id}.pdf")
-        if os.path.exists(preprocessed_path):
-            _trace(f"[PARSER] Using preprocessed enhanced file: preprocessed_{pipeline_id}.pdf")
-            filepath = preprocessed_path
-        else:
-            _trace(f"[PARSER] No preprocessed file found at expected path — using original upload")
-
         if filepath and os.path.exists(filepath):
             file_id, original_filename, _ = get_pipeline_file_info(pipeline_id)
             is_pdf = (
@@ -337,12 +270,14 @@ def handle_parse_document(payload, input_artifacts):
             if is_pdf:
                 _trace(f"[PARSER] PDF detected — starting fallback-chain parser")
                 try:
-                    skip_ocr_flag = False
-                    if input_artifacts and "preprocess_document" in input_artifacts:
-                        prep = input_artifacts["preprocess_document"]
-                        skip_ocr_flag = prep.get("skip_ocr", False)
-                        document_type = prep.get("document_type", "DIGITAL")
-                        routing_confidence = prep.get("routing_confidence", 1.0)
+                    prep = {}
+                    if input_artifacts and "preprocessing_report" in input_artifacts:
+                        prep = input_artifacts["preprocessing_report"]
+                        
+                    document_type = prep.get("document_type", "DIGITAL")
+                    routing_confidence = prep.get("routing_confidence", 1.0)
+                    parse_method_hint = prep.get("parse_method_hint", "pypdf")
+                    enhanced_pages_path = prep.get("enhanced_pages_path")
 
                     from services.pdf_parser import parse_pdf
                     result = parse_pdf(
@@ -353,16 +288,18 @@ def handle_parse_document(payload, input_artifacts):
                         trace_fn=_trace,
                         api_url=API_URL,
                         api_headers=HEADERS,
-                        skip_ocr=skip_ocr_flag,
+                        skip_ocr=False,
                         document_type=document_type,
                         routing_confidence=routing_confidence,
+                        parse_method_hint=parse_method_hint,
+                        enhanced_pages_path=enhanced_pages_path
                     )
                     text = result.text
                     parse_stats = result.stats
                     pages = result.pages
 
                     if not text:
-                        _trace("[PARSER] WARNING: All parsers returned empty text. Document may be fully graphical.")
+                        _trace("[PARSER] WARNING: Parser returned empty text. Document may be fully graphical.")
                 except ValueError as ve:
                     # Circuit-breaker / validation failure — surface clearly
                     _trace(f"[PARSER] VALIDATION FAILURE: {ve}")
@@ -448,9 +385,14 @@ def handle_validate_parse_quality(payload, input_artifacts):
         _trace("[QUALITY GATE] FAILED: No text was extracted from the document.")
         raise ValueError("Document unreadable / OCR quality too low: Extracted text is empty.")
 
+    # Extract preprocessing report metadata
+    preprocess_report = input_artifacts.get("preprocessing_report", {})
+    document_type = preprocess_report.get("document_type", "SCANNED")
+    extractable_text_ratio = preprocess_report.get("extractable_text_ratio", 0.0)
+
     from services.quality_gate_service import validate_quality
     try:
-        metrics = validate_quality(text, parse_stats)
+        metrics = validate_quality(text, parse_stats, document_type, extractable_text_ratio)
         
         # Emit tracing
         _trace(f"[QUALITY GATE] Ingestion Parser Used: {metrics['parser_used'].upper()}")
@@ -458,8 +400,7 @@ def handle_validate_parse_quality(payload, input_artifacts):
         _trace(f"[QUALITY GATE] Average OCR Confidence Score: {metrics['ocr_confidence']:.1f}%")
         _trace(f"[QUALITY GATE] Executing Quality Gate Decisions:")
         _trace(f"  - Printable Character Ratio: {metrics['printable_ratio']:.2%} (Min Threshold: {config.MIN_PRINTABLE_RATIO:.2%})")
-        _trace(f"  - Dictionary-Word Ratio: {metrics['dict_word_ratio']:.2%} (Min Threshold: {config.MIN_DICTIONARY_WORD_RATIO:.2%})")
-        _trace(f"  - Text Coherence Score: {metrics['coherence_score']:.1f}/100.0 (Min Threshold: {config.MIN_TEXT_COHERENCE_SCORE:.1f})")
+        _trace(f"  - Quality Confidence Score: {metrics['quality_confidence']:.1f}/100.0 (Min Threshold: {config.MIN_QUALITY_CONFIDENCE:.1f})")
         
         _trace("[QUALITY GATE] PASSED: Document parsing quality is within acceptable bounds.")
         return metrics
@@ -515,7 +456,7 @@ def handle_chunk_text(payload, input_artifacts):
         }]
 
     from services.chunking_service import chunk_text
-    from services.quality_gate_service import evaluate_text_quality
+    from services.quality_gate_service import compute_quality_score
     
     t_start = time.perf_counter()
     
@@ -524,25 +465,38 @@ def handle_chunk_text(payload, input_artifacts):
         page_text = page.get("text", "")
         if not page_text or not page_text.strip():
             continue
-        page_chunks = chunk_text(page_text)
-        for pc in page_chunks:
-            chunk_quality = evaluate_text_quality(pc)
-            chunk_quality_score = chunk_quality.get("quality_score", 0.0)
-            
+        page_chunks = chunk_text(page_text, page_number=page.get("page_number", 0))
+        for seg in page_chunks:
+            # seg may be a dict {'text':..., 'metadata':{...}} or a raw string (backcompat)
+            if isinstance(seg, dict):
+                seg_text = seg.get('text', '')
+                seg_meta = seg.get('metadata', {})
+            else:
+                seg_text = str(seg)
+                seg_meta = {}
+
+            chunk_quality_score, chunk_signals = compute_quality_score(seg_text, document_type)
+
+            # Merge page-level metadata with segment-level metadata
             chunk_metadata = {
-                "page_number": page.get("page_number", 1),
-                "document_type": document_type,
-                "routing_confidence": routing_confidence,
-                "ocr_engine": page.get("ocr_engine", "none"),
-                "ocr_confidence": page.get("ocr_confidence", 0.0),
-                "extraction_method": page.get("extraction_method", "pypdf"),
-                "table_detected": page.get("table_detected", False),
-                "contains_signature": page.get("contains_signature", False),
-                "contains_handwriting": page.get("contains_handwriting", False),
+                "page_number": seg_meta.get('page_number', page.get("page_number", 1)),
+                "document_type": seg_meta.get('document_type', document_type),
+                "routing_confidence": seg_meta.get('routing_confidence', routing_confidence),
+                "ocr_engine": page.get("ocr_engine", seg_meta.get('ocr_engine', 'none')),
+                "ocr_confidence": page.get("ocr_confidence", seg_meta.get('ocr_confidence', 0.0)),
+                "extraction_method": page.get("extraction_method", seg_meta.get('extraction_method', 'pypdf')),
+                "table_detected": page.get("table_detected", seg_meta.get('table_detected', False)),
+                "contains_signature": page.get("contains_signature", seg_meta.get('contains_signature', False)),
+                "contains_handwriting": page.get("contains_handwriting", seg_meta.get('contains_handwriting', False)),
                 "chunk_quality_score": chunk_quality_score
             }
+            # Also include semantic metadata fields if present
+            for k in ['section', 'content_type', 'token_count', 'char_count']:
+                if k in seg_meta:
+                    chunk_metadata[k] = seg_meta[k]
+
             output_chunks.append({
-                "text": pc,
+                "text": seg_text,
                 "metadata": chunk_metadata
             })
             
@@ -550,7 +504,7 @@ def handle_chunk_text(payload, input_artifacts):
 
     # If everything is filtered or empty, fallback
     if not output_chunks and text.strip():
-        chunk_quality = evaluate_text_quality(text)
+        chunk_quality_score, chunk_signals = compute_quality_score(text, document_type)
         output_chunks.append({
             "text": text,
             "metadata": {
@@ -563,7 +517,7 @@ def handle_chunk_text(payload, input_artifacts):
                 "table_detected": False,
                 "contains_signature": False,
                 "contains_handwriting": False,
-                "chunk_quality_score": chunk_quality.get("quality_score", 0.0)
+                "chunk_quality_score": chunk_quality_score
             }
         })
 
@@ -685,6 +639,18 @@ def handle_generate_embeddings(payload, input_artifacts):
 
     _trace(f"[EMBED] Generating embeddings for {len(chunks)} chunks (model: {config.EMBEDDING_MODEL}, dim={config.EMBEDDING_DIMENSION})")
 
+    # ── prepare text for embedding (Fix 1) ──────────────────────────────────
+    def _prepare_text_for_embedding(text: str, metadata: dict) -> str:
+        section = metadata.get("section", "")
+        if section and section != "unknown":
+            return f"[{section.upper()}] {text}"
+        return text
+
+    # We keep original chunks for Qdrant payload, but embed the section-prefixed version
+    embedded_chunks = []
+    for chunk_text, chunk_meta in zip(chunks, chunk_metadata):
+        embedded_chunks.append(_prepare_text_for_embedding(chunk_text, chunk_meta))
+
     # ── generate embeddings with batch progress trace ─────────────────────────
     vectors = []
     embed_generation_duration = 0.0
@@ -698,7 +664,7 @@ def handle_generate_embeddings(payload, input_artifacts):
                 emit_task_trace(task_id, f"[EMBED] Batch {batch_num}/{total_batches} — {done}/{total} chunks embedded")
 
         t_embed_start = time.perf_counter()
-        vectors = embed_chunks_with_progress(chunks, progress_callback=_batch_trace, batch_size=config.EMBEDDING_BATCH_SIZE)
+        vectors = embed_chunks_with_progress(embedded_chunks, progress_callback=_batch_trace, batch_size=config.EMBEDDING_BATCH_SIZE)
         embed_generation_duration = time.perf_counter() - t_embed_start
         model_load_duration = get_model_load_time()
 
@@ -712,7 +678,7 @@ def handle_generate_embeddings(payload, input_artifacts):
     qdrant_lookup_duration = 0.0
     qdrant_insertion_duration = 0.0
     if chunks and vectors:
-        _trace(f"[QDRANT] Upserting {len(chunks)} vectors to collection 'scaleflow_chunks'...")
+        _trace(f"[QDRANT] Upserting {len(chunks)} vectors to unified fallback collection '{config.QDRANT_COLLECTION_NAME}'...")
         meta_dict = {
             "global_metadata": {
                 "source_artifact_id": source_artifact_id,
@@ -726,12 +692,65 @@ def handle_generate_embeddings(payload, input_artifacts):
             task_id=task_id,
             chunks=chunks,
             vectors=vectors,
-            metadata=meta_dict
+            metadata=meta_dict,
+            collection_name=config.QDRANT_COLLECTION_NAME
         )
         if qdrant_upserted:
-            _trace(f"[QDRANT] Insertion complete — {len(chunks)} vectors indexed")
+            _trace(f"[QDRANT] Unified fallback insertion complete — {len(chunks)} vectors indexed")
         else:
-            _trace("[QDRANT] WARNING: Upsert returned False — check Qdrant connectivity")
+            _trace("[QDRANT] WARNING: Unified fallback upsert returned False — check Qdrant connectivity")
+
+        # Route chunks to separate collections
+        paragraph_indices = [i for i, meta in enumerate(chunk_metadata) if meta.get("content_type") != "table"]
+        table_indices = [i for i, meta in enumerate(chunk_metadata) if meta.get("content_type") == "table"]
+
+        if paragraph_indices:
+            p_chunks = [chunks[i] for i in paragraph_indices]
+            p_vectors = [vectors[i] for i in paragraph_indices]
+            p_metadata = [chunk_metadata[i] for i in paragraph_indices]
+            meta_dict_p = {
+                "global_metadata": {
+                    "source_artifact_id": source_artifact_id,
+                    "original_filename":  original_filename
+                },
+                "chunk_metadata": p_metadata
+            }
+            _trace(f"[QDRANT] Upserting {len(p_chunks)} vectors to paragraphs collection '{config.QDRANT_PARAGRAPH_COLLECTION}'...")
+            p_upserted, _, _ = upsert_document_chunks(
+                pipeline_id=pipeline_id,
+                file_id=file_id,
+                task_id=task_id,
+                chunks=p_chunks,
+                vectors=p_vectors,
+                metadata=meta_dict_p,
+                collection_name=config.QDRANT_PARAGRAPH_COLLECTION
+            )
+            if p_upserted:
+                _trace(f"[QDRANT] Paragraphs insertion complete — {len(p_chunks)} vectors indexed")
+
+        if table_indices:
+            t_chunks = [chunks[i] for i in table_indices]
+            t_vectors = [vectors[i] for i in table_indices]
+            t_metadata = [chunk_metadata[i] for i in table_indices]
+            meta_dict_t = {
+                "global_metadata": {
+                    "source_artifact_id": source_artifact_id,
+                    "original_filename":  original_filename
+                },
+                "chunk_metadata": t_metadata
+            }
+            _trace(f"[QDRANT] Upserting {len(t_chunks)} vectors to tables collection '{config.QDRANT_TABLE_COLLECTION}'...")
+            t_upserted, _, _ = upsert_document_chunks(
+                pipeline_id=pipeline_id,
+                file_id=file_id,
+                task_id=task_id,
+                chunks=t_chunks,
+                vectors=t_vectors,
+                metadata=meta_dict_t,
+                collection_name=config.QDRANT_TABLE_COLLECTION
+            )
+            if t_upserted:
+                _trace(f"[QDRANT] Tables insertion complete — {len(t_chunks)} vectors indexed")
 
     # ── build artifact data ───────────────────────────────────────────────────
     chunk_refs = [
@@ -893,8 +912,10 @@ def handle_embed_query(payload, input_artifacts):
         "dimension": 768,
         "vector": vector,
         "top_k": payload.get("top_k"),
-        "pipeline_id_filter": payload.get("pipeline_id_filter"),
-        "file_id_filter": payload.get("file_id_filter")
+        "pipeline_id_filter": payload.get("pipeline_id_filter") or payload.get("pipeline_id"),
+        "pipeline_id": payload.get("pipeline_id_filter") or payload.get("pipeline_id"),
+        "file_id_filter": payload.get("file_id_filter") or payload.get("file_id"),
+        "file_id": payload.get("file_id_filter") or payload.get("file_id")
     }
     print(f"[{WORKER_ID}] [OK] Generated query vector for query: {query[:50]}...", flush=True)
     return artifact_data
@@ -931,21 +952,26 @@ def handle_retrieve_context(payload, input_artifacts):
     query = query_vector_data.get("query")
     vector = query_vector_data.get("vector")
     top_k = query_vector_data.get("top_k")
-    pipeline_id_filter = query_vector_data.get("pipeline_id_filter")
-    
-    p_id = to_int_or_none(pipeline_id_filter)
-    if p_id is None:
-        raise ValueError("Document-scoped retrieval failed: 'pipeline_id_filter' is missing or invalid.")
-        
+    pipeline_id_filter = query_vector_data.get("pipeline_id_filter") or query_vector_data.get("pipeline_id")
+    file_id_filter = query_vector_data.get("file_id_filter") or query_vector_data.get("file_id")
+
+    # pipeline_id_filter is optional — None means search across all documents globally
+    p_id = pipeline_id_filter
+    if p_id is not None:
+        try:
+            p_id = int(p_id)
+        except (ValueError, TypeError):
+            pass
+
     print("=" * 80, flush=True)
     print("RETRIEVAL TASK INITIATED", flush=True)
     print(f"QUERY: {query}", flush=True)
-    print(f"PIPELINE FILTER: {p_id}", flush=True)
+    print(f"PIPELINE FILTER: {p_id if p_id is not None else 'GLOBAL (all documents)'}", flush=True)
     print(f"TOP-K: {top_k}", flush=True)
     print("=" * 80, flush=True)
         
-    from services.retrieval_service import retrieve_context
-    artifact_data = retrieve_context(query_vector=vector, pipeline_id=p_id, top_k=top_k, query=query)
+    from services.retrieval_service import retrieve_and_rerank
+    artifact_data = retrieve_and_rerank(query_vector=vector, pipeline_id=p_id, top_k=top_k or 5, query=query)
     
     filtered_results = artifact_data.get("results", [])
     print(f"[{WORKER_ID}] [OK] Retrieved {len(filtered_results)} context chunks", flush=True)
@@ -986,27 +1012,37 @@ def handle_generate_answer_report(payload, input_artifacts):
             confidence = "medium"
             
     top_chunks = valid_results[:3]
+    
+    # Calculate RAG observability logs
+    retrieved_count = len(results) * 3  # estimated from retrieve_and_rerank candidate fetch (top_k * 3)
+    reranked_count = len(results)
+    
+    # Build prompt context window for token estimation
+    context_window = ""
+    for idx, c in enumerate(top_chunks):
+        context_window += f"[Source {idx+1}]: {c.get('chunk_text', '')}\n"
+    system_prompt_len = 175
+    prompt_length = len(context_window) + len(query) + system_prompt_len
+    estimated_token_length = prompt_length // 4
+
     if not top_chunks:
         answer = "No sufficiently relevant context was found for this query."
         citations = []
         confidence = "low"
+        provider_used = "Local Heuristic Synthesizer"
+        response_status = "404 Empty"
     else:
-        answer_parts = []
+        # Call RAG LLM Generator service
+        from services.llm_service import generate_answer
+        answer, provider_used, response_status = generate_answer(query, top_chunks)
+        
+        # Build Citations
         citations = []
         seen_citations = set()
         for idx, hit in enumerate(top_chunks):
-            chunk_text = hit.get("chunk_text", "").strip()
-            score = hit.get("score", 0.0)
             fname = hit.get("original_filename") or "unknown_file"
             fid = hit.get("file_id")
             cidx = hit.get("chunk_index", 0)
-            
-            if cidx == -1:
-                # It's an injected summary chunk
-                cleaned_text = chunk_text.replace("Document Summary:", "").strip()
-                answer_parts.append(f"Auto-generated Document Summary (Confidence Score: {score}):\n{cleaned_text}")
-            else:
-                answer_parts.append(f"Source [{idx+1}] (Confidence Score: {score}): \"{chunk_text}\"")
             
             citation_key = (fid, cidx)
             if citation_key not in seen_citations:
@@ -1017,7 +1053,14 @@ def handle_generate_answer_report(payload, input_artifacts):
                     "chunk_index": cidx
                 })
         
-        answer = f"Based on the retrieved context, here are the most relevant sections matching your query:\n\n" + "\n\n".join(answer_parts)
+    print("=" * 80, flush=True)
+    print(f"RAG ANSWER GENERATION OBSERVABILITY:", flush=True)
+    print(f"  - Retrieved chunk count: {retrieved_count}", flush=True)
+    print(f"  - Reranked chunk count: {reranked_count}", flush=True)
+    print(f"  - Final prompt token length (est): {estimated_token_length}", flush=True)
+    print(f"  - LLM provider used: {provider_used}", flush=True)
+    print(f"  - Raw LLM response status: {response_status}", flush=True)
+    print("=" * 80, flush=True)
         
     artifact_data = {
         "query": query,
@@ -1028,9 +1071,9 @@ def handle_generate_answer_report(payload, input_artifacts):
     print(f"[{WORKER_ID}] [OK] Generated final answer with {len(citations)} citations and confidence '{confidence}'", flush=True)
     return artifact_data
 
-HANDLER_MAP = {
+TASK_HANDLERS = {
     "preprocess_document": handle_preprocess_document,
-    "send_email": handle_send_email,
+    "parse_document": handle_parse_document,
     "process_video": handle_process_video,
     "generate_report": handle_generate_report,
     "data_backup": handle_data_backup,
@@ -1069,7 +1112,7 @@ OUTPUT_ARTIFACT_TYPES = {
 }
 
 LEASE_DURATIONS = {
-    "preprocess_document": 120,    # evaluation + optional enhancement on large docs
+    "preprocess_document": 120,
     "send_email": 30,
     "process_video": 120,
     "generate_report": 60,
@@ -1178,7 +1221,7 @@ def execute_task(task: Any):
         raise Exception(f"Simulated failure for task {task_id}")
     
     # Check in handler map
-    handler: Any = HANDLER_MAP.get(task_type)
+    handler: Any = TASK_HANDLERS.get(task_type)
     if not handler:
         registry_info = TASK_REGISTRY.get(task_type, {})
         handler_name = registry_info.get("handler_name")
@@ -1216,10 +1259,10 @@ def execute_task(task: Any):
                 handler_any: Any = handler
                 future = executor.submit(handler_any, task_data, input_artifacts)
                 try:
-                    output_data = future.result(timeout=300)
+                    output_data = future.result(timeout=1800)
                 except concurrent.futures.TimeoutError:
-                    print(f"[{WORKER_ID}] [TIMEOUT] Task {task_id} exceeded 300s limit!", flush=True)
-                    raise Exception("Task timed out after 300 seconds (Worker Deadlock Prevented)")
+                    print(f"[{WORKER_ID}] [TIMEOUT] Task {task_id} exceeded 1800s limit!", flush=True)
+                    raise Exception("Task timed out after 1800 seconds (Worker Deadlock Prevented)")
 
             if current_renewer and current_renewer.aborted:
                 raise Exception("Task execution aborted: lease expired or rejected.")

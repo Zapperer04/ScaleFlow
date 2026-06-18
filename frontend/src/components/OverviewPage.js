@@ -483,8 +483,10 @@ const OverviewPage = ({
       
     const getElapsedRuntime = () => {
       if (!pipeline) return '0s';
-      const start = new Date(pipeline.started_at || pipeline.created_at);
-      const end = pipeline.completed_at ? new Date(pipeline.completed_at) : new Date();
+      const startStr = pipeline.started_at || pipeline.created_at;
+      const endStr = pipeline.completed_at;
+      const start = new Date(startStr + (startStr.endsWith('Z') ? '' : 'Z'));
+      const end = endStr ? new Date(endStr + (endStr.endsWith('Z') ? '' : 'Z')) : new Date();
       const diffSec = Math.max(0, Math.round((end - start) / 1000));
       return `${diffSec}s`;
     };
@@ -494,6 +496,9 @@ const OverviewPage = ({
       || 'None';
 
     const isFailed = pipeline.status === 'failed' || !!failedTask;
+    
+    const lastSuccessfulAction = [...(pipelineDetails.tasks || [])].reverse().find(t => t.status === 'completed');
+    const lastFailedAction = [...(pipelineDetails.tasks || [])].reverse().find(t => t.status === 'failed');
     
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -519,6 +524,33 @@ const OverviewPage = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Active Worker</span>
             <strong style={{ color: '#cbd5e1', fontSize: '0.9rem', fontFamily: 'monospace' }}>{activeWorker}</strong>
+          </div>
+        </div>
+        
+        {/* Observability Metrics Card */}
+        <div className="panel" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px', background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '6px' }}>
+          <div style={{ fontSize: '0.8rem', color: '#cbd5e1', fontWeight: 'bold', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px' }}>
+            Observability & Control Plane
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Last Successful Action</span>
+              <strong style={{ color: '#10b981', fontSize: '0.85rem' }}>{lastSuccessfulAction ? lastSuccessfulAction.type.toUpperCase() : 'None'}</strong>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Last Failed Action</span>
+              <strong style={{ color: '#ef4444', fontSize: '0.85rem' }}>{lastFailedAction ? lastFailedAction.type.toUpperCase() : 'None'}</strong>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Current Lease Owner</span>
+              <strong style={{ color: '#cbd5e1', fontSize: '0.85rem', fontFamily: 'monospace' }}>{pipeline.owner_instance_id || 'None'}</strong>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Worker Lease Status</span>
+              <strong style={{ color: '#cbd5e1', fontSize: '0.85rem', fontFamily: 'monospace' }}>
+                {pipelineDetails.tasks?.find(t => t.status === 'running') ? `Active (Expires: ${new Date(pipelineDetails.tasks.find(t => t.status === 'running').lease_expires_at + 'Z').toLocaleTimeString()})` : 'Idle'}
+              </strong>
+            </div>
           </div>
         </div>
         {isFailed && failedTask?.error_message && (
