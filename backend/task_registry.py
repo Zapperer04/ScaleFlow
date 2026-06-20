@@ -256,3 +256,33 @@ def get_queue_name(task_type, priority, is_test=False):
     if is_test:
         return f"task_queue_test_{cap}_{priority}"
     return f"task_queue_{cap}_{priority}"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Distributed Task Lease Optimization Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+
+LEASE_DURATIONS = {
+    "test_isolated_task": 30,
+    "send_email": 120,
+    "process_video": 600,
+    "generate_report": 300,
+    "parse_document": 300,
+    "validate_parse_quality": 120,
+    "chunk_text": 120,
+    "generate_embeddings": 600,       # <-- 10 minutes for massive vector transformations
+    "summarize_document": 300,
+    "parse_logs": 120,
+    "detect_error_patterns": 120,
+    "summarize_logs": 300,
+    "final_report": 180,
+    "embed_query": 120,
+    "retrieve_context": 180,
+    "generate_answer_report": 300
+}
+
+def get_task_lease_duration(task_type: str) -> int:
+    """
+    Returns the maximum execution lease duration (in seconds) permitted 
+    before the orchestrator revokes worker lease assignment ownership.
+    """
+    return LEASE_DURATIONS.get(task_type, 180)

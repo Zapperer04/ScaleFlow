@@ -176,13 +176,6 @@ def get_uploaded_file_path(pipeline_id):
     return None
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PDF parsing delegated to services/pdf_parser.py (fallback chain)
-# ─────────────────────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────────────────────
-# Document Preprocessing — quality evaluation + image enhancement pre-parse
-# ─────────────────────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────────────────────
 # Document Preprocessing — quality evaluation + image enhancement pre-parse
 # ─────────────────────────────────────────────────────────────────────────────
 def handle_preprocess_document(payload, input_artifacts):
@@ -301,7 +294,6 @@ def handle_parse_document(payload, input_artifacts):
                     if not text:
                         _trace("[PARSER] WARNING: Parser returned empty text. Document may be fully graphical.")
                 except ValueError as ve:
-                    # Circuit-breaker / validation failure — surface clearly
                     _trace(f"[PARSER] VALIDATION FAILURE: {ve}")
                     raise
                 except TimeoutError as te:
@@ -467,7 +459,6 @@ def handle_chunk_text(payload, input_artifacts):
             continue
         page_chunks = chunk_text(page_text, page_number=page.get("page_number", 0))
         for seg in page_chunks:
-            # seg may be a dict {'text':..., 'metadata':{...}} or a raw string (backcompat)
             if isinstance(seg, dict):
                 seg_text = seg.get('text', '')
                 seg_meta = seg.get('metadata', {})
@@ -577,7 +568,7 @@ def get_artifact_content_by_type(pipeline_id, artifact_type):
         if res.status_code == 200:
             data = res.json()
             for art in data.get("artifacts", []):
-                if art.get("artifact_type") == artifact_type:
+                if art.get("artifact_type") == "artifact_type":
                     storage_uri = art.get("storage_uri")
                     return load_artifact_from_disk(storage_uri)
     except Exception as e:
@@ -597,7 +588,6 @@ def handle_generate_embeddings(payload, input_artifacts):
         print(f"[{WORKER_ID}] {msg}", flush=True)
         emit_task_trace(task_id, msg)
 
-    # ── normalise input (text_chunks or error_patterns) ──────────────────────
     raw = input_artifacts.get("text_chunks") or input_artifacts.get("error_patterns") or []
     
     chunks = []
@@ -631,7 +621,6 @@ def handle_generate_embeddings(payload, input_artifacts):
         chunks = []
         chunk_metadata = []
 
-    # ── resource guard: cap chunk count ──────────────────────────────────────
     if len(chunks) > MAX_EMBED_CHUNKS:
         _trace(f"[EMBED] WARNING: {len(chunks)} chunks exceeds limit {MAX_EMBED_CHUNKS}. Truncating.")
         chunks = chunks[:MAX_EMBED_CHUNKS]
@@ -639,27 +628,22 @@ def handle_generate_embeddings(payload, input_artifacts):
 
     _trace(f"[EMBED] Generating embeddings for {len(chunks)} chunks (model: {config.EMBEDDING_MODEL}, dim={config.EMBEDDING_DIMENSION})")
 
-    # ── prepare text for embedding (Fix 1) ──────────────────────────────────
     def _prepare_text_for_embedding(text: str, metadata: dict) -> str:
         section = metadata.get("section", "")
         if section and section != "unknown":
             return f"[{section.upper()}] {text}"
         return text
 
-    # We keep original chunks for Qdrant payload, but embed the section-prefixed version
     embedded_chunks = []
     for chunk_text, chunk_meta in zip(chunks, chunk_metadata):
         embedded_chunks.append(_prepare_text_for_embedding(chunk_text, chunk_meta))
 
-    # ── generate embeddings with batch progress trace ─────────────────────────
     vectors = []
     embed_generation_duration = 0.0
     model_load_duration = 0.0
     if chunks:
         def _batch_trace(batch_num, total_batches, done, total):
-            # Print to stdout directly (fast, local)
             print(f"[{WORKER_ID}] [EMBED] Batch {batch_num}/{total_batches} — {done}/{total} chunks embedded", flush=True)
-            # Throttle HTTP traces to reduce network overhead: only post on first, last, and every 5th batch
             if batch_num == 1 or batch_num == total_batches or batch_num % 5 == 0:
                 emit_task_trace(task_id, f"[EMBED] Batch {batch_num}/{total_batches} — {done}/{total} chunks embedded")
 
@@ -668,12 +652,10 @@ def handle_generate_embeddings(payload, input_artifacts):
         embed_generation_duration = time.perf_counter() - t_embed_start
         model_load_duration = get_model_load_time()
 
-    # ── resolve pipeline context ──────────────────────────────────────────────
     file_id = original_filename = source_artifact_id = None
     if pipeline_id:
         file_id, original_filename, source_artifact_id = get_pipeline_file_info(pipeline_id)
 
-    # ── upsert to Qdrant ──────────────────────────────────────────────────────
     qdrant_upserted = False
     qdrant_lookup_duration = 0.0
     qdrant_insertion_duration = 0.0
@@ -700,7 +682,6 @@ def handle_generate_embeddings(payload, input_artifacts):
         else:
             _trace("[QDRANT] WARNING: Unified fallback upsert returned False — check Qdrant connectivity")
 
-        # Route chunks to separate collections
         paragraph_indices = [i for i, meta in enumerate(chunk_metadata) if meta.get("content_type") != "table"]
         table_indices = [i for i, meta in enumerate(chunk_metadata) if meta.get("content_type") == "table"]
 
@@ -752,7 +733,6 @@ def handle_generate_embeddings(payload, input_artifacts):
             if t_upserted:
                 _trace(f"[QDRANT] Tables insertion complete — {len(t_chunks)} vectors indexed")
 
-    # ── build artifact data ───────────────────────────────────────────────────
     chunk_refs = [
         {"chunk_index": idx, "chunk_text": (c[:120] + "...") if len(c) > 120 else c}
         for idx, c in enumerate(chunks)
@@ -779,21 +759,16 @@ def handle_generate_embeddings(payload, input_artifacts):
 
 def handle_summarize_document(payload, input_artifacts):
     pipeline_id = payload.get('_pipeline_id')
-    # 1. First, check if text_chunks is directly in input_artifacts
     chunks = input_artifacts.get("text_chunks")
     if not chunks:
-        # 2. Check if we have vector_index or embeddings_mock in input_artifacts
-        # If we have vector_index, we can fetch text_chunks from pipeline artifacts
         if pipeline_id:
             chunks = get_artifact_content_by_type(pipeline_id, "text_chunks")
             
     if not chunks:
-        # 3. Fallback to embeddings_mock or vector_index (for backward compatibility / tests)
         embeddings = input_artifacts.get("embeddings_mock") or input_artifacts.get("vector_index")
         if embeddings and isinstance(embeddings, list):
             chunks = [item.get("chunk_preview", "") for item in embeddings if isinstance(item, dict)]
         elif embeddings and isinstance(embeddings, dict) and "chunk_refs" in embeddings:
-            # Maybe the vector_index stored chunk_refs
             chunks = [ref.get("chunk_text", "") for ref in embeddings.get("chunk_refs", []) if isinstance(ref, dict)]
             if not any(chunks) and pipeline_id:
                 chunks = get_artifact_content_by_type(pipeline_id, "text_chunks")
@@ -813,7 +788,6 @@ def handle_summarize_document(payload, input_artifacts):
     if not chunks:
         chunks = ["No content to summarize."]
         
-    # Extract string content if chunks are dictionaries
     processed_chunks = []
     for c in chunks:
         if isinstance(c, dict) and "text" in c:
@@ -925,19 +899,10 @@ def is_general_query(query: str) -> bool:
         return False
     q = query.lower().strip("?. ")
     general_phrases = [
-        "what is it about",
-        "what is this document about",
-        "what is this about",
-        "summarize",
-        "summary",
-        "give me a summary",
-        "what does it talk about",
-        "what is this",
-        "tell me about this",
-        "what is the document about",
-        "what is the file about",
-        "summarize this document",
-        "summarize this file"
+        "what is it about", "what is this document about", "what is this about",
+        "summarize", "summary", "give me a summary", "what does it talk about",
+        "what is this", "tell me about this", "what is the document about",
+        "what is the file about", "summarize this document", "summarize this file"
     ]
     for phrase in general_phrases:
         if phrase in q:
@@ -955,7 +920,6 @@ def handle_retrieve_context(payload, input_artifacts):
     pipeline_id_filter = query_vector_data.get("pipeline_id_filter") or query_vector_data.get("pipeline_id")
     file_id_filter = query_vector_data.get("file_id_filter") or query_vector_data.get("file_id")
 
-    # pipeline_id_filter is optional — None means search across all documents globally
     p_id = pipeline_id_filter
     if p_id is not None:
         try:
@@ -977,6 +941,9 @@ def handle_retrieve_context(payload, input_artifacts):
     print(f"[{WORKER_ID}] [OK] Retrieved {len(filtered_results)} context chunks", flush=True)
     return artifact_data
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Answer Synthesis — Fully integrated with multi-tier LLM RAG engine (Groq)
+# ─────────────────────────────────────────────────────────────────────────────
 def handle_generate_answer_report(payload, input_artifacts):
     context_data = input_artifacts.get("retrieved_context")
     if not context_data:
@@ -985,7 +952,7 @@ def handle_generate_answer_report(payload, input_artifacts):
     query = context_data.get("query", "")
     results: list[Any] = context_data.get("results", [])
     
-    # Verify score threshold or summary chunk
+    # Filter based on score threshold parameters
     min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
     valid_results = [r for r in results if float(r.get("score") or 0.0) >= min_score or r.get("chunk_index") == -1]
     
@@ -1013,11 +980,11 @@ def handle_generate_answer_report(payload, input_artifacts):
             
     top_chunks = valid_results[:3]
     
-    # Calculate RAG observability logs
-    retrieved_count = len(results) * 3  # estimated from retrieve_and_rerank candidate fetch (top_k * 3)
+    # Calculate RAG observability logs metrics
+    retrieved_count = len(results) * 3  
     reranked_count = len(results)
     
-    # Build prompt context window for token estimation
+    # Build prompt context window for token estimation profile logs
     context_window = ""
     for idx, c in enumerate(top_chunks):
         context_window += f"[Source {idx+1}]: {c.get('chunk_text', '')}\n"
@@ -1032,11 +999,11 @@ def handle_generate_answer_report(payload, input_artifacts):
         provider_used = "Local Heuristic Synthesizer"
         response_status = "404 Empty"
     else:
-        # Call RAG LLM Generator service
+        # Route directly into your updated multi-tier service routing layer
         from services.llm_service import generate_answer
         answer, provider_used, response_status = generate_answer(query, top_chunks)
         
-        # Build Citations
+        # Construct cross-referenced verification citations
         citations = []
         seen_citations = set()
         for idx, hit in enumerate(top_chunks):
@@ -1081,7 +1048,6 @@ TASK_HANDLERS = {
     "send_notification": handle_send_notification,
     "run_ml_model": handle_run_ml_model,
     "webhook_trigger": handle_webhook_trigger,
-    "parse_document": handle_parse_document,
     "validate_parse_quality": handle_validate_parse_quality,
     "chunk_text": handle_chunk_text,
     "generate_embeddings": handle_generate_embeddings,
@@ -1119,7 +1085,7 @@ LEASE_DURATIONS = {
     "parse_document": 60,
     "validate_parse_quality": 60,
     "chunk_text": 60,
-    "generate_embeddings": 180,
+    "generate_embeddings": 600,
     "summarize_document": 60,
     "parse_logs": 60,
     "detect_error_patterns": 60,
@@ -1143,7 +1109,7 @@ class LeaseRenewer(threading.Thread):
         self.daemon = True
 
     def run(self):
-        lease_duration = LEASE_DURATIONS.get(self.task_type, 30)
+        lease_duration = LEACE_DURATIONS.get(self.task_type, 30) if 'LEACE_DURATIONS' in globals() else LEASE_DURATIONS.get(self.task_type, 30)
         interval = max(1, lease_duration // 2)
         
         while not self.stop_event.wait(interval):
@@ -1176,7 +1142,6 @@ class LeaseRenewer(threading.Thread):
         self.stop_event.set()
 
 def execute_task(task: Any):
-    """Simulate doing the actual work - with random failures for testing retry"""
     from context.artifact_store import load_artifact_from_disk, save_artifact_to_disk
     task_type = task['type']
     task_data = task['data']
@@ -1189,7 +1154,6 @@ def execute_task(task: Any):
     if current_renewer and current_renewer.aborted:
         raise Exception("Task execution aborted: lease expired or rejected.")
 
-    # Check for simulate_hang_seconds in payload
     simulate_hang_seconds = task_data.get('simulate_hang_seconds')
     if simulate_hang_seconds is not None:
         try:
@@ -1210,8 +1174,6 @@ def execute_task(task: Any):
     if current_renewer and current_renewer.aborted:
         raise Exception("Task execution aborted: lease expired or rejected.")
 
-    # Simulated random failure applies ONLY to demo/simulation task types.
-    # Real AI pipeline tasks (document ingestion & RAG retrieval) must never be randomly failed.
     REAL_PIPELINE_TASK_TYPES = {
         "parse_document", "chunk_text", "generate_embeddings", "summarize_document",
         "embed_query", "retrieve_context", "generate_answer_report"
@@ -1220,7 +1182,6 @@ def execute_task(task: Any):
         print(f"[{WORKER_ID}]   [FAIL] Task failed! Will retry...", flush=True)
         raise Exception(f"Simulated failure for task {task_id}")
     
-    # Check in handler map
     handler: Any = TASK_HANDLERS.get(task_type)
     if not handler:
         registry_info = TASK_REGISTRY.get(task_type, {})
@@ -1230,7 +1191,6 @@ def execute_task(task: Any):
             
     if handler:
         if task_type in OUTPUT_ARTIFACT_TYPES:
-            # Load input artifacts
             input_artifacts = {}
             for art_id in task.get('input_artifact_ids', []):
                 try:
@@ -1244,7 +1204,6 @@ def execute_task(task: Any):
                 except Exception as ex:
                     print(f"[{WORKER_ID}] Error loading input artifact {art_id}: {ex}", flush=True)
             
-            # Execute handler
             if isinstance(task_data, dict):
                 task_data['_task_id'] = task_id
                 task_data['_pipeline_id'] = task.get('pipeline_id')
@@ -1267,12 +1226,10 @@ def execute_task(task: Any):
             if current_renewer and current_renewer.aborted:
                 raise Exception("Task execution aborted: lease expired or rejected.")
             
-            # Save artifact to disk
             pipeline_id = task.get('pipeline_id')
             artifact_type = OUTPUT_ARTIFACT_TYPES[task_type]
             storage_uri, checksum = save_artifact_to_disk(pipeline_id, task_id, artifact_type, output_data)
             
-            # Register artifact with API, preserving metadata from output dict
             metadata = {"worker_id": WORKER_ID}
             if isinstance(output_data, dict):
                 for k, v in output_data.items():
@@ -1325,7 +1282,6 @@ def register_worker():
         time.sleep(2)
 
 def get_next_task():
-    """Get next task using capability-aware Weighted Round-Robin (WRR) scheduling"""
     try:
         try:
             paused_queues_raw = redis_client.smembers("scaleflow:paused_queues")
@@ -1338,13 +1294,11 @@ def get_next_task():
             paused_queues = set()
 
         cycle_priorities = ['high', 'high', 'high', 'high', 'high', 'high', 'medium', 'medium', 'medium', 'low']
-        # Atomic increment wrr_index in Redis
         wrr_val_raw = redis_client.incr('wrr_index')
         wrr_val: Any = wrr_val_raw
         wrr_idx = int(wrr_val) % len(cycle_priorities)
         target_priority = cycle_priorities[wrr_idx]
         
-        # 1. Try to pop from target priority queues matching capabilities (test first, then prod)
         for is_test in [True, False]:
             for cap in WORKER_CAPABILITIES:
                 q_name = f"task_queue_test_{cap}_{target_priority}" if is_test else f"task_queue_{cap}_{target_priority}"
@@ -1354,7 +1308,6 @@ def get_next_task():
                 if val:
                     return (q_name, val)
                     
-        # 2. Fall back to priority order non-blockingly to prevent starvation
         for p in ['high', 'medium', 'low']:
             if p == target_priority:
                 continue
@@ -1367,7 +1320,6 @@ def get_next_task():
                     if val:
                         return (q_name, val)
                         
-        # 3. If all queues are empty, block on brpop of active (non-paused) worker queues
         active_queues = [q for q in ALL_WORKER_QUEUES if q not in paused_queues]
         if active_queues:
             result = redis_client.brpop(active_queues, timeout=5)
@@ -1414,7 +1366,6 @@ def worker_loop():
                 worker_state['last_action'] = f"Claiming task #{task_id}"
                 print(f"[{WORKER_ID}] Claiming task #{task_id} from API...", flush=True)
                 
-                # Retry claim in case of DB transaction commit race condition
                 max_attempts = 5
                 response = None
                 for attempt in range(max_attempts):
@@ -1433,7 +1384,6 @@ def worker_loop():
                     if response.status_code == 200:
                         break
                     elif response.status_code == 400 and attempt < max_attempts - 1:
-                        # Sleep briefly and retry
                         time.sleep(0.2)
                     else:
                         break
