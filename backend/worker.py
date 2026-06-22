@@ -1110,7 +1110,7 @@ class LeaseRenewer(threading.Thread):
 
     def run(self):
         lease_duration = LEACE_DURATIONS.get(self.task_type, 30) if 'LEACE_DURATIONS' in globals() else LEASE_DURATIONS.get(self.task_type, 30)
-        interval = max(1, lease_duration // 2)
+        interval = max(1, min(15, lease_duration // 2))
         
         while not self.stop_event.wait(interval):
             if self.stop_event.is_set():

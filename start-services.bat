@@ -9,22 +9,24 @@ echo.
 echo   This orchestrator script will help you launch all components
 echo   of the ScaleFlow system on your Windows machine.
 echo.
-echo   [1] Start Redis + 3 Worker Containers (Docker Compose)
-echo   [2] Start Flask API Backend (Python)
+echo   [1] Start Redis + 3 Worker Containers (Docker Compose with Watch)
+echo   [2] Start Flask API Backend (Python with Hot-Reload)
 echo   [3] Start React Dashboard Frontend (Node.js)
-echo   [4] Start all of the above (Separate CMD Windows)
-echo   [5] Start a single Worker Node locally (No Docker)
-echo   [6] Exit
+echo   [4] Start all of the above (Separate CMD Windows with Watch/Hot-Reload)
+echo   [5] Start ALL services in Docker Compose (with Watch/Hot-Reload)
+echo   [6] Start a single Worker Node locally (No Docker)
+echo   [7] Exit
 echo.
 echo =======================================================================
-set /p opt="Select an option (1-6): "
+set /p opt="Select an option (1-7): "
 
 if "%opt%"=="1" goto DOCKER
 if "%opt%"=="2" goto BACKEND
 if "%opt%"=="3" goto FRONTEND
 if "%opt%"=="4" goto START_ALL
-if "%opt%"=="5" goto LOCAL_WORKER
-if "%opt%"=="6" goto EXIT
+if "%opt%"=="5" goto DOCKER_ALL
+if "%opt%"=="6" goto LOCAL_WORKER
+if "%opt%"=="7" goto EXIT
 goto INVALID
 
 :DOCKER
@@ -44,7 +46,7 @@ if %errorlevel% neq 0 goto WAIT_DOCKER_1
 echo   [SUCCESS] Docker Engine is now online.
 
 :DOCKER_ONLINE_1
-docker compose up redis worker1 worker2 worker3 qdrant postgres
+docker compose up redis worker1 worker2 worker3 qdrant postgres --watch
 pause
 goto EXIT
 
@@ -104,7 +106,7 @@ echo   [SUCCESS] Docker Engine is now online.
 
 :DOCKER_ONLINE_4
 echo - Starting containers...
-start "ScaleFlow - Docker Workers & Redis" cmd /c "docker compose up redis worker1 worker2 worker3 qdrant postgres"
+start "ScaleFlow - Docker Workers & Redis" cmd /c "docker compose up redis worker1 worker2 worker3 qdrant postgres --watch"
 
 :: 2. Launch Flask API Backend
 echo - Launching Flask API Backend...
@@ -118,6 +120,27 @@ echo.
 echo [SUCCESS] ScaleFlow orchestration initiated!
 echo Check the newly opened command prompt windows for service logs.
 echo.
+pause
+goto EXIT
+
+:DOCKER_ALL
+echo.
+echo 🐳 Starting ALL services inside Docker Compose (with watch/reload)...
+docker info >nul 2>&1
+if %errorlevel% equ 0 goto DOCKER_ONLINE_ALL
+
+echo   [INFO] Docker is not running. Starting Docker Desktop...
+start "" "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+echo   [INFO] Waiting for Docker Engine to initialize (this may take a minute)...
+
+:WAIT_DOCKER_ALL
+timeout /t 5 >nul
+docker info >nul 2>&1
+if %errorlevel% neq 0 goto WAIT_DOCKER_ALL
+echo   [SUCCESS] Docker Engine is now online.
+
+:DOCKER_ONLINE_ALL
+docker compose up --watch
 pause
 goto EXIT
 

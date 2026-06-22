@@ -686,12 +686,14 @@ def cancel_task(task_id):
         db.close()
 
 LEASE_DURATIONS = {
+    "preprocess_document": 120,
+    "validate_parse_quality": 60,
     "send_email": 30,
     "process_video": 120,
     "generate_report": 60,
     "parse_document": 60,
     "chunk_text": 60,
-    "generate_embeddings": 180,
+    "generate_embeddings": 600,
     "summarize_document": 60,
     "parse_logs": 60,
     "detect_error_patterns": 60,
@@ -5119,9 +5121,13 @@ if __name__ == '__main__':
         db.close()
 
     port = int(os.environ.get("API_PORT", 5000))
-    from waitress import serve
-    print(f"Starting multi-threaded Waitress WSGI server on port {port} with 8 threads...", flush=True)
-    serve(app, host='0.0.0.0', port=port, threads=8)
+    if os.environ.get("FLASK_DEBUG") == "1" or os.environ.get("FLASK_ENV") == "development":
+        print(f"Starting Flask development server on port {port} with auto-reload...", flush=True)
+        app.run(host='0.0.0.0', port=port, debug=True, use_reloader=True)
+    else:
+        from waitress import serve
+        print(f"Starting multi-threaded Waitress WSGI server on port {port} with 8 threads...", flush=True)
+        serve(app, host='0.0.0.0', port=port, threads=8)
 @app.route('/tasks/<int:task_id>/log', methods=['POST'])
 def append_task_log(task_id):
     db = SessionLocal()

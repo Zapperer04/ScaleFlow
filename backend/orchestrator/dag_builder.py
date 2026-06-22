@@ -58,6 +58,41 @@ TEMPLATES = {
                 "payload": {}
             }
         ]
+    },
+    "retrieval_answer_demo": {
+        "name": "Retrieval Answer Demo",
+        "nodes": [
+            {
+                "id": "embed_query",
+                "task_type": "embed_query",
+                "display_name": "Embed Query",
+                "depends_on": [],
+                "priority": "high",
+                "expected_input_artifacts": [],
+                "output_artifact_type": "query_vector",
+                "payload": {}
+            },
+            {
+                "id": "retrieve_context",
+                "task_type": "retrieve_context",
+                "display_name": "Retrieve Context",
+                "depends_on": ["embed_query"],
+                "priority": "medium",
+                "expected_input_artifacts": ["query_vector"],
+                "output_artifact_type": "retrieved_context",
+                "payload": {}
+            },
+            {
+                "id": "generate_answer_report",
+                "task_type": "generate_answer_report",
+                "display_name": "Generate Answer",
+                "depends_on": ["retrieve_context"],
+                "priority": "medium",
+                "expected_input_artifacts": ["retrieved_context"],
+                "output_artifact_type": "final_answer",
+                "payload": {}
+            }
+        ]
     }
 }
 

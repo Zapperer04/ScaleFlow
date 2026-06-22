@@ -60,9 +60,9 @@ MIN_RETRIEVAL_SCORE = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
 # 5. Embedding Model Config
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-base-en-v1.5")
 EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "768"))
-EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
-EMBEDDING_QUANTIZATION = os.getenv("EMBEDDING_QUANTIZATION", "False").lower() in ("true", "1", "yes")
-EMBEDDING_NUM_THREADS = int(os.getenv("EMBEDDING_NUM_THREADS", "4"))
+EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "16"))
+EMBEDDING_QUANTIZATION = os.getenv("EMBEDDING_QUANTIZATION", "True").lower() in ("true", "1", "yes")
+EMBEDDING_NUM_THREADS = int(os.getenv("EMBEDDING_NUM_THREADS", "2"))
 
 # 6. Parser Priorities Config
 PARSER_PRIORITIES = [p.strip() for p in os.getenv("PARSER_PRIORITIES", "pypdf,pdfplumber,ocr").lower().split(",") if p.strip()]

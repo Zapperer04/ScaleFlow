@@ -151,16 +151,21 @@ def get_rolling_metrics(db):
     for t in recent_claims:
         # Determine release time (either created_at or last dependency completed)
         released_at = t.created_at
-        if t.dependencies:
+        parents = []
+        if t.dependent_on:
+            parents = t.dependent_on
+        elif t.dependencies:
             try:
                 pids = json.loads(t.dependencies) if isinstance(t.dependencies, str) else t.dependencies
                 if pids:
-                    parent_tasks = db.query(Task).filter(Task.id.in_(pids)).all()
-                    completed_times = [p.completed_at for p in parent_tasks if p.completed_at]
-                    if completed_times:
-                        released_at = max(completed_times)
+                    parents = db.query(Task).filter(Task.id.in_(pids)).all()
             except Exception:
                 pass
+        
+        if parents:
+            completed_times = [p.completed_at for p in parents if p.completed_at]
+            if completed_times:
+                released_at = max(completed_times)
         
         if t.started_at and t.started_at > released_at:
             wait_times.append((t.started_at - released_at).total_seconds())
@@ -239,13 +244,13 @@ def get_system_health(db, metrics):
     if metrics["total_workers"] == 0 and backlog > 0:
         return "critical", "No active workers available to process backlog."
         
-    if backlog >= BACKPRESSURE_CONFIG["max_backlog_size"] or avg_wait >= BACKPRESSURE_CONFIG["critical_wait_time_threshold"] or stale_incidents >= 5:
+    if backlog >= BACKPRESSURE_CONFIG["max_backlog_size"] or (avg_wait >= BACKPRESSURE_CONFIG["critical_wait_time_threshold"] and backlog > 0) or stale_incidents >= 5:
         return "critical", f"Backlog ({backlog}) or average wait ({avg_wait}s) exceeded critical limits, or high worker instability."
         
     if utilization >= BACKPRESSURE_CONFIG["saturated_utilization_threshold"] and growth_rate > 0:
         return "saturated", f"Worker pool saturated ({utilization}%) and queue is growing at {round(growth_rate, 2)}/s."
         
-    if backlog >= 20 or avg_wait >= BACKPRESSURE_CONFIG["critical_wait_time_threshold"] / 2:
+    if backlog >= 20 or (avg_wait >= BACKPRESSURE_CONFIG["critical_wait_time_threshold"] / 2 and backlog > 0):
         return "saturated", f"Queue backlog elevated ({backlog}) with wait duration of {avg_wait}s."
         
     if utilization >= 75.0 or backlog >= 10 or avg_wait >= 5.0 or recovery_events > 0:
@@ -400,15 +405,20 @@ def calculate_pipeline_critical_path(db, pipeline_id):
     for t in tasks:
         # Dependency Wait
         released_at = t.created_at
-        if t.dependencies:
+        parents = []
+        if t.dependent_on:
+            parents = t.dependent_on
+        elif t.dependencies:
             try:
                 pids = json.loads(t.dependencies) if isinstance(t.dependencies, str) else t.dependencies
                 parents = [task_map[pid] for pid in pids if pid in task_map]
-                completed_parents = [p.completed_at for p in parents if p.completed_at]
-                if completed_parents:
-                    released_at = max(completed_parents)
             except Exception:
                 pass
+                
+        if parents:
+            completed_parents = [p.completed_at for p in parents if p.completed_at]
+            if completed_parents:
+                released_at = max(completed_parents)
                 
         dep_wait = (released_at - t.created_at).total_seconds() if released_at > t.created_at else 0.0
         

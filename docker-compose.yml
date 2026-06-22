@@ -13,11 +13,13 @@ services:
       PYTHONUNBUFFERED: "1"
       HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
       HUGGINGFACE_HUB_VERBOSITY: "error"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
       BACKPRESSURE_ENABLED: "False"
     ports:
       - "5000:5000"
     volumes:
-      - ./backend:/app
+      - shared_storage:/app/storage
     depends_on:
       redis:
         condition: service_healthy
@@ -30,6 +32,18 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./backend
+          target: /app
+          ignore:
+            - venv
+            - __pycache__
+            - storage
+            - .pytest_cache
+            - "*.pyc"
+            - task_schedular.db
     restart: unless-stopped
 
   frontend:
@@ -40,9 +54,18 @@ services:
       - "3000:3000"
     environment:
       - REACT_APP_API_URL=http://localhost:5000
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
     depends_on:
       backend:
         condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend
+          target: /app
+          ignore:
+            - node_modules
     restart: unless-stopped
 
   worker1:
@@ -60,18 +83,31 @@ services:
       WORKER_CAPABILITIES: "default,cpu_heavy,embedding_gpu,summarization_llm,retrieval_optimized,io_heavy"
       HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
       HUGGINGFACE_HUB_VERBOSITY: "error"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
       BACKPRESSURE_ENABLED: "False"
-    volumes:
-      - ./backend:/app
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - shared_storage:/app/storage
     depends_on:
       redis:
         condition: service_healthy
       qdrant:
         condition: service_started
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./backend
+          target: /app
+          ignore:
+            - venv
+            - __pycache__
+            - storage
+            - .pytest_cache
+            - "*.pyc"
+            - task_schedular.db
     restart: unless-stopped
-
 
   worker2:
     build: ./backend
@@ -88,18 +124,31 @@ services:
       WORKER_CAPABILITIES: "default,cpu_heavy,embedding_gpu,summarization_llm,retrieval_optimized,io_heavy"
       HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
       HUGGINGFACE_HUB_VERBOSITY: "error"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
       BACKPRESSURE_ENABLED: "False"
-    volumes:
-      - ./backend:/app
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - shared_storage:/app/storage
     depends_on:
       redis:
         condition: service_healthy
       qdrant:
         condition: service_started
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./backend
+          target: /app
+          ignore:
+            - venv
+            - __pycache__
+            - storage
+            - .pytest_cache
+            - "*.pyc"
+            - task_schedular.db
     restart: unless-stopped
-
 
   worker3:
     build: ./backend
@@ -116,18 +165,31 @@ services:
       WORKER_CAPABILITIES: "default,cpu_heavy,embedding_gpu,summarization_llm,retrieval_optimized,io_heavy"
       HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
       HUGGINGFACE_HUB_VERBOSITY: "error"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
       BACKPRESSURE_ENABLED: "False"
-    volumes:
-      - ./backend:/app
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - shared_storage:/app/storage
     depends_on:
       redis:
         condition: service_healthy
       qdrant:
         condition: service_started
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./backend
+          target: /app
+          ignore:
+            - venv
+            - __pycache__
+            - storage
+            - .pytest_cache
+            - "*.pyc"
+            - task_schedular.db
     restart: unless-stopped
-
 
   redis:
     image: redis:latest
@@ -168,3 +230,4 @@ services:
 
 volumes:
   pgdata:
+  shared_storage:
