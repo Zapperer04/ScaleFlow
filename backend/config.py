@@ -8,10 +8,24 @@ def load_env():
                 for line in f:
                     if line.strip() and not line.startswith('#'):
                         key, val = line.strip().split('=', 1)
-                        os.environ.setdefault(key.strip(), val.strip())
+                        key_strip = key.strip()
+                        if key_strip not in os.environ:
+                            os.environ[key_strip] = val.strip()
                 break
         except FileNotFoundError:
             pass
+
+    # Configure offline Hugging Face cache if hf_cache directory is present in the workspace
+    # This ensures local execution (tests, validation, local worker) loads models offline without hanging
+    _backend_dir = os.path.dirname(os.path.abspath(__file__))
+    _hf_cache_dir = os.path.join(_backend_dir, "hf_cache")
+    if os.path.exists(_hf_cache_dir):
+        if "HF_HUB_CACHE" not in os.environ:
+            os.environ["HF_HUB_CACHE"] = _hf_cache_dir
+        if "HF_HUB_OFFLINE" not in os.environ:
+            os.environ["HF_HUB_OFFLINE"] = "1"
+        if "TRANSFORMERS_OFFLINE" not in os.environ:
+            os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 load_env()
 
@@ -26,8 +40,8 @@ CHUNK_OVERLAP_MAX_WORDS = int(os.getenv("CHUNK_OVERLAP_MAX_WORDS", "100"))
 MAX_CHARACTER_LIMIT = int(os.getenv("MAX_CHARACTER_LIMIT", "2000000"))
 
 # New token/char based chunking defaults for intelligent chunker
-CHUNK_MAX_TOKENS = int(os.getenv("CHUNK_MAX_TOKENS", "400"))
-CHUNK_OVERLAP_TOKENS = int(os.getenv("CHUNK_OVERLAP_TOKENS", "50"))
+CHUNK_MAX_TOKENS = int(os.getenv("CHUNK_MAX_TOKENS", "200"))
+CHUNK_OVERLAP_TOKENS = int(os.getenv("CHUNK_OVERLAP_TOKENS", "30"))
 CHUNK_MIN_CHARS = int(os.getenv("CHUNK_MIN_CHARS", "50"))
 
 # 2. Quality / Coherence Thresholds
@@ -62,7 +76,7 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-base-en-v1.5")
 EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "768"))
 EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "16"))
 EMBEDDING_QUANTIZATION = os.getenv("EMBEDDING_QUANTIZATION", "True").lower() in ("true", "1", "yes")
-EMBEDDING_NUM_THREADS = int(os.getenv("EMBEDDING_NUM_THREADS", "2"))
+EMBEDDING_NUM_THREADS = int(os.getenv("EMBEDDING_NUM_THREADS", "1"))
 
 # 6. Parser Priorities Config
 PARSER_PRIORITIES = [p.strip() for p in os.getenv("PARSER_PRIORITIES", "pypdf,pdfplumber,ocr").lower().split(",") if p.strip()]

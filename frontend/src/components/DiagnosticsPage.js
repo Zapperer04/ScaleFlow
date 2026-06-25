@@ -13,7 +13,7 @@ const DiagnosticsPage = () => {
       setRefreshing(true);
       // Fetch diagnostics from API
       // Since it's a new endpoint, we use raw fetch for simplicity
-      const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      const API_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:5000';
       const API_KEY = process.env.REACT_APP_API_KEY || 'dev_secret_api_key';
       
       const diagRes = await fetch(`${API_URL}/diagnostics`, {

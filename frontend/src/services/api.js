@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const API_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:5000';
 const API_KEY = process.env.REACT_APP_API_KEY || 'dev_secret_api_key';
 
 const apiClient = axios.create({
@@ -141,6 +141,12 @@ export const fetchPipelineTimeline = async (pipelineId) => {
   const response = await apiClient.get(`/pipelines/${pipelineId}/timeline`);
   return response.data;
 };
+
+export const retryPipeline = async (pipelineId) => {
+  const response = await apiClient.post(`/pipelines/${pipelineId}/retry`);
+  return response.data;
+};
+
 export const getSystemMetrics = async () => {
   const response = await apiClient.get('/metrics/system');
   return response.data;

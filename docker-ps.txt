@@ -1,0 +1,1 @@
+time="2026-06-25T11:32:58+05:30" level=warning msg="D:\\Projects\\task-schedular\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"

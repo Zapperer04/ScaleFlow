@@ -12,7 +12,9 @@ def load_env():
                 for line in f:
                     if line.strip() and not line.startswith('#'):
                         key, val = line.strip().split('=', 1)
-                        os.environ.setdefault(key.strip(), val.strip())
+                        key_strip = key.strip()
+                        if key_strip not in os.environ:
+                            os.environ[key_strip] = val.strip()
                 break
         except FileNotFoundError:
             pass
@@ -69,7 +71,13 @@ ACTIVE_DB_MODE = DB_MODE
 if DATABASE_URL.startswith("sqlite"):
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 else:
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+        DATABASE_URL,
+        pool_size=15,
+        max_overflow=25,
+        pool_recycle=300,
+        pool_pre_ping=True
+    )
 
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()

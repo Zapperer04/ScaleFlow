@@ -57,6 +57,10 @@ def get_model_load_time() -> float:
 
 def embed_text(text: str) -> list[float]:
     model = get_embedding_model()
+    # Prepend BGE instruction prefix for queries if using a BGE model
+    prefix = "Represent this sentence for searching relevant passages: "
+    if "bge-" in config.EMBEDDING_MODEL.lower() and not text.startswith(prefix):
+        text = f"{prefix}{text}"
     try:
         # Generate embedding
         vector = model.encode(text, convert_to_numpy=True).tolist()
@@ -85,6 +89,9 @@ def embed_chunks_with_progress(chunks: list[str], progress_callback=None, batch_
             if progress_callback:
                 batch_num = (i // batch_size) + 1
                 progress_callback(batch_num, total_batches, len(all_vectors), len(chunks))
+            
+            # Yield control back to Python's GIL to allow heartbeat and lease renewer threads to run
+            time.sleep(0.1)
                 
         return all_vectors
     except Exception as e:

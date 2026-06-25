@@ -20,7 +20,7 @@ API_KEY = os.environ.get("API_KEY", "dev_secret_api_key")
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
 REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
-TASK_RUNNING_TIMEOUT_SECONDS = int(os.environ.get("TASK_RUNNING_TIMEOUT_SECONDS", 300))
+TASK_RUNNING_TIMEOUT_SECONDS = int(os.environ.get("TASK_RUNNING_TIMEOUT_SECONDS", 1800))
 
 app = Flask(__name__)
 if "*" in ALLOWED_ORIGINS:
@@ -35,7 +35,7 @@ PRIORITY_QUEUES = {
     'medium': 'task_queue_medium',
     'low': 'task_queue_low'
 }
-WORKER_HEARTBEAT_EXPIRY = 30
+WORKER_HEARTBEAT_EXPIRY = 90
 
 from services.metrics_service import BACKPRESSURE_CONFIG, get_rolling_metrics, get_system_health
 
@@ -2258,6 +2258,60 @@ def upload_file():
                 os.remove(final_path)
             except:
                 pass
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/pipelines/<int:pipeline_id>/retry', methods=['POST'])
+@require_api_key
+def retry_pipeline(pipeline_id):
+    """
+    Resets all failed tasks in a pipeline back to pending and re-queues them.
+    Allows retrying large document jobs that timed out without re-uploading.
+    """
+    db = SessionLocal()
+    try:
+        pipeline = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
+        if not pipeline:
+            return jsonify({"error": "Pipeline not found"}), 404
+
+        failed_tasks = db.query(Task).filter(
+            Task.pipeline_id == pipeline_id,
+            Task.status == 'failed'
+        ).all()
+
+        if not failed_tasks:
+            return jsonify({"message": "No failed tasks to retry", "retried": 0}), 200
+
+        retried = 0
+        for task in failed_tasks:
+            # Only re-queue if all dependencies are completed
+            deps = db.query(TaskDependency).filter(TaskDependency.task_id == task.id).all()
+            dep_ids = [d.depends_on_id for d in deps]
+            if dep_ids:
+                dep_tasks = db.query(Task).filter(Task.id.in_(dep_ids)).all()
+                if not all(t.status == 'completed' for t in dep_tasks):
+                    continue
+
+            task.status = 'pending'
+            task.retry_count = 0
+            task.error_message = None
+            task.started_at = None
+            task.completed_at = None
+            task.execution_duration = None
+            task.lease_token = None
+            create_task_log(db, task.id, "task_retried", "Manual retry triggered via API")
+            add_task_to_queue(task.id, task.priority, db=db)
+            retried += 1
+
+        if retried > 0:
+            pipeline.status = 'running'
+            pipeline.completed_at = None
+
+        db.commit()
+        return jsonify({"message": f"Retried {retried} task(s)", "retried": retried, "pipeline_id": pipeline_id}), 200
+    except Exception as e:
+        db.rollback()
         return jsonify({"error": str(e)}), 500
     finally:
         db.close()
@@ -5105,9 +5159,16 @@ if __name__ == '__main__':
     from models import init_db
     init_db()
 
-    # 1. Start HA Coordinator
-    from services.ha_coordinator_service import coordinator
-    coordinator.start()
+    # 1. Start HA Coordinator (prevent starting background threads in Werkzeug reloader master process)
+    is_reloader_parent = (
+        os.environ.get("FLASK_DEBUG") == "1" or os.environ.get("FLASK_ENV") == "development"
+    ) and os.environ.get("WERKZEUG_RUN_MAIN") != "true"
+
+    if not is_reloader_parent:
+        from services.ha_coordinator_service import coordinator
+        coordinator.start()
+    else:
+        print("[Orchestrator] Reloader master process skipping HACoordinator start.", flush=True)
 
     # Sleep briefly to allow coordinator to perform its initial claim sweep
     time.sleep(1.0)

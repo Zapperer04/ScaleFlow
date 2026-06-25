@@ -12,14 +12,18 @@ import re
 from datetime import datetime
 
 def load_env():
-    try:
-        with open('.env') as f:
-            for line in f:
-                if line.strip() and not line.startswith('#'):
-                    key, val = line.strip().split('=', 1)
-                    os.environ.setdefault(key.strip(), val.strip())
-    except FileNotFoundError:
-        pass
+    for path in ['.env', 'backend/.env', '../backend/.env', '../../.env']:
+        try:
+            with open(path) as f:
+                for line in f:
+                    if line.strip() and not line.startswith('#'):
+                        key, val = line.strip().split('=', 1)
+                        key_strip = key.strip()
+                        if key_strip not in os.environ:
+                            os.environ[key_strip] = val.strip()
+                break
+        except FileNotFoundError:
+            pass
 
 load_env()
 
@@ -32,6 +36,26 @@ WORKER_ID = os.getenv("WORKER_ID", "worker-1")
 API_KEY = os.getenv("API_KEY", "dev_secret_api_key")
 
 HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
+
+# Self-healing API_URL detection inside Docker
+if "host.docker.internal" in API_URL:
+    try:
+        # Quick check with a short timeout
+        requests.get(f"{API_URL}/task-types", timeout=1.0)
+    except Exception as e_host:
+        print(f"[{WORKER_ID}] [Self-Healing] Connection to {API_URL} failed ({e_host}). Probing fallbacks...", flush=True)
+        # Connection failed; let's check if the internal service name 'backend' works
+        # or if we need to fall back to host.docker.internal's alternative representations
+        fallbacks = ["http://backend:5000", "http://172.17.0.1:5000", "http://172.18.0.1:5000", "http://10.0.75.1:5000"]
+        for test_url in fallbacks:
+            try:
+                res = requests.get(f"{test_url}/task-types", timeout=1.0)
+                if res.status_code == 200:
+                    print(f"[{WORKER_ID}] [Self-Healing] Successfully resolved API_URL to: {test_url}", flush=True)
+                    API_URL = test_url
+                    break
+            except Exception:
+                pass
 
 print(f"[{WORKER_ID}] Initializing Redis client: host={REDIS_HOST}, port={REDIS_PORT}", flush=True)
 redis_client = redis.Redis(
@@ -161,14 +185,14 @@ def get_uploaded_file_path(pipeline_id):
                 if art.get("artifact_type") == "uploaded_file":
                     storage_uri = art.get("storage_uri")
                     from context.artifact_store import BASE_STORAGE_DIR
-                    if storage_uri.startswith("storage/"):
-                        rel_path = storage_uri[len("storage/"):]
-                    elif storage_uri.startswith("storage\\"):
-                        rel_path = storage_uri[len("storage\\"):]
+                    
+                    # Normalize separators for cross-platform compliance and resolve absolute paths
+                    normalized = storage_uri.replace("\\", "/")
+                    if "storage/" in normalized:
+                        rel_path = normalized.split("storage/", 1)[1]
                     else:
-                        rel_path = storage_uri
-                    # Normalize separators for cross-platform compliance
-                    rel_path = rel_path.replace("\\", "/")
+                        rel_path = os.path.basename(normalized)
+                        
                     full_path = os.path.normpath(os.path.join(BASE_STORAGE_DIR, rel_path))
                     return full_path
     except Exception as e:
@@ -638,100 +662,121 @@ def handle_generate_embeddings(payload, input_artifacts):
     for chunk_text, chunk_meta in zip(chunks, chunk_metadata):
         embedded_chunks.append(_prepare_text_for_embedding(chunk_text, chunk_meta))
 
-    vectors = []
+    qdrant_upserted = False
+    qdrant_lookup_duration = 0.0
+    qdrant_insertion_duration = 0.0
     embed_generation_duration = 0.0
     model_load_duration = 0.0
-    if chunks:
-        def _batch_trace(batch_num, total_batches, done, total):
-            print(f"[{WORKER_ID}] [EMBED] Batch {batch_num}/{total_batches} — {done}/{total} chunks embedded", flush=True)
-            if batch_num == 1 or batch_num == total_batches or batch_num % 5 == 0:
-                emit_task_trace(task_id, f"[EMBED] Batch {batch_num}/{total_batches} — {done}/{total} chunks embedded")
-
-        t_embed_start = time.perf_counter()
-        vectors = embed_chunks_with_progress(embedded_chunks, progress_callback=_batch_trace, batch_size=config.EMBEDDING_BATCH_SIZE)
-        embed_generation_duration = time.perf_counter() - t_embed_start
-        model_load_duration = get_model_load_time()
 
     file_id = original_filename = source_artifact_id = None
     if pipeline_id:
         file_id, original_filename, source_artifact_id = get_pipeline_file_info(pipeline_id)
 
-    qdrant_upserted = False
-    qdrant_lookup_duration = 0.0
-    qdrant_insertion_duration = 0.0
-    if chunks and vectors:
-        _trace(f"[QDRANT] Upserting {len(chunks)} vectors to unified fallback collection '{config.QDRANT_COLLECTION_NAME}'...")
-        meta_dict = {
-            "global_metadata": {
-                "source_artifact_id": source_artifact_id,
-                "original_filename":  original_filename
-            },
-            "chunk_metadata": chunk_metadata
-        }
-        qdrant_upserted, qdrant_lookup_duration, qdrant_insertion_duration = upsert_document_chunks(
-            pipeline_id=pipeline_id,
-            file_id=file_id,
-            task_id=task_id,
-            chunks=chunks,
-            vectors=vectors,
-            metadata=meta_dict,
-            collection_name=config.QDRANT_COLLECTION_NAME
-        )
-        if qdrant_upserted:
-            _trace(f"[QDRANT] Unified fallback insertion complete — {len(chunks)} vectors indexed")
-        else:
-            _trace("[QDRANT] WARNING: Unified fallback upsert returned False — check Qdrant connectivity")
+    UPSERT_BATCH_SIZE = 128
+    total_chunks = len(chunks)
 
-        paragraph_indices = [i for i, meta in enumerate(chunk_metadata) if meta.get("content_type") != "table"]
-        table_indices = [i for i, meta in enumerate(chunk_metadata) if meta.get("content_type") == "table"]
+    if chunks:
+        # Load embedding model once to get load duration
+        from services.embedding_service import get_embedding_model
+        get_embedding_model()
+        model_load_duration = get_model_load_time()
 
-        if paragraph_indices:
-            p_chunks = [chunks[i] for i in paragraph_indices]
-            p_vectors = [vectors[i] for i in paragraph_indices]
-            p_metadata = [chunk_metadata[i] for i in paragraph_indices]
-            meta_dict_p = {
+        t_embed_start = time.perf_counter()
+        
+        for i in range(0, total_chunks, UPSERT_BATCH_SIZE):
+            batch_chunks = chunks[i:i + UPSERT_BATCH_SIZE]
+            batch_embedded = embedded_chunks[i:i + UPSERT_BATCH_SIZE]
+            batch_meta = chunk_metadata[i:i + UPSERT_BATCH_SIZE]
+
+            # 1. Embed this batch of chunks
+            def _batch_trace(batch_num, total_batches, done, total):
+                pass # suppress excessive batch logs, we log step-level trace below
+            
+            batch_vectors = embed_chunks_with_progress(
+                batch_embedded, 
+                progress_callback=_batch_trace, 
+                batch_size=config.EMBEDDING_BATCH_SIZE
+            )
+
+            # 2. Upsert to unified fallback collection
+            _trace(f"[QDRANT] Upserting batch {(i // UPSERT_BATCH_SIZE) + 1} ({len(batch_chunks)} chunks) to unified collection...")
+            meta_dict = {
                 "global_metadata": {
                     "source_artifact_id": source_artifact_id,
                     "original_filename":  original_filename
                 },
-                "chunk_metadata": p_metadata
+                "chunk_metadata": batch_meta
             }
-            _trace(f"[QDRANT] Upserting {len(p_chunks)} vectors to paragraphs collection '{config.QDRANT_PARAGRAPH_COLLECTION}'...")
-            p_upserted, _, _ = upsert_document_chunks(
+            batch_indices = list(range(i, i + len(batch_chunks)))
+            batch_upserted, lookup_dur, insert_dur = upsert_document_chunks(
                 pipeline_id=pipeline_id,
                 file_id=file_id,
                 task_id=task_id,
-                chunks=p_chunks,
-                vectors=p_vectors,
-                metadata=meta_dict_p,
-                collection_name=config.QDRANT_PARAGRAPH_COLLECTION
+                chunks=batch_chunks,
+                vectors=batch_vectors,
+                metadata=meta_dict,
+                collection_name=config.QDRANT_COLLECTION_NAME,
+                chunk_indices=batch_indices
             )
-            if p_upserted:
-                _trace(f"[QDRANT] Paragraphs insertion complete — {len(p_chunks)} vectors indexed")
+            qdrant_upserted = qdrant_upserted or batch_upserted
+            qdrant_lookup_duration += lookup_dur
+            qdrant_insertion_duration += insert_dur
 
-        if table_indices:
-            t_chunks = [chunks[i] for i in table_indices]
-            t_vectors = [vectors[i] for i in table_indices]
-            t_metadata = [chunk_metadata[i] for i in table_indices]
-            meta_dict_t = {
-                "global_metadata": {
-                    "source_artifact_id": source_artifact_id,
-                    "original_filename":  original_filename
-                },
-                "chunk_metadata": t_metadata
-            }
-            _trace(f"[QDRANT] Upserting {len(t_chunks)} vectors to tables collection '{config.QDRANT_TABLE_COLLECTION}'...")
-            t_upserted, _, _ = upsert_document_chunks(
-                pipeline_id=pipeline_id,
-                file_id=file_id,
-                task_id=task_id,
-                chunks=t_chunks,
-                vectors=t_vectors,
-                metadata=meta_dict_t,
-                collection_name=config.QDRANT_TABLE_COLLECTION
-            )
-            if t_upserted:
-                _trace(f"[QDRANT] Tables insertion complete — {len(t_chunks)} vectors indexed")
+            # 3. Upsert to paragraphs collection
+            p_indices = [idx for idx, m in enumerate(batch_meta) if m.get("content_type") != "table"]
+            if p_indices:
+                p_chunks = [batch_chunks[idx] for idx in p_indices]
+                p_vectors = [batch_vectors[idx] for idx in p_indices]
+                p_meta = [batch_meta[idx] for idx in p_indices]
+                meta_dict_p = {
+                    "global_metadata": {
+                        "source_artifact_id": source_artifact_id,
+                        "original_filename":  original_filename
+                    },
+                    "chunk_metadata": p_meta
+                }
+                p_global_indices = [i + idx for idx in p_indices]
+                _trace(f"[QDRANT] Upserting {len(p_chunks)} paragraph vectors to paragraphs collection...")
+                upsert_document_chunks(
+                    pipeline_id=pipeline_id,
+                    file_id=file_id,
+                    task_id=task_id,
+                    chunks=p_chunks,
+                    vectors=p_vectors,
+                    metadata=meta_dict_p,
+                    collection_name=config.QDRANT_PARAGRAPH_COLLECTION,
+                    chunk_indices=p_global_indices
+                )
+
+            # 4. Upsert to tables collection
+            t_indices = [idx for idx, m in enumerate(batch_meta) if m.get("content_type") == "table"]
+            if t_indices:
+                t_chunks = [batch_chunks[idx] for idx in t_indices]
+                t_vectors = [batch_vectors[idx] for idx in t_indices]
+                t_meta = [batch_meta[idx] for idx in t_indices]
+                meta_dict_t = {
+                    "global_metadata": {
+                        "source_artifact_id": source_artifact_id,
+                        "original_filename":  original_filename
+                    },
+                    "chunk_metadata": t_meta
+                }
+                t_global_indices = [i + idx for idx in t_indices]
+                _trace(f"[QDRANT] Upserting {len(t_chunks)} table vectors to tables collection...")
+                upsert_document_chunks(
+                    pipeline_id=pipeline_id,
+                    file_id=file_id,
+                    task_id=task_id,
+                    chunks=t_chunks,
+                    vectors=t_vectors,
+                    metadata=meta_dict_t,
+                    collection_name=config.QDRANT_TABLE_COLLECTION,
+                    chunk_indices=t_global_indices
+                )
+
+            _trace(f"[EMBED] Progress: {min(i + UPSERT_BATCH_SIZE, total_chunks)}/{total_chunks} chunks embedded & indexed")
+
+        embed_generation_duration = time.perf_counter() - t_embed_start
 
     chunk_refs = [
         {"chunk_index": idx, "chunk_text": (c[:120] + "...") if len(c) > 120 else c}
@@ -970,14 +1015,6 @@ def handle_generate_answer_report(payload, input_artifacts):
         print(f"  Snippet: {text_snippet[:300]}...", flush=True)
     print("=" * 80, flush=True)
 
-    confidence = "low"
-    if valid_results:
-        top_score = valid_results[0].get("score", 0.0)
-        if top_score >= 0.8:
-            confidence = "high"
-        elif top_score >= 0.6:
-            confidence = "medium"
-            
     top_chunks = valid_results[:3]
     
     # Calculate RAG observability logs metrics
@@ -1002,6 +1039,57 @@ def handle_generate_answer_report(payload, input_artifacts):
         # Route directly into your updated multi-tier service routing layer
         from services.llm_service import generate_answer
         answer, provider_used, response_status = generate_answer(query, top_chunks)
+        
+        # Grounding scoring logic to calibrate confidence
+        fallback_phrases = [
+            "sufficient information", "no sufficiently relevant context", 
+            "does not contain sufficient information", "not contain sufficient"
+        ]
+        is_fallback = any(phrase in answer.lower() for phrase in fallback_phrases)
+        
+        if is_fallback:
+            confidence = "low"
+        else:
+            # Calculate grounding score based on keyword overlap
+            # Extract alphanumeric tokens of length >= 2, excluding common stopwords
+            stopwords = {
+                "the", "a", "an", "and", "or", "but", "if", "then", "else", "when", "at", "by", "from", 
+                "for", "with", "about", "against", "between", "into", "through", "during", "before", 
+                "after", "above", "below", "to", "of", "in", "on", "he", "she", "it", "they", "we", "you", 
+                "i", "is", "was", "were", "are", "be", "been", "being", "have", "has", "had", "do", "does", 
+                "did", "shall", "will", "should", "would", "may", "might", "must", "can", "could", "this", 
+                "that", "these", "those", "based", "on", "retrieved", "context", "document"
+            }
+            # Clean answers like "Based on the retrieved context:" or "The document states..."
+            clean_answer = re.sub(r'^(based on the retrieved|according to the|the document states|the patent states)[^:]*:\s*', '', answer, flags=re.IGNORECASE)
+            
+            words = re.findall(r"\b[a-zA-Z0-9_-]+\b", clean_answer.lower())
+            content_words = [w for w in words if w not in stopwords]
+            
+            if content_words:
+                context_lower = context_window.lower()
+                matches = sum(1 for w in content_words if w in context_lower)
+                grounding_score = matches / len(content_words)
+            else:
+                grounding_score = 1.0
+                
+            top_score = valid_results[0].get("score", 0.0) if valid_results else 0.0
+            
+            # Calibrate confidence based on grounding score and retrieval score
+            if grounding_score >= 0.85:
+                if top_score >= 0.65:
+                    confidence = "high"
+                elif top_score >= 0.50:
+                    confidence = "medium"
+                else:
+                    confidence = "low"
+            elif grounding_score >= 0.50:
+                if top_score >= 0.70:
+                    confidence = "medium"
+                else:
+                    confidence = "low"
+            else:
+                confidence = "low"
         
         # Construct cross-referenced verification citations
         citations = []

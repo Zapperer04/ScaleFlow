@@ -132,7 +132,7 @@ def ensure_collection(collection_name="scaleflow_chunks", vector_size=None):
         logger.error(f"Failed to ensure Qdrant collection {collection_name}: {e}")
         return False
 
-def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metadata=None, collection_name=None):
+def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metadata=None, collection_name=None, chunk_indices=None):
     if collection_name is None:
         collection_name = config.QDRANT_COLLECTION_NAME
         
@@ -188,11 +188,13 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             except (ValueError, TypeError):
                 pass
 
+        pt_index = chunk_indices[i] if chunk_indices is not None else i
+
         payload = {
             "pipeline_id": stored_pipeline_id,
             "file_id": stored_file_id,
             "task_id": task_id,
-            "chunk_index": i,
+            "chunk_index": pt_index,
             "chunk_text": chunk_text,
             "source_artifact_id": global_meta.get("source_artifact_id") if global_meta else None,
             "original_filename": global_meta.get("original_filename") if global_meta else None,
@@ -201,7 +203,7 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             # Compatibility keys for step 3
             "document_id": stored_file_id,
             "filename": global_meta.get("original_filename") if global_meta else None,
-            "chunk_id": i,
+            "chunk_id": pt_index,
             "text": chunk_text,
             
             # Default metadata fields

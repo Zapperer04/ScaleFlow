@@ -15,12 +15,41 @@ def generate_answer(query: str, chunks: list[dict]) -> tuple[str, str, str]:
         context_text += f"[Source {idx+1}]: {text}\n\n"
         
     system_prompt = (
-        "You are a helpful assistant. Synthesize a concise and direct answer to the user's question "
-        "using ONLY the provided source chunks. Do not copy paste raw chunks directly; write a coherent, "
-        "synthesized summary. If the answer cannot be found in the sources, say: 'No sufficiently relevant context was found for this query.'"
+        "You are a precise document Q&A assistant. Answer the user's question in 1-3 clear, natural sentences "
+        "using ONLY the information from the provided sources. "
+        "Rules: (1) Answer directly and concisely — do NOT use bullet points or numbered lists. "
+        "(2) Do NOT copy-paste raw source text verbatim. Write a proper synthesized sentence. "
+        "(3) If the exact answer is in the sources, state it clearly (e.g. 'The deadline is 07/04/2026.'). "
+        "(4) If the answer is not in the sources, respond: 'The document does not contain sufficient information to answer this question.'"
     )
-    user_prompt = f"Sources:\n{context_text}\nQuestion: {query}\nAnswer:"
+    user_prompt = f"Sources:\n{context_text}\nQuestion: {query}\nProvide a direct, concise answer in 1-3 sentences:"
     
+    # Try Groq if API key exists
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if groq_key:
+        try:
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {groq_key}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": "llama-3.1-8b-instant",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.2
+            }
+            res = requests.post(url, json=data, headers=headers, timeout=10)
+            if res.status_code == 200:
+                answer = res.json()["choices"][0]["message"]["content"].strip()
+                return answer, "Groq (llama-3.1-8b-instant)", "200 OK"
+            else:
+                print(f"Groq API failed: {res.status_code} - {res.text}", flush=True)
+        except Exception as e:
+            print(f"Groq API error: {e}", flush=True)
+
     # Try OpenAI if API key exists
     openai_key = os.environ.get("OPENAI_API_KEY")
     if openai_key:

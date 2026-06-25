@@ -3,7 +3,7 @@ import {
   Upload, Activity, Database, Search, Sparkles, Loader2, ChevronDown, ChevronUp, FileText, BookOpen, ShieldCheck, ShieldAlert
 } from 'lucide-react';
 import { 
-  createRetrievalPipeline, fetchRetrievalPipelineAnswer, fetchPipelineDetails, fetchPipelineEvents
+  createRetrievalPipeline, fetchRetrievalPipelineAnswer, fetchPipelineDetails, fetchPipelineEvents, retryPipeline
 } from '../services/api';
 
 const OverviewPage = ({ 
@@ -42,6 +42,8 @@ const OverviewPage = ({
   const [ragLoading, setRagLoading] = useState(false);
   const [error, setError] = useState(null);
   const [highlightChat, setHighlightChat] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [retryStatus, setRetryStatus] = useState('');
   
   const chatInputRef = useRef(null);
 
@@ -149,13 +151,15 @@ const OverviewPage = ({
       const queryPipelineId = response.pipeline_id;
       const startTime = Date.now();
 
-      // Poll until synthesized answer is complete
+      // Poll until synthesized answer is complete (up to 60 seconds)
       let attempts = 0;
       let answerData = null;
-      while (attempts < 15) {
+      while (attempts < 60) {
         await new Promise(r => setTimeout(r, 1000));
         answerData = await fetchRetrievalPipelineAnswer(queryPipelineId);
-        if (answerData && (answerData.final_answer || answerData.answer || answerData.status === 'completed' || answerData.status === 'failed')) {
+        // Only break when we have a real answer string, not just a status flag
+        const hasAnswer = answerData?.final_answer?.answer || answerData?.answer;
+        if (answerData && (hasAnswer || answerData.status === 'failed')) {
           break;
         }
         attempts++;
@@ -165,11 +169,15 @@ const OverviewPage = ({
         throw new Error(answerData.error || 'RAG generation failed.');
       }
 
-      const answerObj = answerData?.final_answer || answerData;
-      if (answerData && answerData.pipeline_id) {
-        answerObj.pipeline_id = answerData.pipeline_id;
-      }
-      answerObj.elapsed_seconds = (Date.now() - startTime) / 1000;
+      // Normalize to a flat shape regardless of nesting
+      const fa = answerData?.final_answer;
+      const answerObj = {
+        answer: fa?.answer || answerData?.answer || 'No answer could be generated.',
+        confidence: fa?.confidence || answerData?.confidence || 'low',
+        citations: fa?.citations || fa?.sources || answerData?.sources || [],
+        pipeline_id: answerData?.pipeline_id,
+        elapsed_seconds: (Date.now() - startTime) / 1000,
+      };
       setRagAnswer(answerObj);
       
       const retrieved = answerData?.retrieved_context?.results || answerData?.retrieved_chunks || [];
@@ -525,6 +533,47 @@ const OverviewPage = ({
             <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Active Worker</span>
             <strong style={{ color: '#cbd5e1', fontSize: '0.9rem', fontFamily: 'monospace' }}>{activeWorker}</strong>
           </div>
+          {isFailed && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', justifyContent: 'center' }}>
+              <button
+                onClick={async () => {
+                  setRetrying(true);
+                  setRetryStatus('');
+                  try {
+                    const res = await retryPipeline(selectedPipelineId);
+                    setRetryStatus(res.retried > 0 ? `✓ Re-queued ${res.retried} task(s)` : 'Nothing to retry');
+                  } catch (e) {
+                    setRetryStatus('Retry failed: ' + (e.response?.data?.error || e.message));
+                  } finally {
+                    setRetrying(false);
+                  }
+                }}
+                disabled={retrying}
+                style={{
+                  background: 'rgba(239,68,68,0.15)',
+                  border: '1px solid rgba(239,68,68,0.4)',
+                  color: '#fca5a5',
+                  borderRadius: '4px',
+                  padding: '5px 12px',
+                  fontSize: '0.72rem',
+                  fontWeight: 'bold',
+                  cursor: retrying ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {retrying ? <Loader2 size={12} className="animate-spin" /> : '↺'}
+                {retrying ? 'Retrying...' : 'Retry Failed Tasks'}
+              </button>
+              {retryStatus && (
+                <span style={{ fontSize: '0.65rem', color: retryStatus.startsWith('✓') ? 'var(--color-success)' : 'var(--color-failure)' }}>
+                  {retryStatus}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         
         {/* Observability Metrics Card */}
@@ -928,15 +977,29 @@ const OverviewPage = ({
                     <Sparkles size={14} />
                     <span>Grounded AI Answer</span>
                   </div>
-                  <span className={`badge ${ragAnswer.confidence || 'medium'}`} style={{ fontSize: '0.65rem', textTransform: 'uppercase' }}>
-                    Confidence: {ragAnswer.confidence || 'medium'}
+                  <span className={`badge ${ragAnswer.confidence || 'low'}`} style={{ fontSize: '0.65rem', textTransform: 'uppercase' }}>
+                    Confidence: {ragAnswer.confidence || 'low'}
                   </span>
                 </div>
                 <div style={{ fontSize: '0.85rem', color: '#cbd5e1', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-                  {ragAnswer.answer}
+                  {ragAnswer.answer || 'No answer was generated. The model may not have found relevant context.'}
                 </div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'flex', gap: '12px', borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '8px' }}>
-                  <span>Synthesized via Query Pipeline: #{ragAnswer.pipeline_id}</span>
+                {ragAnswer.citations && ragAnswer.citations.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sources</span>
+                    {ragAnswer.citations.map((c, i) => {
+                      const filename = typeof c === 'string' ? c : (c.original_filename || 'unknown');
+                      const chunkIdx = typeof c === 'object' ? c.chunk_index : null;
+                      return (
+                        <div key={i} style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: '3px', borderLeft: '2px solid var(--color-accent)', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                          [{i+1}] Chunk #{chunkIdx ?? i} — {filename}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'flex', gap: '12px', borderTop: '1px solid rgba(255,255,255,0.02)', paddingTop: '8px', flexWrap: 'wrap' }}>
+                  <span>Query Pipeline: #{ragAnswer.pipeline_id}</span>
                   <span>Duration: {ragAnswer.elapsed_seconds ? `${ragAnswer.elapsed_seconds.toFixed(2)}s` : '0.4s'}</span>
                 </div>
               </div>

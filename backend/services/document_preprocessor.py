@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Any, Tuple
 import psutil
 import time
+import concurrent.futures
 
 logger = logging.getLogger(__name__)
 
@@ -209,8 +210,10 @@ class DocumentPreprocessor:
         try:
             from pdf2image import convert_from_path
             _check_memory_before_render(sample_limit, 150)
+            poppler_path = getattr(config, "PREPROCESS_POPPLER_PATH", None) or os.getenv("PREPROCESS_POPPLER_PATH") or None
             images = convert_from_path(
-                self.file_path, first_page=1, last_page=sample_limit, dpi=150
+                self.file_path, first_page=1, last_page=sample_limit, dpi=150,
+                poppler_path=poppler_path
             )
             for img in images:
                 b, c, e = analyze_image_spatial_quality(np.array(img))
@@ -264,7 +267,7 @@ class DocumentPreprocessor:
             _t(f"[PREPROCESS] Route: DIGITAL → pypdf (coherence={text_coherence_score:.1f})")
         else:
             report.document_type    = "SCANNED"
-            report.routing_action   = "VLM_ENHANCE_ROUTE"
+            report.routing_action = "VLM_ENHANCE_ROUTE"
             report.parse_method_hint = "vlm_local_api"
             report.needs_enhancement = True
             report.overall_quality_score = text_coherence_score
@@ -313,7 +316,7 @@ def run_enhancement_pipeline(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# VLM Transcription — Gemini 1.5 Flash, page by page
+# VLM Transcription — Gemini 1.5 Flash, concurrent page batches with backoff
 # Called by handle_parse_document when parse_method_hint == "vlm_local_api"
 # ─────────────────────────────────────────────────────────────────────────────
 def execute_vlm_extraction_step(file_path: str, pipeline_id: int, trace_fn: Optional[Callable] = None) -> str:
@@ -336,53 +339,83 @@ def execute_vlm_extraction_step(file_path: str, pipeline_id: int, trace_fn: Opti
 
     try:
         from pdf2image import convert_from_path
-        images = convert_from_path(file_path, dpi=150)
+        poppler_path = getattr(config, "PREPROCESS_POPPLER_PATH", None) or os.getenv("PREPROCESS_POPPLER_PATH") or None
+        images = convert_from_path(file_path, dpi=150, poppler_path=poppler_path)
         _t(f"[VLM] Transcribing {len(images)} page(s) via Gemini 1.5 Flash")
-        consolidated = []
+        
+        results_map = {}
 
-        for page_idx, img in enumerate(images):
-            try:
-                _, buffer = cv2.imencode(
-                    ".png", cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-                )
-                base64_image = base64.b64encode(buffer).decode("utf-8")
-                payload = {
-                    "contents": [{
-                        "parts": [
-                            {
-                                "text": (
-                                    "You are a document transcription engine. "
-                                    "Extract ALL text from this page exactly as it appears. "
-                                    "Preserve structure, headings, tables, lists, and equations. "
-                                    "Output clean markdown. Do not summarize or skip any content."
-                                )
-                            },
-                            {
-                                "inlineData": {
-                                    "mimeType": "image/png",
-                                    "data": base64_image
+        def transcribe_page(page_idx, img):
+            max_retries = 5
+            backoff = 2
+            for attempt in range(max_retries):
+                try:
+                    _, buffer = cv2.imencode(
+                        ".png", cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+                    )
+                    base64_image = base64.b64encode(buffer).decode("utf-8")
+                    payload = {
+                        "contents": [{
+                            "parts": [
+                                {
+                                    "text": (
+                                        "You are a document transcription engine. "
+                                        "Extract ALL text from this page exactly as it appears. "
+                                        "Preserve structure, headings, tables, lists, and equations. "
+                                        "Output clean markdown. Do not summarize or skip any content."
+                                    )
+                                },
+                                {
+                                    "inlineData": {
+                                        "mimeType": "image/png",
+                                        "data": base64_image
+                                    }
                                 }
-                            }
-                        ]
-                    }]
-                }
-                res = requests.post(
-                    gemini_endpoint,
-                    headers={"Content-Type": "application/json"},
-                    json=payload,
-                    timeout=60
-                )
-                if res.status_code == 200:
-                    page_text = res.json()["candidates"][0]["content"]["parts"][0]["text"]
-                    consolidated.append(page_text)
-                    _t(f"[VLM] Page {page_idx + 1}/{len(images)} transcribed ({len(page_text)} chars)")
-                else:
-                    _t(f"[VLM] Page {page_idx + 1} failed: HTTP {res.status_code} — {res.text[:200]}")
-                    consolidated.append(f"[PAGE {page_idx + 1} TRANSCRIPTION FAILED]")
-            except Exception as e:
-                _t(f"[VLM] Page {page_idx + 1} error: {e}")
-                consolidated.append(f"[PAGE {page_idx + 1} ERROR: {e}]")
+                            ]
+                        }]
+                    }
+                    res = requests.post(
+                        gemini_endpoint,
+                        headers={"Content-Type": "application/json"},
+                        json=payload,
+                        timeout=60
+                    )
+                    if res.status_code == 200:
+                        page_text = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+                        _t(f"[VLM] Page {page_idx + 1}/{len(images)} transcribed ({len(page_text)} chars)")
+                        return page_idx, page_text
+                    elif res.status_code == 429:
+                        sleep_time = backoff ** attempt
+                        _t(f"[VLM] Page {page_idx + 1} rate limited (429). Retrying in {sleep_time}s... (Attempt {attempt+1}/{max_retries})")
+                        time.sleep(sleep_time)
+                        continue
+                    else:
+                        _t(f"[VLM] Page {page_idx + 1} failed: HTTP {res.status_code} — {res.text[:200]}")
+                        return page_idx, f"[PAGE {page_idx + 1} TRANSCRIPTION FAILED]"
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        sleep_time = backoff ** attempt
+                        _t(f"[VLM] Page {page_idx + 1} error: {e}. Retrying in {sleep_time}s... (Attempt {attempt+1}/{max_retries})")
+                        time.sleep(sleep_time)
+                        continue
+                    _t(f"[VLM] Page {page_idx + 1} error: {e}")
+                    return page_idx, f"[PAGE {page_idx + 1} ERROR: {e}]"
+            
+            return page_idx, f"[PAGE {page_idx + 1} RETRIES EXHAUSTED]"
 
+        max_workers = int(os.getenv("VLM_CONCURRENCY", "4"))
+        _t(f"[VLM] Starting parallel transcription with {max_workers} threads")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(transcribe_page, idx, img) for idx, img in enumerate(images)]
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    idx, text = future.result()
+                    results_map[idx] = text
+                except Exception as e:
+                    _t(f"[VLM] Thread execution error: {e}")
+
+        consolidated = [results_map.get(idx, f"[PAGE {idx + 1} MISSING]") for idx in range(len(images))]
         result = "\n\n<--- PAGE_BREAK --->\n\n".join(consolidated)
         _t(f"[VLM] Transcription complete — {len(result)} total chars")
         return result

@@ -42,29 +42,96 @@ def detect_content_type(text: str) -> str:
     return 'paragraph'
 
 
-def _match_section_header(line: str) -> bool:
+PATENT_SECTION_HEADERS = {
+    'abstract', 'field of the invention', 'technical field', 
+    'background of the invention', 'background', 'summary of the invention', 'summary',
+    'brief description of the drawings', 'description of the drawings',
+    'detailed description', 'detailed description of the preferred embodiments', 
+    'detailed description of the invention', 'claims', 'what is claimed is', 'description'
+}
+
+def _is_patent_text(text: str) -> bool:
+    text_lower = text.lower()
+    patent_indicators = [
+        "united states patent",
+        "patent application publication",
+        "patent no.",
+        "patent number",
+        "application number",
+        "filing date",
+        "ipc classification",
+        "cpc classification",
+        "patent document",
+        "inventor:",
+        "inventors:"
+    ]
+    matches = sum(1 for ind in patent_indicators if ind in text_lower)
+    return matches >= 2
+
+def _match_section_header(line: str, page_number: int = 0, is_patent: bool = False) -> bool:
     s = line.strip()
     if not s:
         return False
     
     # Section headers must be reasonably short
-    if len(s) > 80 or len(s.split()) > 10:
+    words = s.split()
+    if len(s) > 120 or len(words) > 12:
         return False
         
-    # If the line ends with a period and has more than 3 words, it's likely a list item or sentence, not a header
-    if s.endswith('.') and len(s.split()) > 3:
+    # If the line ends with a period and has more than 4 words, it's likely a list item or sentence, not a header
+    if s.endswith('.') and len(words) > 4:
         return False
 
-    # The first pattern is strictly uppercase, handle it separately or use regex flags inline
-    if re.match(r'^[A-Z][A-Z\s]{2,}$', s):
+    s_lower = s.lower()
+    
+    if is_patent:
+        # For patents, only allow standard patent sections or standard sections numbered/cleaned
+        cleaned_s = re.sub(r'^(?:\d+[\.\)]|\[\d+\])\s*', '', s_lower).strip()
+        if cleaned_s in PATENT_SECTION_HEADERS:
+            return True
+        return False
+
+    # Standard section titles list (exact match or start-match with very few words)
+    standard_sections = {
+        'introduction', 'methodology', 'results', 'conclusion', 'abstract', 'references',
+        'summary', 'objective', 'education', 'experience', 'technical skills', 'skills',
+        'projects', 'references', 'motivation', 'problem statement', 'objectives',
+        'literature survey', 'system design', 'testing and optimization'
+    }
+
+    # If it is an exact or near-exact match of standard sections
+    if s_lower in standard_sections or any(s_lower.startswith(sec) and len(words) <= 4 for sec in standard_sections):
         return True
+
+    # On page 1 (typically cover page), do not treat plain all-caps lines as headers
+    # unless they are standard section titles or start with numbers/markdown.
+    if page_number == 1 and re.match(r'^[A-Z][A-Z\s\&\-\/\,]{2,}$', s):
+        # Only allow explicit standard sections or numbers on page 1
+        if s_lower not in {'abstract', 'synopsis', 'summary', 'introduction', 'table of contents', 'objectives'}:
+            return False
+
+    # Strictly uppercase line (e.g. "PROBLEM STATEMENT") - must not be a name or single short word
+    if re.match(r'^[A-Z][A-Z\s\&\-\/\,]{3,}$', s):
+        # Filter out common false positives (dates, single letters, names usually have lowercase or are on cover page)
+        if len(words) > 1 and not re.search(r'\b(by|at|on|for|the|of|in|and|a|an)\b', s_lower):
+            # Check if this might be a name (cover page names are often all caps like KAUSTAV KUMAR)
+            # If page_number == 1, we already filtered out non-standard headers. But just in case, or if page_number is not passed correctly:
+            if page_number <= 1:
+                return False
+            return True
+        elif len(words) == 1 and s_lower in {'abstract', 'introduction', 'conclusion', 'references', 'summary', 'objective', 'overview', 'background'}:
+            return True
     
     for p in SECTION_PATTERNS[1:]:
         if p == r'^\d+\.\s+[A-Z]':
             if re.match(p, s):
                 return True
         else:
-            if re.match(p, s, re.IGNORECASE):
+            # For general patterns, require them to be short
+            if re.match(p, s, re.IGNORECASE) and len(words) <= 5:
+                # If page is 1, be very conservative
+                if page_number <= 1:
+                    return False
                 return True
     return False
 
@@ -129,28 +196,31 @@ def chunk_text(text: str, page_number: int = 0) -> List[Dict]:
     MIN_CHARS = getattr(config, 'CHUNK_MIN_CHARS', 50)
     MAX_CHUNKS = getattr(config, 'MAX_CHUNKS', 1500)
 
+    is_patent = _is_patent_text(text)
+    default_sec_name = 'Bibliographic Data' if is_patent else 'unknown'
+
     lines = text.splitlines()
 
     # Step 1: detect sections by scanning for headers
     sections: List[Dict] = []
-    current_section = {'name': 'unknown', 'lines': []}
+    current_section = {'name': default_sec_name, 'lines': []}
 
     for line in lines:
-        if _match_section_header(line):
+        if _match_section_header(line, page_number, is_patent):
             # start new section
-            if current_section['lines'] or current_section['name'] != 'unknown':
+            if current_section['lines'] or current_section['name'] != default_sec_name:
                 sections.append(current_section)
             hdr = line.strip()
             current_section = {'name': hdr, 'lines': []}
         else:
             current_section['lines'].append(line)
 
-    if current_section['lines'] or current_section['name'] != 'unknown':
+    if current_section['lines'] or current_section['name'] != default_sec_name:
         sections.append(current_section)
 
     # If we didn't detect any sections, treat whole text as one section
     if not sections:
-        sections = [{'name': 'unknown', 'lines': lines}]
+        sections = [{'name': default_sec_name, 'lines': lines}]
 
     # Propagate empty parent headers context to sub-sections
     propagated_sections = []
@@ -186,6 +256,39 @@ def chunk_text(text: str, page_number: int = 0) -> List[Dict]:
         sec_text = '\n'.join(sec.get('lines', [])).strip()
         if not sec_text:
             continue
+
+        # For patents, keep bibliographic data and abstract sections unfragmented
+        is_bib_or_abstract = is_patent and any(kw in sec_name.lower() for kw in ['bibliographic', 'abstract'])
+        if is_bib_or_abstract:
+            # Gather all sentences across all paragraphs of the section
+            paragraphs = [p.strip() for p in re.split(r'\n{2,}', sec_text) if p.strip()]
+            sentences = []
+            for p in paragraphs:
+                p_sentences = _split_sentences(p)
+                sentences.extend(p_sentences)
+            
+            if sentences:
+                merged = _merge_sentences_to_chunks(sentences, MAX_TOKENS, OVERLAP_TOKENS)
+                for m_idx, m in enumerate(merged):
+                    formatted_text = m
+                    if sec_name != 'unknown':
+                        formatted_text = f"[Section: {sec_name}] {formatted_text}"
+                    
+                    segments.append({
+                        'text': formatted_text,
+                        'metadata': {
+                            'section': sec_name,
+                            'content_type': 'paragraph',
+                            'page_number': page_number,
+                            'prev_page_number': page_number - 1 if page_number > 1 else None,
+                            'next_page_number': page_number + 1,
+                            'parent_chunk_id': f"p{page_number}_s{sec_idx}",
+                            'child_chunk_id': f"p{page_number}_s{sec_idx}_c{m_idx}",
+                            'token_count': _token_count(formatted_text),
+                            'char_count': len(formatted_text)
+                        }
+                    })
+                continue
 
         # Split section into paragraphs but preserve list blocks and tables
         raw_paragraphs = re.split(r'\n{2,}', sec_text)

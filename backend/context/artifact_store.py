@@ -37,15 +37,13 @@ def load_artifact_from_disk(storage_uri):
     """
     Loads JSON data from filesystem using storage_uri.
     """
-    # The storage_uri is relative to the backend directory, e.g. storage/...
-    if storage_uri.startswith("storage/"):
-        rel_path = storage_uri[len("storage/"):]
-    elif storage_uri.startswith("storage\\"):
-        rel_path = storage_uri[len("storage\\"):]
+    # Normalize separators for cross-platform compliance and resolve absolute paths
+    normalized = storage_uri.replace("\\", "/")
+    if "storage/" in normalized:
+        rel_path = normalized.split("storage/", 1)[1]
     else:
-        rel_path = storage_uri
+        rel_path = os.path.basename(normalized)
         
-    rel_path = rel_path.replace("\\", "/")
     file_path = os.path.normpath(os.path.join(BASE_STORAGE_DIR, rel_path))
     
     if not os.path.exists(file_path):
