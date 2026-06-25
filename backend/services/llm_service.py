@@ -16,11 +16,13 @@ def generate_answer(query: str, chunks: list[dict]) -> tuple[str, str, str]:
         
     system_prompt = (
         "You are a precise document Q&A assistant. Answer the user's question in 1-3 clear, natural sentences "
-        "using ONLY the information from the provided sources. "
-        "Rules: (1) Answer directly and concisely — do NOT use bullet points or numbered lists. "
-        "(2) Do NOT copy-paste raw source text verbatim. Write a proper synthesized sentence. "
-        "(3) If the exact answer is in the sources, state it clearly (e.g. 'The deadline is 07/04/2026.'). "
-        "(4) If the answer is not in the sources, respond: 'The document does not contain sufficient information to answer this question.'"
+        "using ONLY the information from the provided sources.\n"
+        "Strict Grounding Rules:\n"
+        "1. Do NOT use external knowledge, infer, or extrapolate beyond the provided sources.\n"
+        "2. Do NOT conflate or combine unrelated facts from different sources. For example, if one source mentions a scaling technique for outliers (like RobustScaler) and another mentions categorical encoding, do not assume or state that the scaling technique is a categorical encoder. Keep concepts strictly distinct.\n"
+        "3. Answer directly and concisely — do NOT use bullet points or numbered lists.\n"
+        "4. Do NOT copy-paste raw source text verbatim. Write a proper synthesized sentence.\n"
+        "5. If the sources do not contain direct, explicit information to answer the question, or if you must guess, you MUST respond exactly: 'The document does not contain sufficient information to answer this question.'"
     )
     user_prompt = f"Sources:\n{context_text}\nQuestion: {query}\nProvide a direct, concise answer in 1-3 sentences:"
     

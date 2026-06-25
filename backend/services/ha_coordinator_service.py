@@ -55,7 +55,7 @@ class HACoordinator:
         db = SessionLocal()
         try:
             # Delete stale dead instances (older than 1 minute)
-            cutoff = datetime.now() - timedelta(minutes=1)
+            cutoff = datetime.utcnow() - timedelta(minutes=1)
             db.query(OrchestratorInstance).filter(OrchestratorInstance.last_heartbeat < cutoff).delete()
             
             # Register self
@@ -65,7 +65,7 @@ class HACoordinator:
                 db.add(inst)
             else:
                 inst.status = 'active'
-                inst.last_heartbeat = datetime.now()
+                inst.last_heartbeat = datetime.utcnow()
             db.commit()
         except Exception as e:
             db.rollback()
@@ -81,7 +81,7 @@ class HACoordinator:
                 # 1. DB Heartbeat update
                 inst = db.query(OrchestratorInstance).filter(OrchestratorInstance.instance_id == self.instance_id).first()
                 if inst:
-                    inst.last_heartbeat = datetime.now()
+                    inst.last_heartbeat = datetime.utcnow()
                 else:
                     inst = OrchestratorInstance(instance_id=self.instance_id, is_leader=False, status='active')
                     db.add(inst)

@@ -345,7 +345,7 @@ class OrchestratorInstance(Base):
     __tablename__ = 'orchestrator_instances'
     instance_id = Column(String(100), primary_key=True)
     is_leader = Column(Boolean, default=False)
-    last_heartbeat = Column(DateTime, default=datetime.now)
+    last_heartbeat = Column(DateTime, default=datetime.utcnow)
     status = Column(String(20), default='active')
 
     def to_dict(self):
@@ -361,7 +361,7 @@ class WorkerRegistry(Base):
     worker_id = Column(String(100), primary_key=True)
     capabilities = Column(Text, nullable=False)  # JSON array
     resource_limits = Column(Text, nullable=True)  # JSON object
-    last_seen = Column(DateTime, default=datetime.now)
+    last_seen = Column(DateTime, default=datetime.utcnow)
     status = Column(String(20), default='active')
 
     def to_dict(self):

@@ -302,20 +302,44 @@ def chunk_text(text: str, page_number: int = 0) -> List[Dict]:
 
             # If list or table, keep item-level granularity
             if ctype == 'list':
-                items = [l for l in para.splitlines() if l.strip()]
-                # Each list item should not be split across chunks
-                for item_idx, item in enumerate(items):
-                    if len(item) < MIN_CHARS and len(items) > 1:
-                        if len(item.strip()) < 10:
-                            continue
+                items = [l.strip() for l in para.splitlines() if l.strip()]
+                current_list_chunk = []
+                current_tokens = 0
+                list_chunk_idx = 0
+                
+                for item in items:
+                    item_tokens = _token_count(item)
+                    if current_tokens + item_tokens > MAX_TOKENS and current_list_chunk:
+                        list_text = "\n".join(current_list_chunk)
+                        if sec_name != 'unknown':
+                            list_text = f"[Section: {sec_name}] {list_text}"
+                        segments.append({
+                            'text': list_text,
+                            'metadata': {
+                                'section': sec_name,
+                                'content_type': 'list',
+                                'page_number': page_number,
+                                'prev_page_number': page_number - 1 if page_number > 1 else None,
+                                'next_page_number': page_number + 1,
+                                'parent_chunk_id': parent_chunk_id,
+                                'child_chunk_id': f"{parent_chunk_id}_l{list_chunk_idx}",
+                                'token_count': _token_count(list_text),
+                                'char_count': len(list_text)
+                            }
+                        })
+                        list_chunk_idx += 1
+                        current_list_chunk = []
+                        current_tokens = 0
                     
-                    # Section-aware heading preservation
-                    formatted_text = item.strip()
+                    current_list_chunk.append(item)
+                    current_tokens += item_tokens
+                
+                if current_list_chunk:
+                    list_text = "\n".join(current_list_chunk)
                     if sec_name != 'unknown':
-                        formatted_text = f"[Section: {sec_name}] {formatted_text}"
-
+                        list_text = f"[Section: {sec_name}] {list_text}"
                     segments.append({
-                        'text': formatted_text,
+                        'text': list_text,
                         'metadata': {
                             'section': sec_name,
                             'content_type': 'list',
@@ -323,9 +347,9 @@ def chunk_text(text: str, page_number: int = 0) -> List[Dict]:
                             'prev_page_number': page_number - 1 if page_number > 1 else None,
                             'next_page_number': page_number + 1,
                             'parent_chunk_id': parent_chunk_id,
-                            'child_chunk_id': f"{parent_chunk_id}_l{item_idx}",
-                            'token_count': _token_count(formatted_text),
-                            'char_count': len(formatted_text)
+                            'child_chunk_id': f"{parent_chunk_id}_l{list_chunk_idx}",
+                            'token_count': _token_count(list_text),
+                            'char_count': len(list_text)
                         }
                     })
                 continue

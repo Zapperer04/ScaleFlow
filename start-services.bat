@@ -1,4 +1,6 @@
 @echo off
+:: Restoring critical Windows system directories to PATH (was missing on this machine)
+set "PATH=C:\Windows\System32;C:\Windows\System32\wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;%PATH%"
 TITLE ScaleFlow Orchestrator
 COLOR 0B
 
@@ -59,7 +61,7 @@ if %errorlevel% neq 0 goto WAIT_DOCKER_1
 echo   [SUCCESS] Docker Engine is now online.
 
 :DOCKER_ONLINE_1
-docker compose up redis worker1 worker2 worker3 qdrant postgres --watch
+docker compose up redis worker1 qdrant postgres
 pause
 goto EXIT
 
@@ -132,15 +134,24 @@ echo   [SUCCESS] Docker Engine is now online.
 
 :DOCKER_ONLINE_4
 echo - Starting containers...
-start "ScaleFlow - Docker Workers & Redis" cmd /c "docker compose up redis worker1 worker2 worker3 qdrant postgres --watch"
+start "ScaleFlow-Docker-Workers-And-Redis" cmd /c "docker compose up redis worker1 qdrant postgres"
+
+:: Wait for Docker services (Postgres & Qdrant) to be ready
+echo - Waiting for Postgres and Qdrant containers to start...
+python scripts\wait_for_services.py
+if %errorlevel% neq 0 (
+    echo [ERROR] Docker services failed to start. Cannot launch backend.
+    pause
+    goto MENU
+)
 
 :: 2. Launch Flask API Backend (load .env first so API_KEY matches)
 echo - Launching Flask API Backend...
-start "ScaleFlow - Flask API Backend" cmd /c "cd backend && for /f "tokens=1,2 delims==" %%a in (.env) do set %%a=%%b && venv\Scripts\python.exe app.py"
+start "ScaleFlow-Backend" cmd /c "cd backend && for /f "tokens=1,2 delims==" %%a in (.env) do set %%a=%%b && venv\Scripts\python.exe app.py"
 
 :: 3. Launch React Dashboard Frontend
 echo - Launching React Dashboard Frontend...
-start "ScaleFlow - React Frontend" cmd /c "cd frontend && npm start"
+start "ScaleFlow-Frontend" cmd /c "cd frontend && npm start"
 
 echo.
 echo [SUCCESS] ScaleFlow orchestration initiated!
@@ -175,7 +186,7 @@ if %errorlevel% neq 0 goto WAIT_DOCKER_ALL
 echo   [SUCCESS] Docker Engine is now online.
 
 :DOCKER_ONLINE_ALL
-docker compose up --watch
+docker compose up
 pause
 goto EXIT
 

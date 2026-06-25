@@ -1003,13 +1003,13 @@ def register_worker_api():
                 capabilities=json.dumps(capabilities),
                 resource_limits=json.dumps(resource_limits),
                 status='active',
-                last_seen=datetime.now()
+                last_seen=datetime.utcnow()
             )
             db.add(worker)
         else:
             worker.capabilities = json.dumps(capabilities)
             worker.resource_limits = json.dumps(resource_limits)
-            worker.last_seen = datetime.now()
+            worker.last_seen = datetime.utcnow()
             worker.status = 'active'
         db.commit()
         w_dict = worker.to_dict()
@@ -1023,7 +1023,7 @@ def register_worker_api():
     worker_key = f'worker:{worker_id}'
     worker_data = {
         'worker_id': worker_id,
-        'last_seen': datetime.now().isoformat(),
+        'last_seen': datetime.utcnow().isoformat() + 'Z',
         'status': 'idle',
         'current_task_id': None,
         'tasks_completed': 0,
@@ -1049,7 +1049,7 @@ def worker_heartbeat():
     try:
         worker = db.query(WorkerRegistry).filter(WorkerRegistry.worker_id == worker_id).first()
         if worker:
-            worker.last_seen = datetime.now()
+            worker.last_seen = datetime.utcnow()
             worker.status = 'active'
             db.commit()
     except Exception as e:
@@ -1075,7 +1075,7 @@ def worker_heartbeat():
 
     worker_data = {
         'worker_id': worker_id,
-        'last_seen': datetime.now().isoformat(),
+        'last_seen': datetime.utcnow().isoformat() + 'Z',
         'status': data.get('status', 'idle'),
         'current_task_id': data.get('current_task_id', None),
         'tasks_completed': data.get('tasks_completed', 0),
