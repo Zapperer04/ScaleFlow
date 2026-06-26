@@ -621,7 +621,7 @@ const PipelineDashboard = () => {
 
   // Semantic Search & Vector Stats State
   const [searchQuery, setSearchQuery] = useState('');
-  const [topK, setTopK] = useState(5);
+  const [topK, setTopK] = useState(8);
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [searchFilterPipeline, setSearchFilterPipeline] = useState('');
@@ -629,7 +629,7 @@ const PipelineDashboard = () => {
 
   // Retrieval Pipeline State
   const [retrievalQuery, setRetrievalQuery] = useState('');
-  const [retrievalTopK, setRetrievalTopK] = useState(5);
+  const [retrievalTopK, setRetrievalTopK] = useState(8);
   const [retrievalPipelineFilter, setRetrievalPipelineFilter] = useState('');
   const [retrievalFileFilter, setRetrievalFileFilter] = useState('');
   const [retrievalRunning, setRetrievalRunning] = useState(false);

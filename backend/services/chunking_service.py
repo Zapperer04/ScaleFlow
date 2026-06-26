@@ -15,7 +15,7 @@ SECTION_PATTERNS = [
     r'^#{1,3}\s',
     r'^(Education|Experience|Technical Skills|Skills|Projects|Summary|Objective|References)',
     r'^(Introduction|Methodology|Results|Conclusion|Abstract|References)',
-    r'^(Chapter|Section|Part)\s+\d+'
+    r'^(Chapter|Section|Part|Phase)\s+\d+'
 ]
 
 
@@ -96,11 +96,12 @@ def _match_section_header(line: str, page_number: int = 0, is_patent: bool = Fal
         'introduction', 'methodology', 'results', 'conclusion', 'abstract', 'references',
         'summary', 'objective', 'education', 'experience', 'technical skills', 'skills',
         'projects', 'references', 'motivation', 'problem statement', 'objectives',
-        'literature survey', 'system design', 'testing and optimization'
+        'literature survey', 'system design', 'testing and optimization', 'ml workflow checklist',
+        'workflow checklist'
     }
 
     # If it is an exact or near-exact match of standard sections
-    if s_lower in standard_sections or any(s_lower.startswith(sec) and len(words) <= 4 for sec in standard_sections):
+    if s_lower in standard_sections or any(s_lower.startswith(sec) and len(words) <= 5 for sec in standard_sections):
         return True
 
     # On page 1 (typically cover page), do not treat plain all-caps lines as headers
@@ -124,11 +125,12 @@ def _match_section_header(line: str, page_number: int = 0, is_patent: bool = Fal
     
     for p in SECTION_PATTERNS[1:]:
         if p == r'^\d+\.\s+[A-Z]':
-            if re.match(p, s):
+            if re.match(p, s) and len(words) <= 6:
                 return True
         else:
             # For general patterns, require them to be short
-            if re.match(p, s, re.IGNORECASE) and len(words) <= 5:
+            limit = 10 if 'Chapter' in p else 6
+            if re.match(p, s, re.IGNORECASE) and len(words) <= limit:
                 # If page is 1, be very conservative
                 if page_number <= 1:
                     return False
@@ -182,7 +184,14 @@ def _merge_sentences_to_chunks(sentences: List[str], max_tokens: int, overlap_to
     return chunks
 
 
-def chunk_text(text: str, page_number: int = 0) -> List[Dict]:
+class ChunkList(list):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.active_section = "unknown"
+        self.active_parent = None
+
+
+def chunk_text(text: str, page_number: int = 0, default_section: str = 'unknown', default_parent: str = None) -> List[Dict]:
     """
     Intelligent semantic segmentation: returns list of dicts { 'text': ..., 'metadata': {...} }
     Metadata includes: section, content_type, page_number, token_count, char_count
@@ -197,7 +206,7 @@ def chunk_text(text: str, page_number: int = 0) -> List[Dict]:
     MAX_CHUNKS = getattr(config, 'MAX_CHUNKS', 1500)
 
     is_patent = _is_patent_text(text)
-    default_sec_name = 'Bibliographic Data' if is_patent else 'unknown'
+    default_sec_name = 'Bibliographic Data' if is_patent else default_section
 
     lines = text.splitlines()
 
@@ -224,7 +233,7 @@ def chunk_text(text: str, page_number: int = 0) -> List[Dict]:
 
     # Propagate empty parent headers context to sub-sections
     propagated_sections = []
-    active_parent = None
+    active_parent = default_parent
     for sec in sections:
         sec_name = sec.get('name') or 'unknown'
         sec_text = '\n'.join(sec.get('lines', [])).strip()
@@ -427,11 +436,27 @@ def chunk_text(text: str, page_number: int = 0) -> List[Dict]:
                     }
                 })
 
+    # Determine the final active parent and section
+    final_active_parent = active_parent
+    final_active_section = default_sec_name
+    if sections:
+        last_sec = sections[-1]
+        last_sec_name = last_sec.get('name') or 'unknown'
+        if ' > ' in last_sec_name:
+            parts = last_sec_name.split(' > ', 1)
+            final_active_parent = parts[0]
+            final_active_section = parts[1]
+        else:
+            final_active_section = last_sec_name
+
     # final safety cap
     if len(segments) > MAX_CHUNKS:
         raise RuntimeError(f"Chunk explosion detected: Generated {len(segments)} segments (limit is {MAX_CHUNKS}).")
 
-    return segments
+    res = ChunkList(segments)
+    res.active_section = final_active_section
+    res.active_parent = final_active_parent
+    return res
 
 
 def chunk_text_parent_child(text: str) -> dict:

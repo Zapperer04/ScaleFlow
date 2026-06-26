@@ -87,7 +87,7 @@ def get_rolling_metrics(db):
     Computes smoothed rolling enqueue, dequeue, and completion rates
     over 10s, 30s, and 60s windows, plus worker utilization and queue wait times.
     """
-    now = datetime.now()
+    now = datetime.utcnow()
     windows = {
         "10s": 10,
         "30s": 30,
@@ -227,7 +227,7 @@ def get_system_health(db, metrics):
     growth_rate = metrics["enqueue_rate"]["30s"] - metrics["dequeue_rate"]["30s"]
     
     # Count stale worker incidents in last 120s
-    now = datetime.now()
+    now = datetime.utcnow()
     t_120s = now - timedelta(seconds=120)
     stale_incidents = db.query(TaskLog).filter(
         TaskLog.event_type == 'stale_worker_update_rejected',
@@ -381,7 +381,7 @@ def calculate_pipeline_critical_path(db, pipeline_id):
                 
     # 2. Compute Node Weights
     weights = {}
-    now = datetime.now()
+    now = datetime.utcnow()
     
     # Calculate recovery durations if any
     recovery_logs = db.query(TaskLog).filter(
@@ -546,7 +546,7 @@ def get_recovery_analytics(db):
     Computes recovery analytics, lease expirations, stale-worker rejections,
     and individual worker reliability scores.
     """
-    now = datetime.now()
+    now = datetime.utcnow()
     t_24h = now - timedelta(hours=24)
     
     # 1. Total counts (24h)

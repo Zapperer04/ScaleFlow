@@ -477,11 +477,23 @@ def handle_chunk_text(payload, input_artifacts):
     t_start = time.perf_counter()
     
     output_chunks = []
+    active_section = "unknown"
+    active_parent = None
     for page in pages:
         page_text = page.get("text", "")
         if not page_text or not page_text.strip():
             continue
-        page_chunks = chunk_text(page_text, page_number=page.get("page_number", 0))
+        page_chunks = chunk_text(
+            page_text,
+            page_number=page.get("page_number", 0),
+            default_section=active_section,
+            default_parent=active_parent
+        )
+        if hasattr(page_chunks, 'active_section'):
+            active_section = page_chunks.active_section
+        if hasattr(page_chunks, 'active_parent'):
+            active_parent = page_chunks.active_parent
+
         for seg in page_chunks:
             if isinstance(seg, dict):
                 seg_text = seg.get('text', '')
@@ -1580,6 +1592,11 @@ if __name__ == "__main__":
         print(f"[{WORKER_ID}] [STARTUP] Preloading embedding model: BAAI/bge-base-en-v1.5...", flush=True)
         get_embedding_model()
         print(f"[{WORKER_ID}] [STARTUP] Embedding model preloaded successfully!", flush=True)
+        
+        from services.reranker_service import get_reranker
+        print(f"[{WORKER_ID}] [STARTUP] Preloading reranker model: cross-encoder/ms-marco-MiniLM-L-6-v2...", flush=True)
+        get_reranker()
+        print(f"[{WORKER_ID}] [STARTUP] Reranker model preloaded successfully!", flush=True)
     except Exception as e:
-        print(f"[{WORKER_ID}] [STARTUP] ERROR preloading embedding model: {e}", flush=True)
+        print(f"[{WORKER_ID}] [STARTUP] ERROR preloading models: {e}", flush=True)
     worker_loop()

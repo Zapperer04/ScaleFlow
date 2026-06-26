@@ -89,7 +89,7 @@ class Pipeline(Base):
     name = Column(String(100), nullable=False)
     pipeline_type = Column(String(50), nullable=False)
     status = Column(String(20), default='created') # created, running, completed, failed, cancelled, blocked
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
@@ -126,7 +126,7 @@ class Artifact(Base):
     storage_uri = Column(Text, nullable=False)
     metadata_json = Column(Text, nullable=True)
     checksum = Column(String(64), nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
     def to_dict(self):
         return {
@@ -152,7 +152,7 @@ class TaskLog(Base):
     event_type = Column(String(50), nullable=False)
     message = Column(Text, nullable=True)
     worker_id = Column(String(100), nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
     def to_dict(self):
         return {
@@ -176,7 +176,7 @@ class Task(Base):
     retry_count = Column(Integer, default=0)
     max_retries = Column(Integer, default=3)
     error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     
@@ -227,12 +227,12 @@ class Task(Base):
         if self.started_at and self.created_at:
             queue_wait = (self.started_at - self.created_at).total_seconds()
         elif self.created_at:
-            queue_wait = (datetime.now() - self.created_at).total_seconds()
+            queue_wait = (datetime.utcnow() - self.created_at).total_seconds()
             
         if self.completed_at and self.started_at:
             execution = (self.completed_at - self.started_at).total_seconds()
         elif self.started_at:
-            execution = (datetime.now() - self.started_at).total_seconds()
+            execution = (datetime.utcnow() - self.started_at).total_seconds()
 
         return {
             'id': self.id,
@@ -273,7 +273,7 @@ class FileRecord(Base):
     size_bytes = Column(Integer, nullable=False)
     status = Column(String(20), default='uploaded') # uploaded, processing, processed, failed
     pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True, index=True)
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=datetime.utcnow)
     error_message = Column(Text, nullable=True)
 
     def to_dict(self):
@@ -302,7 +302,7 @@ class OrchestrationEvent(Base):
     lease_token = Column(String(100), nullable=True)
     correlation_id = Column(String(100), nullable=True)
     payload_json = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=datetime.utcnow)
     segment_index = Column(Integer, default=0)
 
     def to_dict(self):
@@ -328,7 +328,7 @@ class OrchestrationSnapshot(Base):
     pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True, index=True)
     last_event_id = Column(Integer, nullable=False)
     snapshot_data = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=datetime.utcnow)
     segment_index = Column(Integer, default=0)
 
     def to_dict(self):

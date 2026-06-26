@@ -269,7 +269,7 @@ def resolve_dependencies(db, completed_task):
             if is_congested:
                 child.status = 'blocked'
                 child.blocked_reason = "Upstream congestion: throttled"
-                child.deferred_at = datetime.now()
+                child.deferred_at = datetime.utcnow()
                 db.flush()
                 log_event(db, child.id, "task_blocked", "Upstream congestion: throttled")
             else:
@@ -278,7 +278,7 @@ def resolve_dependencies(db, completed_task):
                 if admission == 'defer':
                     child.status = 'blocked'
                     child.blocked_reason = "System overload backpressure: deferred"
-                    child.deferred_at = datetime.now()
+                    child.deferred_at = datetime.utcnow()
                     db.flush()
                     log_event(db, child.id, "task_blocked", "System overload backpressure: deferred")
                 else:
@@ -377,11 +377,11 @@ def update_pipeline_status(db, pipeline_id):
     if pipeline.status != new_status:
         pipeline.status = new_status
         if new_status == 'running' and not pipeline.started_at:
-            pipeline.started_at = datetime.now()
+            pipeline.started_at = datetime.utcnow()
         elif new_status == 'recovering' and not pipeline.started_at:
-            pipeline.started_at = datetime.now()
+            pipeline.started_at = datetime.utcnow()
         elif new_status in ['completed', 'failed', 'blocked', 'cancelled']:
-            pipeline.completed_at = datetime.now()
+            pipeline.completed_at = datetime.utcnow()
             if new_status == 'failed':
                 pipeline.error_message = f"Pipeline failed: {failed_count} task(s) failed."
             elif new_status == 'blocked':

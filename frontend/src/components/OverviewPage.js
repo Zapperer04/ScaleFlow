@@ -26,6 +26,17 @@ const OverviewPage = ({
   onSelectTask
 }) => {
   
+  const formatDurationGlobal = (sec) => {
+    if (sec === null || sec === undefined) return 'N/A';
+    const s = parseFloat(sec);
+    if (isNaN(s)) return 'N/A';
+    const hrs = Math.floor(s / 3600);
+    const mins = Math.floor((s % 3600) / 60);
+    const secs = Math.floor(s % 60);
+    const pad = (num) => String(num).padStart(2, '0');
+    return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
+  };
+  
   // Pipeline details state
   const [pipelineDetails, setPipelineDetails] = useState(null);
   
@@ -123,7 +134,7 @@ const OverviewPage = ({
     setError(null);
 
     try {
-      const pipelinePayload = { query: query };
+      const pipelinePayload = { query: query, top_k: 8 };
       if (selectedPipelineId) {
         pipelinePayload.pipeline_id = selectedPipelineId;
       }
@@ -151,10 +162,10 @@ const OverviewPage = ({
       const queryPipelineId = response.pipeline_id;
       const startTime = Date.now();
 
-      // Poll until synthesized answer is complete (up to 60 seconds)
+      // Poll until synthesized answer is complete (up to 180 seconds)
       let attempts = 0;
       let answerData = null;
-      while (attempts < 60) {
+      while (attempts < 180) {
         await new Promise(r => setTimeout(r, 1000));
         answerData = await fetchRetrievalPipelineAnswer(queryPipelineId);
         // Only break when we have a real answer string, not just a status flag
@@ -275,7 +286,7 @@ const OverviewPage = ({
         return {
           status,
           worker: task?.assigned_worker_id || 'Pending...',
-          duration: task?.completed_at ? `${task.execution_duration.toFixed(1)}s` : task?.status === 'running' ? 'active' : 'N/A',
+          duration: task?.completed_at ? formatDurationGlobal(task.execution_duration) : task?.status === 'running' ? 'active' : 'N/A',
           artifact: artDisplay,
           progressMsg
         };
@@ -300,7 +311,7 @@ const OverviewPage = ({
         return {
           status,
           worker: task?.assigned_worker_id || 'Pending...',
-          duration: task?.completed_at ? `${task.execution_duration.toFixed(1)}s` : task?.status === 'running' ? 'active' : 'N/A',
+          duration: task?.completed_at ? formatDurationGlobal(task.execution_duration) : task?.status === 'running' ? 'active' : 'N/A',
           artifact: artDisplay,
           progressMsg
         };
@@ -325,7 +336,7 @@ const OverviewPage = ({
         return {
           status,
           worker: task?.assigned_worker_id || 'Pending...',
-          duration: task?.completed_at ? `${task.execution_duration.toFixed(1)}s` : task?.status === 'running' ? 'active' : 'N/A',
+          duration: task?.completed_at ? formatDurationGlobal(task.execution_duration) : task?.status === 'running' ? 'active' : 'N/A',
           artifact: artDisplay,
           progressMsg
         };
@@ -347,7 +358,7 @@ const OverviewPage = ({
         return {
           status,
           worker: task?.assigned_worker_id || 'Pending...',
-          duration: task?.completed_at ? `${task.execution_duration.toFixed(1)}s` : task?.status === 'running' ? 'active' : 'N/A',
+          duration: task?.completed_at ? formatDurationGlobal(task.execution_duration) : task?.status === 'running' ? 'active' : 'N/A',
           artifact: artDisplay,
           progressMsg
         };
@@ -441,7 +452,19 @@ const OverviewPage = ({
     
     const formatTime = (timeStr) => {
       if (!timeStr) return 'N/A';
-      return new Date(timeStr).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const dateStr = timeStr.endsWith('Z') || timeStr.includes('+') || timeStr.includes('-') ? timeStr : `${timeStr}Z`;
+      return new Date(dateStr).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    };
+
+    const formatDuration = (sec) => {
+      if (sec === null || sec === undefined) return 'N/A';
+      const s = parseFloat(sec);
+      if (isNaN(s)) return 'N/A';
+      const hrs = Math.floor(s / 3600);
+      const mins = Math.floor((s % 3600) / 60);
+      const secs = Math.floor(s % 60);
+      const pad = (num) => String(num).padStart(2, '0');
+      return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
     };
     
     return {
@@ -449,7 +472,7 @@ const OverviewPage = ({
       workerId: task.assigned_worker_id || 'N/A',
       startTime: formatTime(task.started_at),
       completionTime: formatTime(task.completed_at),
-      duration: task.execution_duration !== null && task.execution_duration !== undefined ? `${task.execution_duration.toFixed(2)}s` : task.status === 'running' ? 'Active' : 'N/A',
+      duration: task.execution_duration !== null && task.execution_duration !== undefined ? formatDuration(task.execution_duration) : task.status === 'running' ? 'Active' : 'N/A',
       retries: task.retry_count || 0,
       errors: task.error_message || 'None',
       artifact: artifactDisplay

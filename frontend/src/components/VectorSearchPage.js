@@ -87,7 +87,7 @@ const VectorSearchPage = () => {
       // RAG Synthesizer execution sequence
       setCurrentStep('embed');
       // Create a query pipeline with pipeline_id_filter
-      const payload = { query: query };
+      const payload = { query: query, top_k: 8 };
       if (selectedPipelineId) {
         payload.pipeline_id_filter = parseInt(selectedPipelineId);
       }
@@ -104,7 +104,7 @@ const VectorSearchPage = () => {
       // Pull answer
       let attempts = 0;
       let answerData = null;
-      while (attempts < 40) {
+      while (attempts < 180) {
         await new Promise(r => setTimeout(r, 1000));
         answerData = await fetchRetrievalPipelineAnswer(pipelineId);
         if (answerData && ((answerData.final_answer && answerData.final_answer.answer) || answerData.answer || answerData.status === 'completed' || answerData.status === 'failed')) {

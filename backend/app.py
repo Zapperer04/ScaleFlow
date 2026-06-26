@@ -218,7 +218,7 @@ def create_task_log(db, task_id, event_type, message, worker_id=None, payload=No
             elif upper_event == "BACKPRESSURE_DEFERRED":
                 payload = {
                     "priority": task.priority if task else "medium",
-                    "deferred_at": datetime.now().isoformat()
+                    "deferred_at": datetime.utcnow().isoformat() + "Z"
                 }
             elif upper_event == "ARTIFACT_CREATED":
                 from models import Artifact
@@ -258,7 +258,7 @@ def create_task_log(db, task_id, event_type, message, worker_id=None, payload=No
 
 def reap_stuck_tasks(db):
     """Finds tasks stuck in 'running' state and marks them as failed"""
-    timeout_threshold = datetime.now() - timedelta(seconds=TASK_RUNNING_TIMEOUT_SECONDS)
+    timeout_threshold = datetime.utcnow() - timedelta(seconds=TASK_RUNNING_TIMEOUT_SECONDS)
     stuck_tasks = db.query(Task).filter(Task.status == 'running', Task.started_at < timeout_threshold).all()
     for task in stuck_tasks:
         task.retry_count += 1
@@ -430,7 +430,7 @@ def create_task():
             elif admission == 'defer':
                 task.status = 'blocked'  # type: ignore
                 task.blocked_reason = "System overload backpressure: deferred"  # type: ignore
-                task.deferred_at = datetime.now()  # type: ignore
+                task.deferred_at = datetime.utcnow()  # type: ignore
                 db.flush()
                 create_task_log(db, task.id, "backpressure_deferred", "System overload backpressure: deferred")
                 db.commit()
@@ -726,8 +726,9 @@ def claim_task(task_id):
         task.status = 'running'
         task.assigned_worker_id = worker_id
         task.lease_token = lease_token
-        task.lease_expires_at = datetime.now() + timedelta(seconds=lease_duration)
-        task.started_at = datetime.now()
+        task.lease_expires_at = datetime.utcnow() + timedelta(seconds=lease_duration)
+        if not task.started_at:
+            task.started_at = datetime.utcnow()
         task.lease_renewal_count = 0
         
         create_task_log(db, task.id, "task_claimed", f"Worker claimed task", worker_id=worker_id)
@@ -764,10 +765,10 @@ def update_task_progress(task_id):
             return jsonify({'error': 'Worker mismatch or invalid lease token'}), 409
 
         # Update progress and heartbeat
-        task.last_progress_at = datetime.now()
+        task.last_progress_at = datetime.utcnow()
         
         # Extend lease automatically on progress
-        task.lease_expires_at = datetime.now() + timedelta(seconds=30)
+        task.lease_expires_at = datetime.utcnow() + timedelta(seconds=30)
 
         # Merge progress payload
         import json
@@ -844,12 +845,12 @@ def renew_task_lease(task_id):
 
         # Validate current lease has not expired (allow late renewal if task is still owned and running)
         is_late = False
-        if task.lease_expires_at is not None and task.lease_expires_at < datetime.now():
+        if task.lease_expires_at is not None and task.lease_expires_at < datetime.utcnow():
             is_late = True
             print(f"[Lease Renewal] Late lease renewal accepted for task #{task.id} (worker={worker_id}). Expiry was {task.lease_expires_at}.", flush=True)
 
         # Extend lease_expires_at = now + extend_by_seconds
-        task.lease_expires_at = datetime.now() + timedelta(seconds=extend_by_seconds)
+        task.lease_expires_at = datetime.utcnow() + timedelta(seconds=extend_by_seconds)
         
         # Increment lease_renewal_count
         if hasattr(task, 'lease_renewal_count') and task.lease_renewal_count is not None:
@@ -909,10 +910,11 @@ def update_task(task_id):
         if 'status' in data:
             task.status = data['status']
             if data['status'] == 'running':
-                task.started_at = datetime.now()
+                if not task.started_at:
+                    task.started_at = datetime.utcnow()
                 create_task_log(db, task.id, "task_started", "Worker started execution", worker_id=worker_id)
             elif data['status'] == 'completed':
-                task.completed_at = datetime.now()
+                task.completed_at = datetime.utcnow()
                 create_task_log(db, task.id, "task_completed", "Execution finished successfully", worker_id=worker_id)
                 
                 if task.pipeline_id:
@@ -951,7 +953,7 @@ def update_task(task_id):
                 if task.retry_count < task.max_retries:
                     task.status = 'blocked'
                     task.blocked_reason = "Retry backoff delay"
-                    task.deferred_at = datetime.now()
+                    task.deferred_at = datetime.utcnow()
                     create_task_log(db, task.id, "task_retried", f"Auto-retrying after backoff (Attempt {task.retry_count}/{task.max_retries})")
                     if task.pipeline_id:
                         from orchestrator.dependency_resolver import update_pipeline_status
@@ -1230,7 +1232,7 @@ def get_cluster_failovers():
 
 def scan_and_recover_tasks(db):
     from sqlalchemy import or_
-    now = datetime.now()
+    now = datetime.utcnow()
     # Scan running tasks where lease_expires_at < now AND (no progress for > 120s)
     # STALLED != FAILED: We only recover if lease is expired AND no progress for 120s
     expired_tasks = db.query(Task).filter(
@@ -1386,7 +1388,7 @@ def scan_and_unblock_deferred_tasks(db):
     if not deferred_tasks:
         return
 
-    now = datetime.now()
+    now = datetime.utcnow()
     released_count = 0
 
     for task in deferred_tasks:
@@ -1552,7 +1554,7 @@ def create_pipeline():
             pipeline_type=pipeline_type,
             status='created',
             owner_instance_id=ORCHESTRATOR_INSTANCE_ID,
-            owner_lease_expires_at=datetime.now() + timedelta(seconds=10),
+            owner_lease_expires_at=datetime.utcnow() + timedelta(seconds=10),
             ownership_version=1
         )
         db.add(pipeline)
@@ -1621,7 +1623,7 @@ def create_pipeline():
                 if admission == 'defer':
                     task.status = 'blocked'
                     task.blocked_reason = "System overload backpressure: deferred"
-                    task.deferred_at = datetime.now()
+                    task.deferred_at = datetime.utcnow()
                     db.flush()
                     create_task_log(db, task.id, "backpressure_deferred", "System overload backpressure: deferred")
                 else:
@@ -1854,7 +1856,7 @@ def cancel_pipeline(pipeline_id):
             return jsonify({"error": f"Pipeline is already in terminal status {pipeline.status}"}), 400
             
         pipeline.status = 'cancelled'
-        pipeline.completed_at = datetime.now()
+        pipeline.completed_at = datetime.utcnow()
         
         # Determine is_test for capability-specific queue lookup
         is_test = False
@@ -2661,7 +2663,7 @@ def search_chunks():
     if not query:
         return jsonify({"error": "Missing 'query' field"}), 400
         
-    top_k = data.get("top_k", 5)
+    top_k = data.get("top_k", 8)
     pipeline_id = data.get("pipeline_id")
     file_id = data.get("file_id")
     
@@ -3007,7 +3009,7 @@ def create_query_pipeline():
         if not query:
             return jsonify({"error": "Missing 'query' field"}), 400
             
-        top_k = data.get("top_k", 5)
+        top_k = data.get("top_k", 8)
         pipeline_id_filter = data.get("pipeline_id_filter") or data.get("pipeline_id")
         file_id_filter = data.get("file_id_filter") or data.get("file_id")
         
@@ -3995,7 +3997,7 @@ def test_recovery_flow():
         db = SessionLocal()
         try:
             db_task = db.query(Task).filter(Task.id == hang_task_id).first()
-            db_task.lease_expires_at = datetime.now() - timedelta(seconds=10)
+            db_task.lease_expires_at = datetime.utcnow() - timedelta(seconds=10)
             db.commit()
             log_test("Manually expired lease of Hang Task in database.")
             
@@ -4106,7 +4108,7 @@ def test_recovery_flow():
         db = SessionLocal()
         try:
             db_task = db.query(Task).filter(Task.id == fail_task_id).first()
-            db_task.lease_expires_at = datetime.now() - timedelta(seconds=10)
+            db_task.lease_expires_at = datetime.utcnow() - timedelta(seconds=10)
             db.commit()
             
             scan_and_recover_tasks(db)
@@ -4130,7 +4132,7 @@ def test_recovery_flow():
         db = SessionLocal()
         try:
             db_task = db.query(Task).filter(Task.id == fail_task_id).first()
-            db_task.lease_expires_at = datetime.now() - timedelta(seconds=10)
+            db_task.lease_expires_at = datetime.utcnow() - timedelta(seconds=10)
             db.commit()
             
             scan_and_recover_tasks(db)
@@ -4241,7 +4243,7 @@ def test_lease_renewal_flow():
         try:
             # Set lease_expires_at to a future time
             db_task = db.query(Task).filter(Task.id == task_id).first()
-            db_task.lease_expires_at = datetime.now() + timedelta(seconds=120)
+            db_task.lease_expires_at = datetime.utcnow() + timedelta(seconds=120)
             db.commit()
             
             # Run scanner
@@ -4262,7 +4264,7 @@ def test_lease_renewal_flow():
         try:
             # Manually expire lease in database
             db_task = db.query(Task).filter(Task.id == task_id).first()
-            db_task.lease_expires_at = datetime.now() - timedelta(seconds=10)
+            db_task.lease_expires_at = datetime.utcnow() - timedelta(seconds=10)
             db.commit()
             log_test("Manually expired task lease in DB.")
             
@@ -4304,7 +4306,7 @@ def test_lease_renewal_flow():
         try:
             # Manually expire the new worker's lease
             db_task = db.query(Task).filter(Task.id == task_id).first()
-            db_task.lease_expires_at = datetime.now() - timedelta(seconds=10)
+            db_task.lease_expires_at = datetime.utcnow() - timedelta(seconds=10)
             db.commit()
             log_test("Expired new lease in database.")
             
@@ -4697,7 +4699,7 @@ def reconcile_active_orchestrations(db):
                 elif task.status == 'running':
                     worker_id = task.assigned_worker_id
                     lease_expired = False
-                    if task.lease_expires_at and task.lease_expires_at < datetime.now():
+                    if task.lease_expires_at and task.lease_expires_at < datetime.utcnow():
                         lease_expired = True
                         
                     worker_alive = False
@@ -4872,7 +4874,7 @@ def get_validation_check():
         # 8. Lease System Validation
         try:
             running_tasks = db.query(Task).filter(Task.status == 'running').all()
-            expired_leases = [t for t in running_tasks if t.lease_expires_at and t.lease_expires_at < datetime.now()]
+            expired_leases = [t for t in running_tasks if t.lease_expires_at and t.lease_expires_at < datetime.utcnow()]
             if expired_leases:
                 results["Lease System Validation"] = {"status": "WARNING", "message": f"Detected {len(expired_leases)} active task leases currently expired."}
             else:
@@ -4979,8 +4981,8 @@ def expire_lease_endpoint():
         task = db.query(Task).filter(Task.status == 'running').order_by(Task.started_at.asc()).first()
         if not task:
             return jsonify({"error": "No active running tasks to expire."}), 404
-        task.started_at = datetime.now() - timedelta(minutes=10)
-        task.lease_expires_at = datetime.now() - timedelta(minutes=5)
+        task.started_at = datetime.utcnow() - timedelta(minutes=10)
+        task.lease_expires_at = datetime.utcnow() - timedelta(minutes=5)
         db.commit()
         return jsonify({"message": f"Expired lease for task #{task.id}.", "task_id": task.id}), 200
     except Exception as e:
@@ -5051,7 +5053,7 @@ def trigger_failover_endpoint():
         redis_client.delete("scaleflow:leader_lock")
         from models import Pipeline
         db.query(Pipeline).filter(Pipeline.status.in_(['created', 'running'])).update({
-            Pipeline.owner_lease_expires_at: datetime.now() - timedelta(seconds=1)
+            Pipeline.owner_lease_expires_at: datetime.utcnow() - timedelta(seconds=1)
         }, synchronize_session=False)
         db.commit()
         return jsonify({"message": "Released leader lock and expired active pipeline owner leases to force orchestrator failover."}), 200
@@ -5087,7 +5089,7 @@ def run_test_endpoint(test_type):
     ACTIVE_TEST_RUNS[test_type] = {
         "status": "running",
         "logs": [],
-        "started_at": datetime.now().isoformat()
+        "started_at": datetime.utcnow().isoformat()
     }
     
     def target():
@@ -5125,7 +5127,7 @@ def run_test_endpoint(test_type):
             ACTIVE_TEST_RUNS[test_type]["status"] = "failed"
             ACTIVE_TEST_RUNS[test_type]["logs"].append(f"Execution error: {str(e)}")
         finally:
-            ACTIVE_TEST_RUNS[test_type]["finished_at"] = datetime.now().isoformat()
+            ACTIVE_TEST_RUNS[test_type]["finished_at"] = datetime.utcnow().isoformat()
             
     threading.Thread(target=target, daemon=True).start()
     return jsonify({"message": f"Started {test_type} test suite in background.", "status": "running"}), 202
