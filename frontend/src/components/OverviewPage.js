@@ -5,6 +5,7 @@ import {
 import { 
   createRetrievalPipeline, fetchRetrievalPipelineAnswer, fetchPipelineDetails, fetchPipelineEvents, retryPipeline
 } from '../services/api';
+import { formatTimeIST } from '../utils/timeUtils';
 
 const OverviewPage = ({ 
   pipelines, 
@@ -452,8 +453,11 @@ const OverviewPage = ({
     
     const formatTime = (timeStr) => {
       if (!timeStr) return 'N/A';
-      const dateStr = timeStr.endsWith('Z') || timeStr.includes('+') || timeStr.includes('-') ? timeStr : `${timeStr}Z`;
-      return new Date(dateStr).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      // Only treat as UTC if the string ends with Z or has a timezone offset (+HH:MM / -HH:MM)
+      // Do NOT match the '-' in date separators like 2026-06-26T...
+      const hasTzInfo = timeStr.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(timeStr);
+      const dateStr = hasTzInfo ? timeStr : `${timeStr}Z`;
+      return new Date(dateStr).toLocaleTimeString('en-IN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Kolkata' });
     };
 
     const formatDuration = (sec) => {
@@ -466,13 +470,33 @@ const OverviewPage = ({
       const pad = (num) => String(num).padStart(2, '0');
       return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
     };
+
+    // For recovered tasks, execution_duration resets on each attempt.
+    // Use wall-clock (completed_at - started_at) if it is larger than reported execution_duration.
+    const computeDuration = () => {
+      const reported = task.execution_duration !== null && task.execution_duration !== undefined ? parseFloat(task.execution_duration) : null;
+      if (task.started_at && task.completed_at) {
+        const hasTzStart = task.started_at.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(task.started_at);
+        const hasTzEnd   = task.completed_at.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(task.completed_at);
+        const startMs = new Date(hasTzStart ? task.started_at : `${task.started_at}Z`).getTime();
+        const endMs   = new Date(hasTzEnd   ? task.completed_at : `${task.completed_at}Z`).getTime();
+        const wallClock = (endMs - startMs) / 1000;
+        if (!isNaN(wallClock) && wallClock > 0) {
+          // Use whichever is larger to avoid misleading reset-to-zero on recovery
+          const best = reported !== null ? Math.max(reported, wallClock) : wallClock;
+          return formatDuration(best);
+        }
+      }
+      if (reported !== null) return formatDuration(reported);
+      return task.status === 'running' ? 'Active' : 'N/A';
+    };
     
     return {
       status: mappedStatus,
       workerId: task.assigned_worker_id || 'N/A',
       startTime: formatTime(task.started_at),
       completionTime: formatTime(task.completed_at),
-      duration: task.execution_duration !== null && task.execution_duration !== undefined ? formatDuration(task.execution_duration) : task.status === 'running' ? 'Active' : 'N/A',
+      duration: computeDuration(),
       retries: task.retry_count || 0,
       errors: task.error_message || 'None',
       artifact: artifactDisplay
@@ -513,13 +537,19 @@ const OverviewPage = ({
         : 'COMPLETED';
       
     const getElapsedRuntime = () => {
-      if (!pipeline) return '0s';
+      if (!pipeline) return '00:00:00';
       const startStr = pipeline.started_at || pipeline.created_at;
       const endStr = pipeline.completed_at;
-      const start = new Date(startStr + (startStr.endsWith('Z') ? '' : 'Z'));
-      const end = endStr ? new Date(endStr + (endStr.endsWith('Z') ? '' : 'Z')) : new Date();
+      const hasTzStart = startStr.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(startStr);
+      const hasTzEnd = endStr && (endStr.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(endStr));
+      const start = new Date(hasTzStart ? startStr : `${startStr}Z`);
+      const end = endStr ? new Date(hasTzEnd ? endStr : `${endStr}Z`) : new Date();
       const diffSec = Math.max(0, Math.round((end - start) / 1000));
-      return `${diffSec}s`;
+      const hrs  = Math.floor(diffSec / 3600);
+      const mins = Math.floor((diffSec % 3600) / 60);
+      const secs = diffSec % 60;
+      const pad  = (n) => String(n).padStart(2, '0');
+      return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
     };
     
     const activeWorker = pipelineDetails.tasks?.find(t => t.status === 'running')?.assigned_worker_id
@@ -620,7 +650,7 @@ const OverviewPage = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Worker Lease Status</span>
               <strong style={{ color: '#cbd5e1', fontSize: '0.85rem', fontFamily: 'monospace' }}>
-                {pipelineDetails.tasks?.find(t => t.status === 'running') ? `Active (Expires: ${new Date(pipelineDetails.tasks.find(t => t.status === 'running').lease_expires_at + 'Z').toLocaleTimeString()})` : 'Idle'}
+                {pipelineDetails.tasks?.find(t => t.status === 'running') ? `Active (Expires: ${formatTimeIST(pipelineDetails.tasks.find(t => t.status === 'running').lease_expires_at)})` : 'Idle'}
               </strong>
             </div>
           </div>
@@ -1249,7 +1279,7 @@ const LiveTraceStream = ({ events }) => {
               color = '#94a3b8'; // slate
             }
 
-            const timeStr = e.created_at ? new Date(e.created_at).toLocaleTimeString([], {hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit'}) : 'N/A';
+            const timeStr = e.created_at ? formatTimeIST(e.created_at) : 'N/A';
             const workerTag = e.worker_id ? `[${e.worker_id.split('-').pop()}]` : '[SYSTEM]';
 
             return (

@@ -486,6 +486,54 @@ def parse_pdf(
     _trace(f"[PARSER] Capabilities: pdfplumber={'yes' if PDFPLUMBER_AVAILABLE else 'no'}, OCR={'yes' if OCR_AVAILABLE else 'no'}")
     _trace(f"[PARSER] Routing: document_type={document_type} (confidence={routing_confidence:.2f}), parse_method_hint={parse_method_hint}")
 
+    # Intercept and route directly to Gemini 1.5 Flash VLM if enabled and key is present
+    if parse_method_hint == "vlm_local_api" and os.getenv("GEMINI_API_KEY"):
+        _trace("[PARSER] Routing to Gemini 1.5 Flash VLM transcription service...")
+        t_vlm_start = time.time()
+        from services.document_preprocessor import execute_vlm_extraction_step
+        try:
+            vlm_text = execute_vlm_extraction_step(filepath, 0, trace_fn=_trace)
+            vlm_duration = round(time.time() - t_vlm_start, 2)
+            _trace(f"[PARSER] Gemini VLM transcription completed in {vlm_duration}s")
+            
+            # Count pages based on page breaks
+            vlm_page_count = len(vlm_text.split("<--- PAGE_BREAK --->"))
+            
+            vlm_stats = {
+                "parser": "vlm_gemini_flash",
+                "total_pages": vlm_page_count,
+                "processed_pages": vlm_page_count,
+                "char_count": len(vlm_text),
+                "duration_seconds": vlm_duration,
+                "timings": {
+                    "pdf_open_time": 0.0,
+                    "page_count_discovery_time": 0.0,
+                    "pypdf_extraction_duration": 0.0,
+                    "pdfplumber_extraction_duration": 0.0,
+                    "ocr_duration": vlm_duration,
+                    "parser_selection_overhead": 0.0,
+                    "parse_quality_evaluation_duration": 0.0,
+                    "ocr_rescue_quality_evaluation_duration": 0.0
+                }
+            }
+            vlm_pages_list = [
+                {
+                    "page_number": idx + 1,
+                    "text": p_text.strip(),
+                    "extraction_method": "vlm_local_api",
+                    "ocr_engine": "gemini-1.5-flash",
+                    "ocr_confidence": 100.0,
+                    "table_detected": False,
+                    "contains_signature": False,
+                    "contains_handwriting": False,
+                    "tables": []
+                }
+                for idx, p_text in enumerate(vlm_text.split("<--- PAGE_BREAK --->"))
+            ]
+            return ParseResult(text=vlm_text, stats=vlm_stats, pages=vlm_pages_list)
+        except Exception as e:
+            _trace(f"[PARSER] Gemini VLM transcription failed: {e}. Falling back to default parser loop...")
+
     # ── temp dir for checkpoint cache ────────────────────────────────────────
     _worker_dir = os.path.dirname(os.path.abspath(__file__))
     _backend_dir = os.path.dirname(_worker_dir)

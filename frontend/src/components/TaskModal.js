@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, RefreshCw, XCircle, AlertCircle } from 'lucide-react';
 import { getTaskDetails, retryTask, cancelTask } from '../services/api';
+import { formatTimeIST } from '../utils/timeUtils';
 
 const TaskModal = ({ taskId, onClose, onActionComplete }) => {
   const [details, setDetails] = useState(null);
@@ -156,7 +157,7 @@ const TaskModal = ({ taskId, onClose, onActionComplete }) => {
                 {details.logs && details.logs.length > 0 ? (
                   details.logs.map((log) => (
                     <div key={log.id} className="log-row">
-                      <div className="log-time">{new Date(log.created_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
+                      <div className="log-time">{formatTimeIST(log.created_at)}</div>
                       <div className="log-type-badge">{log.event_type}</div>
                       <div className="log-msg">
                         {log.message}

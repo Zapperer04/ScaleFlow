@@ -11,6 +11,8 @@ def get_reranker():
         logger.info("[RERANKER] Loaded cross-encoder/ms-marco-MiniLM-L-6-v2")
     return _model
 
+import math
+
 def rerank(query: str, chunks: list, top_k: int = 3) -> list:
     if not chunks:
         return []
@@ -30,6 +32,11 @@ def rerank(query: str, chunks: list, top_k: int = 3) -> list:
     scores = model.predict(pairs)
     
     for i, chunk in enumerate(chunks):
-        chunk["rerank_score"] = float(scores[i])
+        raw_score = float(scores[i])
+        # Sigmoid normalization to convert logits to [0, 1] range
+        sigmoid_score = 1.0 / (1.0 + math.exp(-raw_score))
+        chunk["rerank_score"] = sigmoid_score
+        # Update the unified score key so downstream filters use the reranked score
+        chunk["score"] = sigmoid_score
     
     return sorted(chunks, key=lambda x: x["rerank_score"], reverse=True)[:top_k]

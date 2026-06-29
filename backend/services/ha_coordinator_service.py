@@ -200,6 +200,14 @@ class HACoordinator:
                         payload={"instance_id": self.instance_id, "ownership_version": pipe.ownership_version}
                     )
                     db.commit()
+                    
+                    # Reconcile pipeline state immediately after takeover
+                    try:
+                        from app import reconcile_active_orchestrations
+                        reconcile_active_orchestrations(db)
+                    except Exception as rec_err:
+                        print(f"[{self.instance_id}] Error reconciling claimed pipeline #{pipe.id}: {rec_err}", flush=True)
+
             except Exception as e:
                 db.rollback()
                 print(f"[{self.instance_id}] Error claiming pipeline #{pipe.id}: {e}", flush=True)
@@ -252,8 +260,12 @@ def verify_fencing_token(db, pipeline_id):
                     payload={"instance_id": ORCHESTRATOR_INSTANCE_ID, "ownership_version": pipe.ownership_version}
                 )
                 db.commit()
+                
+                # Reconcile immediately after JIT claim
+                from app import reconcile_active_orchestrations
+                reconcile_active_orchestrations(db)
             except Exception as e:
-                print(f"Error publishing JIT claim event: {e}", flush=True)
+                print(f"Error publishing JIT claim event or reconciling: {e}", flush=True)
             return True
 
     # 2. Verify local cache/db ownership matching

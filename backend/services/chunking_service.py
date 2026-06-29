@@ -84,6 +84,10 @@ def _match_section_header(line: str, page_number: int = 0, is_patent: bool = Fal
 
     s_lower = s.lower()
     
+    # Phase headers should always be headers
+    if re.match(r'^Phase\s+\d+', s, re.IGNORECASE) and len(words) <= 10:
+        return True
+    
     if is_patent:
         # For patents, only allow standard patent sections or standard sections numbered/cleaned
         cleaned_s = re.sub(r'^(?:\d+[\.\)]|\[\d+\])\s*', '', s_lower).strip()

@@ -16,19 +16,27 @@ import config
 # `qdrant_client` package to be installed (useful for unit/integration tests
 # that mock the upsert/search functions).
 _client = None
+qmodels = None
 
 def get_client():
-    global _client
+    global _client, qmodels
     if _client is not None:
         return _client
 
+    # Save original sys.path and remove parent directory to prevent models.py shadowing
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    original_sys_path = sys.path[:]
+    sys.path = [p for p in sys.path if os.path.abspath(p) != os.path.abspath(parent_dir)]
+
     try:
         from qdrant_client import QdrantClient
-        from qdrant_client.http import models as qmodels  # noqa: F401
+        from qdrant_client.http import models as qm
+        qmodels = qm
     except Exception:
-        # qdrant_client is not available; raise a clear ImportError when actually
-        # attempting to use the client.
+        sys.path = original_sys_path
         raise
+    finally:
+        sys.path = original_sys_path
 
     if os.environ.get("DB_MODE") == "sqlite":
         logger.info("SQLite mode detected: Using in-memory QdrantClient fallback")
@@ -52,7 +60,6 @@ COLLECTIONS = {
 def ensure_collections_exist():
     try:
         client = get_client()
-        from qdrant_client.http import models as qmodels
         existing = [c.name for c in client.get_collections().collections]
         for name in COLLECTIONS.values():
             if name not in existing:
@@ -82,6 +89,28 @@ def ensure_collections_exist():
                     logger.info(f"Created payload index '{field_name}' on '{name}'")
                 except Exception:
                     pass  # index already exists
+
+            # Ensure text index for chunk_text
+            try:
+                client.create_payload_index(
+                    collection_name=name,
+                    field_name="chunk_text",
+                    field_schema=qmodels.TextIndexParams(
+                        type=qmodels.TextIndexType.TEXT,
+                        tokenizer=qmodels.TokenizerType.WORD,
+                        lowercase=True,
+                    )
+                )
+                logger.info(f"Created text payload index on '{name}'")
+            except Exception:
+                try:
+                    client.create_payload_index(
+                        collection_name=name,
+                        field_name="chunk_text",
+                        field_schema="text"
+                    )
+                except Exception:
+                    pass
     except Exception as e:
         logger.error(f"Failed to ensure collections exist: {e}")
 
@@ -96,7 +125,6 @@ def ensure_collection(collection_name="scaleflow_chunks", vector_size=None):
         vector_size = config.EMBEDDING_DIMENSION
     try:
         client = get_client()
-        from qdrant_client.http import models as qmodels
 
         collections = client.get_collections().collections
         exists = any(c.name == collection_name for c in collections)
@@ -126,6 +154,27 @@ def ensure_collection(collection_name="scaleflow_chunks", vector_size=None):
                     logger.info(f"Created payload index '{field_name}' on '{collection_name}'")
                 except Exception:
                     pass
+
+            # Create text index
+            try:
+                client.create_payload_index(
+                    collection_name=collection_name,
+                    field_name="chunk_text",
+                    field_schema=qmodels.TextIndexParams(
+                        type=qmodels.TextIndexType.TEXT,
+                        tokenizer=qmodels.TokenizerType.WORD,
+                        lowercase=True,
+                    )
+                )
+            except Exception:
+                try:
+                    client.create_payload_index(
+                        collection_name=collection_name,
+                        field_name="chunk_text",
+                        field_schema="text"
+                    )
+                except Exception:
+                    pass
         _ensured_collections.add(collection_name)
         return True
     except Exception as e:
@@ -145,7 +194,6 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
     # Ensure client is available and collection exists
     try:
         client = get_client()
-        from qdrant_client.http import models as qmodels
     except Exception as e:
         logger.error(f"Qdrant client not available: {e}")
         return False, 0.0, 0.0
@@ -171,7 +219,8 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
 
     points = []
     for i, (chunk_text, vector) in enumerate(zip(chunks, vectors)):
-        point_id = str(uuid.uuid4())
+        pt_index = chunk_indices[i] if chunk_indices is not None else i
+        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{pipeline_id}_{pt_index}"))
         
         # Build payload
         stored_pipeline_id = pipeline_id
@@ -253,10 +302,14 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
 
     t_insert_start = time.perf_counter()
     try:
-        client.upsert(
-            collection_name=collection_name,
-            points=points
-        )
+        # Batch upsert points in chunks of 100 to reduce HTTP/network overhead
+        batch_size = 100
+        for offset in range(0, len(points), batch_size):
+            batch_points = points[offset:offset + batch_size]
+            client.upsert(
+                collection_name=collection_name,
+                points=batch_points
+            )
         insertion_duration = time.perf_counter() - t_insert_start
         logger.info(f"Successfully upserted {len(points)} chunks to collection {collection_name} (took {insertion_duration:.4f}s)")
         return True, lookup_duration, insertion_duration
@@ -272,7 +325,6 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
     try:
         ensure_collection(collection_name, config.EMBEDDING_DIMENSION)
         client = get_client()
-        from qdrant_client.http import models as qmodels
         # Build filter if present
         q_filter = None
         if filters:
@@ -327,6 +379,73 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
         return results
     except Exception as e:
         logger.error(f"Failed to search similar in Qdrant: {e}")
+        return []
+
+def search_keyword(collection_name, query_text, top_k=5, filters=None):
+    try:
+        ensure_collection(collection_name, config.EMBEDDING_DIMENSION)
+        client = get_client()
+        
+        conditions = []
+        if filters:
+            for key, val in filters.items():
+                if val is not None:
+                    val_to_match = val
+                    if key in ("pipeline_id", "file_id"):
+                        try:
+                            val_to_match = int(val)
+                        except (ValueError, TypeError):
+                            pass
+                    conditions.append(
+                        qmodels.FieldCondition(
+                            key=key,
+                            match=qmodels.MatchValue(value=val_to_match)
+                        )
+                    )
+                    
+        conditions.append(
+            qmodels.FieldCondition(
+                key="chunk_text",
+                match=qmodels.MatchText(text=query_text)
+            )
+        )
+        
+        scroll_filter = qmodels.Filter(must=conditions)
+        
+        scroll_result, _ = client.scroll(
+            collection_name=collection_name,
+            scroll_filter=scroll_filter,
+            limit=top_k,
+            with_payload=True,
+            with_vectors=False
+        )
+        
+        results = []
+        for point in scroll_result:
+            results.append({
+                "score": 0.5, # default base score for keyword matching before reranking
+                "chunk_text": point.payload.get("chunk_text"),
+                "text": point.payload.get("text") or point.payload.get("chunk_text"),
+                "section": point.payload.get("section", "unknown"),
+                "pipeline_id": point.payload.get("pipeline_id"),
+                "file_id": point.payload.get("file_id"),
+                "task_id": point.payload.get("task_id"),
+                "chunk_index": point.payload.get("chunk_index"),
+                "original_filename": point.payload.get("original_filename"),
+                "page_number": point.payload.get("page_number"),
+                "document_type": point.payload.get("document_type"),
+                "routing_confidence": point.payload.get("routing_confidence"),
+                "ocr_engine": point.payload.get("ocr_engine"),
+                "ocr_confidence": point.payload.get("ocr_confidence"),
+                "extraction_method": point.payload.get("extraction_method"),
+                "table_detected": point.payload.get("table_detected"),
+                "contains_signature": point.payload.get("contains_signature"),
+                "contains_handwriting": point.payload.get("contains_handwriting"),
+                "chunk_quality_score": point.payload.get("chunk_quality_score")
+            })
+        return results
+    except Exception as e:
+        logger.error(f"Failed to search keyword in Qdrant: {e}")
         return []
 
 def get_collection_stats(collection_name="scaleflow_chunks"):

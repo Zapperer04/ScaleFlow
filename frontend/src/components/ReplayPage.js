@@ -6,6 +6,7 @@ import {
 import { 
   fetchPipelines, fetchReplayDetails, fetchReconstructedState 
 } from '../services/api';
+import { formatTimeIST } from '../utils/timeUtils';
 
 const ReplayPage = () => {
   const [pipelines, setPipelines] = useState([]);
@@ -411,7 +412,7 @@ const ReplayPage = () => {
                       {getEventLabel(e.event_type)}
                     </div>
                     <span style={{ fontSize: '0.6rem', color: '#cbd5e1' }}>
-                      {new Date(e.created_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      {formatTimeIST(e.created_at)}
                     </span>
                   </div>
                 );
@@ -618,7 +619,7 @@ const ReplayPage = () => {
                                 )}
                               </div>
                               <span style={{ fontSize: '0.7rem', color: '#cbd5e1' }}>
-                                Worker: {t.worker_id || 'Unleased'} {t.lease_expires_at ? `(Lease expires: ${new Date(t.lease_expires_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })})` : ''}
+                                Worker: {t.worker_id || 'Unleased'} {t.lease_expires_at ? `(Lease expires: ${formatTimeIST(t.lease_expires_at)})` : ''}
                               </span>
                             </div>
 

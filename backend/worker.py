@@ -123,9 +123,10 @@ def emit_task_trace(task_id, message):
         print(f"[{WORKER_ID}] Failed to emit task trace: {e}", flush=True)
 
 try:
-    from task_registry import TASK_REGISTRY
+    from task_registry import TASK_REGISTRY, LEASE_DURATIONS
 except ImportError:
     TASK_REGISTRY = {}
+    LEASE_DURATIONS = {}
 
 def handle_send_email(payload):
     print(f"[{WORKER_ID}]   -> Sending email to {payload.get('to')}", flush=True)
@@ -409,6 +410,15 @@ def handle_validate_parse_quality(payload, input_artifacts):
     from services.quality_gate_service import validate_quality
     try:
         metrics = validate_quality(text, parse_stats, document_type, extractable_text_ratio)
+        
+        # Propagate pages and other fields to the output of the quality gate so that chunking has access to them
+        if isinstance(raw_input, dict):
+            if "pages" in raw_input:
+                metrics["pages"] = raw_input["pages"]
+            if "document_type" in raw_input:
+                metrics["document_type"] = raw_input["document_type"]
+            if "routing_confidence" in raw_input:
+                metrics["routing_confidence"] = raw_input["routing_confidence"]
         
         # Emit tracing
         _trace(f"[QUALITY GATE] Ingestion Parser Used: {metrics['parser_used'].upper()}")
@@ -1011,7 +1021,11 @@ def handle_generate_answer_report(payload, input_artifacts):
     
     # Filter based on score threshold parameters
     min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
-    valid_results = [r for r in results if float(r.get("score") or 0.0) >= min_score or r.get("chunk_index") == -1]
+    try:
+        valid_results = [r for r in results if float(r.get("score") or 0.0) >= min_score or r.get("chunk_index") == -1]
+    except Exception as e:
+        print(f"[{WORKER_ID}] [ERROR] Filtering results failed: {e}. Results: {results}", flush=True)
+        valid_results = []
     
     print("=" * 80, flush=True)
     print("TOP MATCHES (BEFORE ANSWER SYNTHESIS):", flush=True)
@@ -1209,8 +1223,8 @@ class LeaseRenewer(threading.Thread):
         self.daemon = True
 
     def run(self):
-        lease_duration = LEACE_DURATIONS.get(self.task_type, 30) if 'LEACE_DURATIONS' in globals() else LEASE_DURATIONS.get(self.task_type, 30)
-        interval = max(1, min(15, lease_duration // 2))
+        lease_duration = LEASE_DURATIONS.get(self.task_type, 30)
+        interval = max(1, min(15, lease_duration // 3))
         
         while not self.stop_event.wait(interval):
             if self.stop_event.is_set():
@@ -1426,8 +1440,9 @@ def get_next_task():
             if result:
                 return result
     except RedisConnectionError as ce:
-        print(f"[{WORKER_ID}] Redis connection error during task pop: {ce}", flush=True)
-        raise ce
+        print(f"[{WORKER_ID}] Redis connection error during task pop: {ce}. Will retry shortly.", flush=True)
+        time.sleep(3)  # brief pause before the outer loop retries
+        return None
     except RedisTimeoutError:
         pass
     except Exception as e:
@@ -1438,11 +1453,20 @@ def get_next_task():
 def worker_loop():
     worker_state['last_action'] = 'Registering worker'
     print(f"[{WORKER_ID}] Worker started! Verifying Redis connection...", flush=True)
-    try:
-        redis_client.ping()
-        print(f"[{WORKER_ID}] Connected to Redis successfully!", flush=True)
-    except Exception as e:
-        print(f"[{WORKER_ID}] CRITICAL: Failed to connect to Redis: {e}", flush=True)
+    # Retry loop: Docker DNS can take a moment to resolve 'redis' after container start
+    max_redis_retries = 12
+    for attempt in range(1, max_redis_retries + 1):
+        try:
+            redis_client.ping()
+            print(f"[{WORKER_ID}] Connected to Redis successfully!", flush=True)
+            break
+        except Exception as e:
+            wait = min(2 ** attempt, 30)  # 2s, 4s, 8s … capped at 30s
+            if attempt < max_redis_retries:
+                print(f"[{WORKER_ID}] Redis not ready (attempt {attempt}/{max_redis_retries}): {e}. Retrying in {wait}s...", flush=True)
+                time.sleep(wait)
+            else:
+                print(f"[{WORKER_ID}] CRITICAL: Could not reach Redis after {max_redis_retries} attempts: {e}. Worker will attempt to continue anyway.", flush=True)
     
     register_worker()
     print(f"[{WORKER_ID}] Listening on capability queues: {ALL_WORKER_QUEUES}", flush=True)

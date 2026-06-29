@@ -1,5 +1,6 @@
 import React from 'react';
 import { Server, Clock, Cpu, TrendingUp, AlertTriangle } from 'lucide-react';
+import { formatTimeIST } from '../utils/timeUtils';
 
 const TaskLog = ({ tasks, workers, onTaskClick, page, totalPages, onPageChange }) => {
   const activeWorkersExist = workers && workers.some(w => w.status !== 'offline');
@@ -122,7 +123,7 @@ const TaskLog = ({ tasks, workers, onTaskClick, page, totalPages, onPageChange }
                             <div className="running-detail-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.775rem' }}>
                               <span style={{ color: '#94a3b8', fontWeight: 500 }}>Lease Expiry:</span>
                               <span style={{ fontWeight: 700, color: expiresSoon ? '#ef4444' : '#cbd5e1' }}>
-                                {new Date(task.lease_expires_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                {formatTimeIST(task.lease_expires_at)}
                               </span>
                             </div>
                             <div className="running-detail-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.775rem' }}>
@@ -175,18 +176,18 @@ const TaskLog = ({ tasks, workers, onTaskClick, page, totalPages, onPageChange }
                 <div className="log-timeline">
                   <div className="timeline-event">
                     <Clock size={12} />
-                    <span>{new Date(task.created_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                    <span>{formatTimeIST(task.created_at)}</span>
                   </div>
                   {task.started_at && (
                     <div className="timeline-event">
                       <Cpu size={12} />
-                      <span>{new Date(task.started_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                      <span>{formatTimeIST(task.started_at)}</span>
                     </div>
                   )}
                   {task.completed_at && (
                     <div className="timeline-event">
                       <TrendingUp size={12} />
-                      <span>{new Date(task.completed_at).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                      <span>{formatTimeIST(task.completed_at)}</span>
                     </div>
                   )}
                 </div>
