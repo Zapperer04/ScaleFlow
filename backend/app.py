@@ -727,8 +727,7 @@ def claim_task(task_id):
         task.assigned_worker_id = worker_id
         task.lease_token = lease_token
         task.lease_expires_at = datetime.utcnow() + timedelta(seconds=lease_duration)
-        if not task.started_at:
-            task.started_at = datetime.utcnow()
+        task.started_at = datetime.utcnow()
         task.lease_renewal_count = 0
         
         create_task_log(db, task.id, "task_claimed", f"Worker claimed task", worker_id=worker_id)
@@ -910,8 +909,7 @@ def update_task(task_id):
         if 'status' in data:
             task.status = data['status']
             if data['status'] == 'running':
-                if not task.started_at:
-                    task.started_at = datetime.utcnow()
+                task.started_at = datetime.utcnow()
                 create_task_log(db, task.id, "task_started", "Worker started execution", worker_id=worker_id)
             elif data['status'] == 'completed':
                 task.completed_at = datetime.utcnow()

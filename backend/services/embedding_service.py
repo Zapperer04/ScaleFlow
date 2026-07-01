@@ -57,10 +57,6 @@ def get_model_load_time() -> float:
 
 def embed_text(text: str) -> list[float]:
     model = get_embedding_model()
-    # Prepend BGE instruction prefix for queries if using a BGE model
-    prefix = "Represent this sentence for searching relevant passages: "
-    if "bge-" in config.EMBEDDING_MODEL.lower() and not text.startswith(prefix):
-        text = f"{prefix}{text}"
     try:
         # Generate embedding
         vector = model.encode(text, convert_to_numpy=True).tolist()

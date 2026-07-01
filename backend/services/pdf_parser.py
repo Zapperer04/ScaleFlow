@@ -521,7 +521,7 @@ def parse_pdf(
                     "page_number": idx + 1,
                     "text": p_text.strip(),
                     "extraction_method": "vlm_local_api",
-                    "ocr_engine": "gemini-1.5-flash",
+                    "ocr_engine": "gemini-2.5-flash",
                     "ocr_confidence": 100.0,
                     "table_detected": False,
                     "contains_signature": False,

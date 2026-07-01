@@ -20,8 +20,7 @@ def retrieve_context(query_vector: list, pipeline_id: int, top_k: int = None, qu
 from services.reranker_service import rerank
 
 def detect_query_intent(query: str) -> list[str]:
-    # Cleaned up: remove all keyword-driven collection routing. Search all relevant collections uniformly.
-    return [config.QDRANT_PARAGRAPH_COLLECTION, config.QDRANT_TABLE_COLLECTION]
+    return [config.QDRANT_COLLECTION_NAME]
 
 def retrieve_and_rerank(query_vector: list, pipeline_id: int, top_k: int = 5, query: str = "") -> dict:
     """
