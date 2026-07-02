@@ -78,6 +78,13 @@ def ensure_collections_exist():
                 ("file_id", qmodels.PayloadSchemaType.INTEGER),
                 ("section", qmodels.PayloadSchemaType.KEYWORD),
                 ("content_type", qmodels.PayloadSchemaType.KEYWORD),
+                # Graph-native chunk indexes
+                ("chunk_id", qmodels.PayloadSchemaType.KEYWORD),
+                ("section_path", qmodels.PayloadSchemaType.KEYWORD),
+                ("graph_depth", qmodels.PayloadSchemaType.FLOAT),
+                ("importance_score", qmodels.PayloadSchemaType.FLOAT),
+                ("entities", qmodels.PayloadSchemaType.KEYWORD),
+                ("keywords", qmodels.PayloadSchemaType.KEYWORD),
             ]
             for field_name, field_schema in _index_specs:
                 try:
@@ -143,6 +150,13 @@ def ensure_collection(collection_name="scaleflow_chunks", vector_size=None):
                 ("file_id", qmodels.PayloadSchemaType.INTEGER),
                 ("section", qmodels.PayloadSchemaType.KEYWORD),
                 ("content_type", qmodels.PayloadSchemaType.KEYWORD),
+                # Graph-native chunk indexes
+                ("chunk_id", qmodels.PayloadSchemaType.KEYWORD),
+                ("section_path", qmodels.PayloadSchemaType.KEYWORD),
+                ("graph_depth", qmodels.PayloadSchemaType.FLOAT),
+                ("importance_score", qmodels.PayloadSchemaType.FLOAT),
+                ("entities", qmodels.PayloadSchemaType.KEYWORD),
+                ("keywords", qmodels.PayloadSchemaType.KEYWORD),
             ]
             for field_name, field_schema in _index_specs:
                 try:
@@ -218,10 +232,58 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
         chunk_meta_list = metadata
 
     points = []
-    for i, (chunk_text, vector) in enumerate(zip(chunks, vectors)):
+    for i, (chunk_data, vector) in enumerate(zip(chunks, vectors)):
         pt_index = chunk_indices[i] if chunk_indices is not None else i
         point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{pipeline_id}_{pt_index}"))
         
+        # ── Determine whether chunk_data is a graph-native dict or legacy string ──
+        if isinstance(chunk_data, dict):
+            # Graph-native chunk
+            chunk_text = chunk_data.get("text", "")
+            embedding_text = chunk_data.get("embedding_text", chunk_text)
+            bm25_text = chunk_data.get("bm25_text", chunk_text)
+            chunk_id = chunk_data.get("chunk_id")
+            section = chunk_data.get("section", "unknown")
+            content_type = chunk_data.get("content_type", "paragraph")
+            section_path = chunk_data.get("section_path", "")
+            node_ids = chunk_data.get("node_ids", [])
+            neighbors = chunk_data.get("neighbors", [])
+            cross_refs = chunk_data.get("cross_refs", {})
+            semantic_parent = chunk_data.get("semantic_parent")
+            semantic_children = chunk_data.get("semantic_children", [])
+            entities = chunk_data.get("entities", [])
+            keywords = chunk_data.get("keywords", [])
+            graph_depth = chunk_data.get("graph_depth", 0)
+            importance_score = chunk_data.get("importance_score", 0.0)
+            bbox = chunk_data.get("bbox", {})
+            pages = chunk_data.get("pages", [])
+            token_count = chunk_data.get("token_count", 0)
+            char_count = chunk_data.get("char_count", 0)
+            # Future: chunk graph edges (not stored yet)
+            # graph_edges = chunk_data.get("graph_edges", [])
+        else:
+            # Legacy string chunk
+            chunk_text = str(chunk_data) if chunk_data else ""
+            embedding_text = chunk_text
+            bm25_text = chunk_text
+            chunk_id = None
+            section = "unknown"
+            content_type = "paragraph"
+            section_path = ""
+            node_ids = []
+            neighbors = []
+            cross_refs = {}
+            semantic_parent = None
+            semantic_children = []
+            entities = []
+            keywords = []
+            graph_depth = 0
+            importance_score = 0.0
+            bbox = {}
+            pages = []
+            token_count = 0
+            char_count = 0
+
         # Build payload
         stored_pipeline_id = pipeline_id
         if pipeline_id is not None:
@@ -237,7 +299,8 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             except (ValueError, TypeError):
                 pass
 
-        pt_index = chunk_indices[i] if chunk_indices is not None else i
+        # The final chunk_id value: use the graph-native chunk_id if available, otherwise UUID-based point_id
+        final_chunk_id = chunk_id if chunk_id else str(point_id)
 
         payload = {
             "pipeline_id": stored_pipeline_id,
@@ -249,34 +312,55 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             "original_filename": global_meta.get("original_filename") if global_meta else None,
             "created_at": datetime.utcnow().isoformat(),
             
-            # Compatibility keys for step 3
+            # Compatibility keys
             "document_id": stored_file_id,
             "filename": global_meta.get("original_filename") if global_meta else None,
-            "chunk_id": pt_index,
+            "chunk_id": final_chunk_id,   # <-- fixed: only one assignment
             "text": chunk_text,
             
-            # Default metadata fields
-            "section": "unknown",
-            "content_type": "paragraph",
-            "token_count": 0,
-            "page_number": 0
+            # Default metadata fields (overwritten if graph-native)
+            "section": section,
+            "content_type": content_type,
+            "token_count": token_count,
+            "page_number": 0,
+            
+            # Graph-native fields
+            "embedding_text": embedding_text,
+            "bm25_text": bm25_text,
+            "node_ids": node_ids,
+            "neighbors": neighbors,
+            "cross_refs": cross_refs,
+            "semantic_parent": semantic_parent,
+            "semantic_children": semantic_children,
+            "entities": entities,
+            "keywords": keywords,
+            "section_path": section_path,
+            "graph_depth": graph_depth,
+            "importance_score": importance_score,
+            "bbox": bbox,
+            "pages": pages,
+            # "graph_edges": graph_edges,   # reserved for future chunk graph edges
         }
         
-        # Merge chunk-specific metadata fields
+        # Merge chunk-specific metadata from external metadata list (if any)
         if chunk_meta_list and i < len(chunk_meta_list):
             c_meta = chunk_meta_list[i]
             if isinstance(c_meta, dict):
                 if "metadata" in c_meta and isinstance(c_meta["metadata"], dict):
                     c_meta = c_meta["metadata"]
-                payload.update(c_meta)
+                # Do not overwrite graph-native fields, only fill missing
+                for k, v in c_meta.items():
+                    if k in payload and payload[k] not in (None, "", [], {}) and not isinstance(payload[k], (list, dict)):
+                        continue  # preserve existing non-empty values
+                    payload[k] = v
         
-        # Add collection_source to chunk metadata in Qdrant payload
+        # Add collection_source to chunk metadata
         if collection_name == config.QDRANT_TABLE_COLLECTION:
             payload["collection_source"] = "tables"
         elif collection_name == config.QDRANT_PARAGRAPH_COLLECTION:
             payload["collection_source"] = "paragraphs"
         else:
-            payload["collection_source"] = "tables" if payload.get("content_type") == "table" else "paragraphs"
+            payload["collection_source"] = "tables" if content_type == "table" else "paragraphs"
         
         points.append(
             qmodels.PointStruct(
@@ -355,26 +439,45 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
         
         results = []
         for hit in search_result:
+            payload = hit.payload
             results.append({
                 "score": round(hit.score, 4),
-                "chunk_text": hit.payload.get("chunk_text"),
-                "text": hit.payload.get("text") or hit.payload.get("chunk_text"),
-                "section": hit.payload.get("section", "unknown"),
-                "pipeline_id": hit.payload.get("pipeline_id"),
-                "file_id": hit.payload.get("file_id"),
-                "task_id": hit.payload.get("task_id"),
-                "chunk_index": hit.payload.get("chunk_index"),
-                "original_filename": hit.payload.get("original_filename"),
-                "page_number": hit.payload.get("page_number"),
-                "document_type": hit.payload.get("document_type"),
-                "routing_confidence": hit.payload.get("routing_confidence"),
-                "ocr_engine": hit.payload.get("ocr_engine"),
-                "ocr_confidence": hit.payload.get("ocr_confidence"),
-                "extraction_method": hit.payload.get("extraction_method"),
-                "table_detected": hit.payload.get("table_detected"),
-                "contains_signature": hit.payload.get("contains_signature"),
-                "contains_handwriting": hit.payload.get("contains_handwriting"),
-                "chunk_quality_score": hit.payload.get("chunk_quality_score")
+                "chunk_text": payload.get("chunk_text"),
+                "text": payload.get("text") or payload.get("chunk_text"),
+                "section": payload.get("section", "unknown"),
+                "pipeline_id": payload.get("pipeline_id"),
+                "file_id": payload.get("file_id"),
+                "task_id": payload.get("task_id"),
+                "chunk_index": payload.get("chunk_index"),
+                "original_filename": payload.get("original_filename"),
+                "page_number": payload.get("page_number"),
+                "document_type": payload.get("document_type"),
+                "routing_confidence": payload.get("routing_confidence"),
+                "ocr_engine": payload.get("ocr_engine"),
+                "ocr_confidence": payload.get("ocr_confidence"),
+                "extraction_method": payload.get("extraction_method"),
+                "table_detected": payload.get("table_detected"),
+                "contains_signature": payload.get("contains_signature"),
+                "contains_handwriting": payload.get("contains_handwriting"),
+                "chunk_quality_score": payload.get("chunk_quality_score"),
+                # New graph-native fields
+                "chunk_id": payload.get("chunk_id"),
+                "embedding_text": payload.get("embedding_text"),
+                "bm25_text": payload.get("bm25_text"),
+                "node_ids": payload.get("node_ids", []),
+                "neighbors": payload.get("neighbors", []),
+                "cross_refs": payload.get("cross_refs", {}),
+                "semantic_parent": payload.get("semantic_parent"),
+                "semantic_children": payload.get("semantic_children", []),
+                "entities": payload.get("entities", []),
+                "keywords": payload.get("keywords", []),
+                "section_path": payload.get("section_path", ""),
+                "graph_depth": payload.get("graph_depth", 0),
+                "importance_score": payload.get("importance_score", 0.0),
+                "bbox": payload.get("bbox", {}),
+                "pages": payload.get("pages", []),
+                "token_count": payload.get("token_count", 0),
+                "char_count": payload.get("char_count", 0),
             })
         return results
     except Exception as e:
@@ -422,26 +525,45 @@ def search_keyword(collection_name, query_text, top_k=5, filters=None):
         
         results = []
         for point in scroll_result:
+            payload = point.payload
             results.append({
                 "score": 0.5, # default base score for keyword matching before reranking
-                "chunk_text": point.payload.get("chunk_text"),
-                "text": point.payload.get("text") or point.payload.get("chunk_text"),
-                "section": point.payload.get("section", "unknown"),
-                "pipeline_id": point.payload.get("pipeline_id"),
-                "file_id": point.payload.get("file_id"),
-                "task_id": point.payload.get("task_id"),
-                "chunk_index": point.payload.get("chunk_index"),
-                "original_filename": point.payload.get("original_filename"),
-                "page_number": point.payload.get("page_number"),
-                "document_type": point.payload.get("document_type"),
-                "routing_confidence": point.payload.get("routing_confidence"),
-                "ocr_engine": point.payload.get("ocr_engine"),
-                "ocr_confidence": point.payload.get("ocr_confidence"),
-                "extraction_method": point.payload.get("extraction_method"),
-                "table_detected": point.payload.get("table_detected"),
-                "contains_signature": point.payload.get("contains_signature"),
-                "contains_handwriting": point.payload.get("contains_handwriting"),
-                "chunk_quality_score": point.payload.get("chunk_quality_score")
+                "chunk_text": payload.get("chunk_text"),
+                "text": payload.get("text") or payload.get("chunk_text"),
+                "section": payload.get("section", "unknown"),
+                "pipeline_id": payload.get("pipeline_id"),
+                "file_id": payload.get("file_id"),
+                "task_id": payload.get("task_id"),
+                "chunk_index": payload.get("chunk_index"),
+                "original_filename": payload.get("original_filename"),
+                "page_number": payload.get("page_number"),
+                "document_type": payload.get("document_type"),
+                "routing_confidence": payload.get("routing_confidence"),
+                "ocr_engine": payload.get("ocr_engine"),
+                "ocr_confidence": payload.get("ocr_confidence"),
+                "extraction_method": payload.get("extraction_method"),
+                "table_detected": payload.get("table_detected"),
+                "contains_signature": payload.get("contains_signature"),
+                "contains_handwriting": payload.get("contains_handwriting"),
+                "chunk_quality_score": payload.get("chunk_quality_score"),
+                # New graph-native fields
+                "chunk_id": payload.get("chunk_id"),
+                "embedding_text": payload.get("embedding_text"),
+                "bm25_text": payload.get("bm25_text"),
+                "node_ids": payload.get("node_ids", []),
+                "neighbors": payload.get("neighbors", []),
+                "cross_refs": payload.get("cross_refs", {}),
+                "semantic_parent": payload.get("semantic_parent"),
+                "semantic_children": payload.get("semantic_children", []),
+                "entities": payload.get("entities", []),
+                "keywords": payload.get("keywords", []),
+                "section_path": payload.get("section_path", ""),
+                "graph_depth": payload.get("graph_depth", 0),
+                "importance_score": payload.get("importance_score", 0.0),
+                "bbox": payload.get("bbox", {}),
+                "pages": payload.get("pages", []),
+                "token_count": payload.get("token_count", 0),
+                "char_count": payload.get("char_count", 0),
             })
         return results
     except Exception as e:
@@ -475,4 +597,3 @@ class _ClientProxy:
     def __getattr__(self, name):
         return getattr(get_client(), name)
 client = _ClientProxy()
-
