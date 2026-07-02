@@ -55,47 +55,77 @@ TASK_REGISTRY = {
         "estimated_runtime_seconds": 4,
         "handler_name": "handle_generate_report"
     },
+    "preprocess_document": {
+        "label": "Preprocess Document",
+        "description": "Assesses document quality and performs image enhancement before VLM parsing.",
+        "required_fields": [],
+        "optional_fields": ["simulate_hang_seconds", "graph_schema_version"],
+        "frontend_fields": [],
+        "retry_policy": {"max_retries": 2, "retry_delay_seconds": 10},
+        "estimated_runtime_seconds": 60,
+        "handler_name": "handle_preprocess_document"
+    },
     "parse_document": {
         "label": "Parse Document",
-        "description": "Normalizes document text.",
+        "description": "Parses documents using VLM-first parsing and produces a document graph.",
         "required_fields": [],
-        "optional_fields": ["source_text", "simulate_hang_seconds"],
+        "optional_fields": ["source_text", "simulate_hang_seconds", "graph_schema_version", "graph_node_count", "graph_edge_count", "graph_depth", "graph_enabled"],
         "frontend_fields": [
             {"name": "source_text", "label": "Source Text", "type": "textarea", "placeholder": "Input document content..."}
         ],
         "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
-        "estimated_runtime_seconds": 2,
+        "estimated_runtime_seconds": 300,
         "handler_name": "handle_parse_document"
+    },
+    "persist_document_graph": {
+        "label": "Persist Document Graph",
+        "description": "Stores the extracted document graph for recovery and later analysis.",
+        "required_fields": [],
+        "optional_fields": ["simulate_hang_seconds", "graph_schema_version", "graph_node_count", "graph_edge_count"],
+        "frontend_fields": [],
+        "retry_policy": {"max_retries": 2, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 30,
+        "handler_name": "handle_persist_document_graph"
     },
     "validate_parse_quality": {
         "label": "Validate Parse Quality",
-        "description": "Evaluates parser extraction quality against dictionary and character thresholds.",
+        "description": "Validates document graph quality, OCR fallback quality, and graph extraction metrics.",
         "required_fields": [],
-        "optional_fields": ["simulate_hang_seconds"],
+        "optional_fields": ["simulate_hang_seconds", "graph_schema_version"],
         "frontend_fields": [],
         "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
-        "estimated_runtime_seconds": 2,
+        "estimated_runtime_seconds": 30,
         "handler_name": "handle_validate_parse_quality"
     },
     "chunk_text": {
         "label": "Chunk Text",
-        "description": "Splits text into chunks.",
+        "description": "Transforms document graphs into semantic graph chunks.",
         "required_fields": [],
-        "optional_fields": ["simulate_hang_seconds"],
+        "optional_fields": ["simulate_hang_seconds", "graph_schema_version", "graph_node_count", "graph_edge_count", "graph_depth", "graph_enabled"],
         "frontend_fields": [],
         "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
-        "estimated_runtime_seconds": 2,
+        "estimated_runtime_seconds": 120,
         "handler_name": "handle_chunk_text"
     },
     "generate_embeddings": {
         "label": "Generate Embeddings",
-        "description": "Generates mock embedding vectors.",
+        "description": "Generates graph-aware semantic embeddings for graph chunks.",
         "required_fields": [],
-        "optional_fields": ["simulate_hang_seconds"],
+        "optional_fields": ["simulate_hang_seconds", "graph_schema_version"],
         "frontend_fields": [],
         "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
-        "estimated_runtime_seconds": 3,
+        "estimated_runtime_seconds": 600,
         "handler_name": "handle_generate_embeddings"
+    },
+    "build_bm25_index": {
+        "label": "Build BM25 Index",
+        "description": "Constructs a BM25 index from the chunked text for hybrid retrieval.",
+        "required_fields": [],
+        "optional_fields": ["simulate_hang_seconds", "graph_schema_version"],
+        "frontend_fields": [],
+        "retry_policy": {"max_retries": 2, "retry_delay_seconds": 10},
+        "estimated_runtime_seconds": 180,
+        "handler_name": "handle_build_bm25_index"
     },
     "summarize_document": {
         "label": "Summarize Document",
@@ -163,22 +193,42 @@ TASK_REGISTRY = {
     },
     "retrieve_context": {
         "label": "Retrieve Context",
-        "description": "Retrieves semantic match context from Qdrant.",
+        "description": "Performs hybrid retrieval using dense search, BM25 search, graph expansion, and reranking.",
         "required_fields": [],
-        "optional_fields": ["simulate_hang_seconds"],
+        "optional_fields": ["simulate_hang_seconds", "graph_schema_version"],
         "frontend_fields": [],
         "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
-        "estimated_runtime_seconds": 3,
+        "estimated_runtime_seconds": 60,
         "handler_name": "handle_retrieve_context"
+    },
+    "expand_graph_context": {
+        "label": "Expand Graph Context",
+        "description": "Expands context by traversing the chunk graph to fetch related neighbours.",
+        "required_fields": [],
+        "optional_fields": ["simulate_hang_seconds", "graph_schema_version"],
+        "frontend_fields": [],
+        "retry_policy": {"max_retries": 2, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 60,
+        "handler_name": "handle_expand_graph_context"
+    },
+    "rerank_context": {
+        "label": "Rerank Context",
+        "description": "Reranks retrieved chunks using a cross‑encoder for final relevance.",
+        "required_fields": [],
+        "optional_fields": ["simulate_hang_seconds", "graph_schema_version"],
+        "frontend_fields": [],
+        "retry_policy": {"max_retries": 2, "retry_delay_seconds": 5},
+        "estimated_runtime_seconds": 120,
+        "handler_name": "handle_rerank_context"
     },
     "generate_answer_report": {
         "label": "Generate Answer Report",
-        "description": "Compiles retrieved context chunks into a final extractive report.",
+        "description": "Generates grounded answers from graph retrieval context.",
         "required_fields": [],
         "optional_fields": ["simulate_hang_seconds"],
         "frontend_fields": [],
         "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
-        "estimated_runtime_seconds": 2,
+        "estimated_runtime_seconds": 120,
         "handler_name": "handle_generate_answer_report"
     }
 }
@@ -234,9 +284,13 @@ CAPABILITY_MAPPINGS = {
     "send_email": "io_heavy",
     "process_video": "cpu_heavy",
     "generate_report": "cpu_heavy",
+    "preprocess_document": "cpu_heavy",          # new
     "parse_document": "cpu_heavy",
+    "persist_document_graph": "io_heavy",        # new
+    "validate_parse_quality": "cpu_heavy",
     "chunk_text": "cpu_heavy",
     "generate_embeddings": "embedding_gpu",
+    "build_bm25_index": "retrieval_optimized",    # new
     "summarize_document": "summarization_llm",
     "parse_logs": "cpu_heavy",
     "detect_error_patterns": "cpu_heavy",
@@ -244,8 +298,9 @@ CAPABILITY_MAPPINGS = {
     "final_report": "cpu_heavy",
     "embed_query": "embedding_gpu",
     "retrieve_context": "retrieval_optimized",
-    "generate_answer_report": "summarization_llm",
-    "validate_parse_quality": "cpu_heavy"
+    "expand_graph_context": "retrieval_optimized",# new
+    "rerank_context": "retrieval_optimized",      # new
+    "generate_answer_report": "summarization_llm"
 }
 
 def get_task_capability(task_type):
@@ -266,10 +321,13 @@ LEASE_DURATIONS = {
     "send_email": 120,
     "process_video": 600,
     "generate_report": 300,
+    "preprocess_document": 180,           # new
     "parse_document": 300,
+    "persist_document_graph": 120,        # new
     "validate_parse_quality": 120,
     "chunk_text": 120,
-    "generate_embeddings": 600,       # <-- 10 minutes for massive vector transformations
+    "generate_embeddings": 600,
+    "build_bm25_index": 300,              # new
     "summarize_document": 300,
     "parse_logs": 120,
     "detect_error_patterns": 120,
@@ -277,6 +335,8 @@ LEASE_DURATIONS = {
     "final_report": 180,
     "embed_query": 120,
     "retrieve_context": 180,
+    "expand_graph_context": 120,          # new
+    "rerank_context": 180,                # new
     "generate_answer_report": 300
 }
 
