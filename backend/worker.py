@@ -40,12 +40,9 @@ HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 # Self-healing API_URL detection inside Docker
 if "host.docker.internal" in API_URL:
     try:
-        # Quick check with a short timeout
         requests.get(f"{API_URL}/task-types", timeout=1.0)
     except Exception as e_host:
         print(f"[{WORKER_ID}] [Self-Healing] Connection to {API_URL} failed ({e_host}). Probing fallbacks...", flush=True)
-        # Connection failed; let's check if the internal service name 'backend' works
-        # or if we need to fall back to host.docker.internal's alternative representations
         fallbacks = ["http://backend:5000", "http://172.17.0.1:5000", "http://172.18.0.1:5000", "http://10.0.75.1:5000"]
         for test_url in fallbacks:
             try:
@@ -74,7 +71,6 @@ try:
 except Exception:
     WORKER_CAPABILITIES = [c.strip() for c in WORKER_CAPABILITIES_STR.split(",") if c.strip()]
 
-# Build the complete list of matching queues for the worker
 ALL_WORKER_QUEUES = []
 for p in ['high', 'medium', 'low']:
     for cap in WORKER_CAPABILITIES:
@@ -90,7 +86,6 @@ worker_state: dict[str, Any] = {
 }
 
 def send_heartbeat():
-    """Send heartbeat to API every 10 seconds"""
     while True:
         try:
             payload = {
@@ -176,7 +171,6 @@ def handle_webhook_trigger(payload):
     time.sleep(2)
     print(f"[{WORKER_ID}]   [OK] Webhook triggered!", flush=True)
 
-# Phase 2 Demo Handlers
 def get_uploaded_file_path(pipeline_id):
     try:
         res = requests.get(f"{API_URL}/pipelines/{pipeline_id}", headers=HEADERS, timeout=5)
@@ -186,14 +180,11 @@ def get_uploaded_file_path(pipeline_id):
                 if art.get("artifact_type") == "uploaded_file":
                     storage_uri = art.get("storage_uri")
                     from context.artifact_store import BASE_STORAGE_DIR
-                    
-                    # Normalize separators for cross-platform compliance and resolve absolute paths
                     normalized = storage_uri.replace("\\", "/")
                     if "storage/" in normalized:
                         rel_path = normalized.split("storage/", 1)[1]
                     else:
                         rel_path = os.path.basename(normalized)
-                        
                     full_path = os.path.normpath(os.path.join(BASE_STORAGE_DIR, rel_path))
                     return full_path
     except Exception as e:
@@ -201,12 +192,9 @@ def get_uploaded_file_path(pipeline_id):
     return None
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Document Preprocessing — quality evaluation + image enhancement pre-parse
+# Document Preprocessing
 # ─────────────────────────────────────────────────────────────────────────────
 def handle_preprocess_document(payload, input_artifacts):
-    """
-    Run Document Preprocessing: Fast Route Probe, Image Quality Assessment, and Enhancement.
-    """
     pipeline_id = payload.get('_pipeline_id')
     task_id     = payload.get('_task_id')
 
@@ -218,27 +206,19 @@ def handle_preprocess_document(payload, input_artifacts):
 
     filepath = get_uploaded_file_path(pipeline_id)
     if not filepath or not os.path.exists(filepath):
-        raise FileNotFoundError(
-            "[PREPROCESS] Uploaded file not found. "
-            f"Resolved path: {filepath!r}"
-        )
+        raise FileNotFoundError(f"[PREPROCESS] Uploaded file not found. Resolved path: {filepath!r}")
 
     from services.document_preprocessor import evaluate_document, run_enhancement_pipeline
     import dataclasses
     
-    # Run Phase 2 & 3
     report = evaluate_document(filepath, trace_fn=_trace)
     
-    # Run Phase 4
     if report.needs_enhancement:
         _worker_dir = os.path.dirname(os.path.abspath(__file__))
         _temp_dir   = os.path.join(_worker_dir, "storage", "temp")
-        
-        # Get page count once, cheaply
         import pypdf
         with open(filepath, "rb") as f:
             _pc = len(pypdf.PdfReader(f).pages)
-            
         enhanced_dir = run_enhancement_pipeline(
             filepath=filepath,
             report=report,
@@ -251,132 +231,121 @@ def handle_preprocess_document(payload, input_artifacts):
             report.enhanced_pages_path = enhanced_dir
             _trace(f"[PREPROCESS] Enhancement complete: saved to {os.path.basename(enhanced_dir)}")
             
-    # Convert to schema dict
     report_dict = dataclasses.asdict(report)
     return report_dict
 
 
 def handle_parse_document(payload, input_artifacts):
-    """
-    Parse uploaded document using the method hint determined during preprocessing.
-    """
-    text = payload.get('source_text')
+    """Parse document into a document graph (VLM-first) or plain text (legacy)."""
     pipeline_id = payload.get('_pipeline_id')
     task_id = payload.get('_task_id')
     lease_token = payload.get('_lease_token')
     progress_json = payload.get('_progress_json')
-    parse_stats = {}
-    pages = []
-    document_type = "DIGITAL"
-    routing_confidence = 1.0
 
     def _trace(msg: str):
         print(f"[{WORKER_ID}] {msg}", flush=True)
         emit_task_trace(task_id, msg)
 
-    if not text and pipeline_id:
-        _trace("[PARSER] Initializing document parser")
-        filepath = get_uploaded_file_path(pipeline_id)
+    filepath = get_uploaded_file_path(pipeline_id)
+    if not filepath or not os.path.exists(filepath):
+        raise FileNotFoundError(f"[PARSER] Uploaded file not found. Resolved path: {filepath!r}")
 
-        if filepath and os.path.exists(filepath):
-            file_id, original_filename, _ = get_pipeline_file_info(pipeline_id)
-            is_pdf = (
-                (original_filename and original_filename.lower().endswith(".pdf"))
-                or filepath.lower().endswith(".pdf")
+    file_id, original_filename, _ = get_pipeline_file_info(pipeline_id)
+    is_pdf = original_filename.lower().endswith(".pdf") if original_filename else filepath.lower().endswith(".pdf")
+
+    if is_pdf:
+        _trace("[PARSER] PDF detected — starting VLM-first parser")
+        try:
+            prep = input_artifacts.get("preprocessing_report", {})
+            document_type = prep.get("document_type", "MULTIMODAL")
+            routing_confidence = prep.get("routing_confidence", 1.0)
+            parse_method_hint = prep.get("parse_method_hint", "vlm_document_graph")
+            enhanced_pages_path = prep.get("enhanced_pages_path")
+
+            from services.pdf_parser import parse_pdf
+            result = parse_pdf(
+                filepath=filepath,
+                task_id=task_id,
+                lease_token=lease_token,
+                progress_json=progress_json if isinstance(progress_json, dict) else {},
+                trace_fn=_trace,
+                api_url=API_URL,
+                api_headers=HEADERS,
+                skip_ocr=False,
+                document_type=document_type,
+                routing_confidence=routing_confidence,
+                parse_method_hint=parse_method_hint,
+                enhanced_pages_path=enhanced_pages_path
             )
+            # result is a ParseResult with document_graph, stats, pages
+            document_graph = result.document_graph
+            parse_stats = result.stats
+            pages = result.pages
+            _trace(f"[PARSER] VLM parsing complete. Nodes: {parse_stats.get('node_count', 0)}, edges: {parse_stats.get('edge_count', 0)}")
+            # Return a dict compatible with downstream graph-native chunker
+            return {
+                "document_graph": document_graph,
+                "parse_stats": parse_stats,
+                "pages": pages,
+                "document_type": document_type,
+                "routing_confidence": routing_confidence
+            }
+        except ValueError as ve:
+            _trace(f"[PARSER] VALIDATION FAILURE: {ve}")
+            raise
+        except TimeoutError as te:
+            _trace(f"[PARSER] TIMEOUT: {te}")
+            raise Exception(str(te))
+        except Exception as e:
+            _trace(f"[PARSER] CRITICAL ERROR: {e}")
+            raise
+    else:
+        # Plain text / log file – fallback to reading as plain text
+        _trace("[PARSER] Plain-text file detected — reading directly")
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                text = f.read()
+            _trace(f"[PARSER] Read {len(text)} chars from file")
+            # For plain text, we wrap in a minimal document graph (single node)
+            document_graph = {
+                "document_id": str(task_id),
+                "parser": "plaintext",
+                "pages": [{
+                    "page_number": 1,
+                    "nodes": [{
+                        "chunk_id": "p1_n1",
+                        "type": "paragraph",
+                        "text": text,
+                        "section": "unknown",
+                        "reading_order": 1,
+                        "bbox": {"x1": 0, "y1": 0, "x2": 1, "y2": 1}
+                    }],
+                    "edges": []
+                }]
+            }
+            return {
+                "document_graph": document_graph,
+                "parse_stats": {"parser": "plaintext"},
+                "pages": [{"page_number": 1, "extraction_method": "raw_text"}],
+                "document_type": "TEXT",
+                "routing_confidence": 1.0
+            }
+        except Exception as e:
+            _trace(f"[PARSER] ERROR reading file: {e}")
+            raise
 
-            if is_pdf:
-                _trace(f"[PARSER] PDF detected — starting fallback-chain parser")
-                try:
-                    prep = {}
-                    if input_artifacts and "preprocessing_report" in input_artifacts:
-                        prep = input_artifacts["preprocessing_report"]
-                        
-                    document_type = prep.get("document_type", "DIGITAL")
-                    routing_confidence = prep.get("routing_confidence", 1.0)
-                    parse_method_hint = prep.get("parse_method_hint", "pypdf")
-                    enhanced_pages_path = prep.get("enhanced_pages_path")
-
-                    from services.pdf_parser import parse_pdf
-                    result = parse_pdf(
-                        filepath=filepath,
-                        task_id=task_id,
-                        lease_token=lease_token,
-                        progress_json=progress_json if isinstance(progress_json, dict) else {},
-                        trace_fn=_trace,
-                        api_url=API_URL,
-                        api_headers=HEADERS,
-                        skip_ocr=False,
-                        document_type=document_type,
-                        routing_confidence=routing_confidence,
-                        parse_method_hint=parse_method_hint,
-                        enhanced_pages_path=enhanced_pages_path
-                    )
-                    text = result.text
-                    parse_stats = result.stats
-                    pages = result.pages
-
-                    if not text:
-                        _trace("[PARSER] WARNING: Parser returned empty text. Document may be fully graphical.")
-                except ValueError as ve:
-                    _trace(f"[PARSER] VALIDATION FAILURE: {ve}")
-                    raise
-                except TimeoutError as te:
-                    _trace(f"[PARSER] TIMEOUT: {te}")
-                    raise Exception(str(te))
-                except Exception as e:
-                    _trace(f"[PARSER] CRITICAL ERROR: {e}")
-                    raise
-            else:
-                # Plain text / log file
-                _trace("[PARSER] Plain-text file detected — reading directly")
-                try:
-                    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-                        text = f.read()
-                    _trace(f"[PARSER] Read {len(text)} chars from file")
-                except Exception as e:
-                    _trace(f"[PARSER] ERROR reading file: {e}")
-        else:
-            if filepath:
-                _trace(f"[PARSER] ERROR: File not found at expected path: {filepath}")
-            else:
-                _trace("[PARSER] ERROR: Could not resolve file path from pipeline artifacts")
-
-    # Fallback to raw artifact content (used in unit tests / inline pipelines)
-    if not text and input_artifacts:
-        uploaded_file_data = input_artifacts.get("uploaded_file")
-        if uploaded_file_data is not None:
-            text = str(uploaded_file_data)
-        elif input_artifacts:
-            first_val = list(input_artifacts.values())[0]
-            text = first_val.get("content", str(first_val)) if isinstance(first_val, dict) else str(first_val)
-
-    if not text:
-        text = ""
-
-    normalized = text.strip()
-    _trace(f"[PARSER] Complete — extracted {len(normalized):,} characters")
-    if parse_stats.get("ocr_pages", 0) > 0:
-        _trace(f"[PARSER] OCR was used on {parse_stats['ocr_pages']} page(s)")
-    if parse_stats.get("page_failures"):
-        for pf in parse_stats["page_failures"][:5]:   # surface first 5 only
-            _trace(f"[PARSER] Page {pf['page']} failure [{pf['parser']}]: {pf['reason'][:120]}")
-
-    # Return text with embedded parse stats and page list
+    # Fallback (should not reach)
     return {
-        "parsed_text": normalized,
-        "parse_stats": parse_stats,
-        "pages": pages,
-        "document_type": document_type,
-        "routing_confidence": routing_confidence
+        "document_graph": {},
+        "parse_stats": {},
+        "pages": [],
+        "document_type": "UNKNOWN",
+        "routing_confidence": 0.0
     }
 
 
 def handle_validate_parse_quality(payload, input_artifacts):
-    """
-    Quality Gate verifying the parsed document text before chunking.
-    Calculates OCR confidence, printable character ratio, dictionary-word ratio, and text coherence score.
-    """
+    """Quality Gate verifying the parsed document text before chunking."""
     task_id = payload.get('_task_id')
     pipeline_id = payload.get('_pipeline_id')
     
@@ -386,23 +355,30 @@ def handle_validate_parse_quality(payload, input_artifacts):
         
     _trace("[QUALITY GATE] Starting parse quality validation gate...")
     
-    # 1. Fetch text from parsed_text input artifact
-    raw_input = input_artifacts.get("parsed_text", "")
-    if isinstance(raw_input, dict):
-        text = raw_input.get("parsed_text", "")
+    raw_input = input_artifacts.get("parsed_text", {})
+    text = ""
+    parse_stats = {}
+    document_graph = raw_input.get("document_graph") if isinstance(raw_input, dict) else None
+    # For quality gate, we extract text from the graph for analysis (if available)
+    if document_graph:
+        # Concatenate all node texts for quality scoring
+        all_texts = []
+        for page in document_graph.get("pages", []):
+            for node in page.get("nodes", []):
+                all_texts.append(node.get("text", ""))
+        text = "\n".join(all_texts)
         parse_stats = raw_input.get("parse_stats", {})
     else:
-        text = raw_input
-        parse_stats = {}
-        
-    if not text:
-        text = payload.get("source_text", "")
-        
+        if isinstance(raw_input, dict):
+            text = raw_input.get("parsed_text", "")
+            parse_stats = raw_input.get("parse_stats", {})
+        else:
+            text = raw_input or payload.get("source_text", "")
+    
     if not text:
         _trace("[QUALITY GATE] FAILED: No text was extracted from the document.")
         raise ValueError("Document unreadable / OCR quality too low: Extracted text is empty.")
 
-    # Extract preprocessing report metadata
     preprocess_report = input_artifacts.get("preprocessing_report", {})
     document_type = preprocess_report.get("document_type", "SCANNED")
     extractable_text_ratio = preprocess_report.get("extractable_text_ratio", 0.0)
@@ -410,9 +386,10 @@ def handle_validate_parse_quality(payload, input_artifacts):
     from services.quality_gate_service import validate_quality
     try:
         metrics = validate_quality(text, parse_stats, document_type, extractable_text_ratio)
-        
-        # Propagate pages and other fields to the output of the quality gate so that chunking has access to them
+        # Pass through the document graph and other fields unchanged
         if isinstance(raw_input, dict):
+            if "document_graph" in raw_input:
+                metrics["document_graph"] = raw_input["document_graph"]
             if "pages" in raw_input:
                 metrics["pages"] = raw_input["pages"]
             if "document_type" in raw_input:
@@ -420,15 +397,8 @@ def handle_validate_parse_quality(payload, input_artifacts):
             if "routing_confidence" in raw_input:
                 metrics["routing_confidence"] = raw_input["routing_confidence"]
         
-        # Emit tracing
         _trace(f"[QUALITY GATE] Ingestion Parser Used: {metrics['parser_used'].upper()}")
-        _trace(f"[QUALITY GATE] OCR Activation Status: {'YES' if metrics['ocr_activated'] else 'NO'}")
-        _trace(f"[QUALITY GATE] Average OCR Confidence Score: {metrics['ocr_confidence']:.1f}%")
-        _trace(f"[QUALITY GATE] Executing Quality Gate Decisions:")
-        _trace(f"  - Printable Character Ratio: {metrics['printable_ratio']:.2%} (Min Threshold: {config.MIN_PRINTABLE_RATIO:.2%})")
-        _trace(f"  - Quality Confidence Score: {metrics['quality_confidence']:.1f}/100.0 (Min Threshold: {config.MIN_QUALITY_CONFIDENCE:.1f})")
-        
-        _trace("[QUALITY GATE] PASSED: Document parsing quality is within acceptable bounds.")
+        _trace(f"[QUALITY GATE] PASSED: Document parsing quality is within acceptable bounds.")
         return metrics
     except ValueError as ve:
         _trace(f"[QUALITY GATE] FAILED: {str(ve)}")
@@ -436,143 +406,74 @@ def handle_validate_parse_quality(payload, input_artifacts):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Semantic Chunker — paragraph-aware, sentence-boundary-preserving
+# Graph‑native Semantic Chunker
 # ─────────────────────────────────────────────────────────────────────────────
 def handle_chunk_text(payload, input_artifacts):
     """
-    Paragraph-aware, sentence-boundary-preserving semantic chunker.
-    Replaces the old fixed sliding-window approach.
+    Graph‑native chunking: uses document graph if available, else falls back to text chunking.
     """
     task_id = payload.get('_task_id')
+    raw_input = input_artifacts.get("parsed_text", {})
+    document_graph = raw_input.get("document_graph") if isinstance(raw_input, dict) else None
 
-    # Input may be a dict (new format from handle_parse_document) or raw string
-    raw_input = input_artifacts.get("parsed_text", "")
-    
-    text = ""
-    pages = []
-    document_type = "DIGITAL"
-    routing_confidence = 1.0
-
-    if isinstance(raw_input, dict):
-        text = raw_input.get("parsed_text", "")
-        pages = raw_input.get("pages", [])
-        document_type = raw_input.get("document_type", "DIGITAL")
-        routing_confidence = raw_input.get("routing_confidence", 1.0)
-    elif isinstance(raw_input, str):
-        text = raw_input
+    if document_graph:
+        _trace_msg = "[CHUNKER] Graph‑native chunking started"
+        emit_task_trace(task_id, _trace_msg)
+        print(f"[{WORKER_ID}] {_trace_msg}", flush=True)
+        from services.chunking_service import chunk_document_graph
+        t_start = time.perf_counter()
+        result = chunk_document_graph(document_graph)
+        chunks = result["chunks"]  # list of dicts with 'text', 'metadata', etc.
+        duration = time.perf_counter() - t_start
+        emit_task_trace(task_id, f"[CHUNKER] Generated {len(chunks)} graph chunks (took {duration:.4f}s)")
+        print(f"[{WORKER_ID}]   [OK] Graph-chunked into {len(chunks)} chunks", flush=True)
+        return chunks
     else:
-        text = payload.get("source_text", "")
-
-    if not text:
-        text = payload.get("source_text", "")
-
-    emit_task_trace(task_id, "[CHUNKER] Paragraph-aware semantic chunking started")
-
-    # If pages is not populated (e.g. text/log file or direct test), create a dummy page
-    if not pages:
-        pages = [{
-            "page_number": 1,
-            "text": text,
-            "extraction_method": "pypdf" if document_type == "DIGITAL" else "unknown",
-            "ocr_engine": "none",
-            "ocr_confidence": 0.0,
-            "table_detected": False,
-            "contains_signature": False,
-            "contains_handwriting": False
-        }]
-
-    from services.chunking_service import chunk_text
-    from services.quality_gate_service import compute_quality_score
-    
-    t_start = time.perf_counter()
-    
-    output_chunks = []
-    active_section = "unknown"
-    active_parent = None
-    for page in pages:
-        page_text = page.get("text", "")
-        if not page_text or not page_text.strip():
-            continue
-        page_chunks = chunk_text(
-            page_text,
-            page_number=page.get("page_number", 0),
-            default_section=active_section,
-            default_parent=active_parent
-        )
-        if hasattr(page_chunks, 'active_section'):
-            active_section = page_chunks.active_section
-        if hasattr(page_chunks, 'active_parent'):
-            active_parent = page_chunks.active_parent
-
-        for seg in page_chunks:
-            if isinstance(seg, dict):
-                seg_text = seg.get('text', '')
-                seg_meta = seg.get('metadata', {})
-            else:
-                seg_text = str(seg)
-                seg_meta = {}
-
-            chunk_quality_score, chunk_signals = compute_quality_score(seg_text, document_type)
-
-            # Merge page-level metadata with segment-level metadata
-            chunk_metadata = {
-                "page_number": seg_meta.get('page_number', page.get("page_number", 1)),
-                "document_type": seg_meta.get('document_type', document_type),
-                "routing_confidence": seg_meta.get('routing_confidence', routing_confidence),
-                "ocr_engine": page.get("ocr_engine", seg_meta.get('ocr_engine', 'none')),
-                "ocr_confidence": page.get("ocr_confidence", seg_meta.get('ocr_confidence', 0.0)),
-                "extraction_method": page.get("extraction_method", seg_meta.get('extraction_method', 'pypdf')),
-                "table_detected": page.get("table_detected", seg_meta.get('table_detected', False)),
-                "contains_signature": page.get("contains_signature", seg_meta.get('contains_signature', False)),
-                "contains_handwriting": page.get("contains_handwriting", seg_meta.get('contains_handwriting', False)),
-                "chunk_quality_score": chunk_quality_score
-            }
-            # Also include semantic metadata fields if present
-            for k in ['section', 'content_type', 'token_count', 'char_count']:
-                if k in seg_meta:
-                    chunk_metadata[k] = seg_meta[k]
-
-            output_chunks.append({
-                "text": seg_text,
-                "metadata": chunk_metadata
-            })
-            
-    duration = time.perf_counter() - t_start
-
-    # If everything is filtered or empty, fallback
-    if not output_chunks and text.strip():
-        chunk_quality_score, chunk_signals = compute_quality_score(text, document_type)
-        output_chunks.append({
-            "text": text,
-            "metadata": {
-                "page_number": 1,
-                "document_type": document_type,
-                "routing_confidence": routing_confidence,
-                "ocr_engine": "none",
-                "ocr_confidence": 0.0,
-                "extraction_method": "pypdf" if document_type == "DIGITAL" else "unknown",
-                "table_detected": False,
-                "contains_signature": False,
-                "contains_handwriting": False,
-                "chunk_quality_score": chunk_quality_score
-            }
-        })
-
-    avg_words = 0
-    if output_chunks:
-        avg_words = sum(len(c["text"].split()) for c in output_chunks) // len(output_chunks)
-
-    emit_task_trace(task_id, f"[CHUNKER] Generated {len(output_chunks)} chunks (avg {avg_words} words/chunk)")
-    emit_task_trace(task_id, f"[PROFILE] chunking_duration={duration:.5f}s count={len(output_chunks)}")
-    print(f"[{WORKER_ID}]   [OK] Chunked text into {len(output_chunks)} semantic chunks (avg {avg_words} words) (took {duration:.4f}s)", flush=True)
-    return output_chunks
+        # Legacy plain text chunking
+        text = raw_input.get("parsed_text", "") if isinstance(raw_input, dict) else str(raw_input)
+        if not text:
+            text = payload.get("source_text", "")
+        emit_task_trace(task_id, "[CHUNKER] Legacy text chunking started")
+        from services.chunking_service import chunk_text
+        pages = raw_input.get("pages", []) if isinstance(raw_input, dict) else []
+        if not pages:
+            pages = [{"page_number": 1, "text": text}]
+        output_chunks = []
+        active_section = "unknown"
+        active_parent = None
+        for page in pages:
+            page_text = page.get("text", "")
+            if not page_text.strip():
+                continue
+            page_chunks = chunk_text(
+                page_text,
+                page_number=page.get("page_number", 0),
+                default_section=active_section,
+                default_parent=active_parent
+            )
+            if hasattr(page_chunks, 'active_section'):
+                active_section = page_chunks.active_section
+            if hasattr(page_chunks, 'active_parent'):
+                active_parent = page_chunks.active_parent
+            for seg in page_chunks:
+                if isinstance(seg, dict):
+                    seg_text = seg.get('text', '')
+                    seg_meta = seg.get('metadata', {})
+                else:
+                    seg_text = str(seg)
+                    seg_meta = {}
+                output_chunks.append({
+                    "text": seg_text,
+                    "metadata": seg_meta
+                })
+        print(f"[{WORKER_ID}]   [OK] Text-chunked into {len(output_chunks)} chunks", flush=True)
+        return output_chunks
 
 def get_pipeline_file_info(pipeline_id):
     file_id = None
     original_filename = None
     uploaded_art_id = None
     
-    # 1. Fetch pipeline details (which has artifacts)
     try:
         res = requests.get(f"{API_URL}/pipelines/{pipeline_id}", headers=HEADERS, timeout=5)
         if res.status_code == 200:
@@ -591,7 +492,6 @@ def get_pipeline_file_info(pipeline_id):
     except Exception as e:
         print(f"[{WORKER_ID}] Error fetching pipeline detail: {e}", flush=True)
 
-    # 2. Fetch files list to find the matching file_id
     try:
         res_files = requests.get(f"{API_URL}/files", headers=HEADERS, timeout=5)
         if res_files.status_code == 200:
@@ -614,7 +514,8 @@ def get_artifact_content_by_type(pipeline_id, artifact_type):
         if res.status_code == 200:
             data = res.json()
             for art in data.get("artifacts", []):
-                if art.get("artifact_type") == "artifact_type":
+                # FIXED: use the function argument, not the literal string
+                if art.get("artifact_type") == artifact_type:
                     storage_uri = art.get("storage_uri")
                     return load_artifact_from_disk(storage_uri)
     except Exception as e:
@@ -627,19 +528,20 @@ def handle_generate_embeddings(payload, input_artifacts):
 
     task_id     = payload.get('_task_id')
     pipeline_id = payload.get('_pipeline_id')
-
     MAX_EMBED_CHUNKS = config.MAX_CHUNKS
 
     def _trace(msg: str):
         print(f"[{WORKER_ID}] {msg}", flush=True)
         emit_task_trace(task_id, msg)
 
-    raw = input_artifacts.get("text_chunks") or input_artifacts.get("error_patterns") or []
+    raw = input_artifacts.get("text_chunks") or []
     
-    chunks = []
-    chunk_metadata = []
-    
-    if isinstance(raw, str):
+    # Graph chunks are list of dicts with 'text' and possibly 'metadata'
+    if isinstance(raw, list) and raw and isinstance(raw[0], dict) and "text" in raw[0]:
+        # Graph-native chunks: use as is
+        chunks = [item["text"] for item in raw]
+        chunk_metadata = [item.get("metadata", {}) for item in raw]
+    elif isinstance(raw, str):
         chunks = [raw]
         chunk_metadata = [{}]
     elif isinstance(raw, dict):
@@ -650,10 +552,13 @@ def handle_generate_embeddings(payload, input_artifacts):
             chunks = [json.dumps(raw)]
             chunk_metadata = [{}]
     elif isinstance(raw, list):
+        # Mixed list
+        chunks = []
+        chunk_metadata = []
         for item in raw:
-            if isinstance(item, dict) and "text" in item and "metadata" in item:
+            if isinstance(item, dict) and "text" in item:
                 chunks.append(item["text"])
-                chunk_metadata.append(item["metadata"])
+                chunk_metadata.append(item.get("metadata", {}))
             elif isinstance(item, str):
                 chunks.append(item)
                 chunk_metadata.append({})
@@ -674,15 +579,19 @@ def handle_generate_embeddings(payload, input_artifacts):
 
     _trace(f"[EMBED] Generating embeddings for {len(chunks)} chunks (model: {config.EMBEDDING_MODEL}, dim={config.EMBEDDING_DIMENSION})")
 
-    def _prepare_text_for_embedding(text: str, metadata: dict) -> str:
-        section = metadata.get("section", "")
-        if section and section != "unknown":
-            return f"[{section.upper()}] {text}"
-        return text
-
-    embedded_chunks = []
-    for chunk_text, chunk_meta in zip(chunks, chunk_metadata):
-        embedded_chunks.append(_prepare_text_for_embedding(chunk_text, chunk_meta))
+    # Prepare embedding texts using the new embedding service (which now handles dicts natively)
+    embedded_chunks_data = []
+    for i, chunk_text in enumerate(chunks):
+        meta = chunk_metadata[i] if i < len(chunk_metadata) else {}
+        # If metadata contains section/type, we might enrich embedding, but the embedding service's
+        # build_embedding_text will handle it if we pass the whole dict.
+        # For backward compatibility, we pass the dict if the original chunk was a dict with metadata.
+        # In the graph-native case, raw items are already full dicts (with text+metadata).
+        if isinstance(raw, list) and raw and isinstance(raw[0], dict) and "text" in raw[0]:
+            embedded_chunks_data.append(raw[i])  # pass full dict
+        else:
+            # Legacy string
+            embedded_chunks_data.append(chunk_text)
 
     qdrant_upserted = False
     qdrant_lookup_duration = 0.0
@@ -690,15 +599,12 @@ def handle_generate_embeddings(payload, input_artifacts):
     embed_generation_duration = 0.0
     model_load_duration = 0.0
 
-    file_id = original_filename = source_artifact_id = None
-    if pipeline_id:
-        file_id, original_filename, source_artifact_id = get_pipeline_file_info(pipeline_id)
+    file_id, original_filename, source_artifact_id = get_pipeline_file_info(pipeline_id) if pipeline_id else (None, None, None)
 
     UPSERT_BATCH_SIZE = 128
     total_chunks = len(chunks)
 
     if chunks:
-        # Load embedding model once to get load duration
         from services.embedding_service import get_embedding_model
         get_embedding_model()
         model_load_duration = get_model_load_time()
@@ -706,35 +612,33 @@ def handle_generate_embeddings(payload, input_artifacts):
         t_embed_start = time.perf_counter()
         
         for i in range(0, total_chunks, UPSERT_BATCH_SIZE):
-            batch_chunks = chunks[i:i + UPSERT_BATCH_SIZE]
-            batch_embedded = embedded_chunks[i:i + UPSERT_BATCH_SIZE]
+            batch_data = embedded_chunks_data[i:i + UPSERT_BATCH_SIZE]
+            batch_texts = chunks[i:i + UPSERT_BATCH_SIZE]
             batch_meta = chunk_metadata[i:i + UPSERT_BATCH_SIZE]
 
-            # 1. Embed this batch of chunks
+            # Embed using the new service (handles dicts)
             def _batch_trace(batch_num, total_batches, done, total):
-                pass # suppress excessive batch logs, we log step-level trace below
-            
+                pass
             batch_vectors = embed_chunks_with_progress(
-                batch_embedded, 
+                batch_data, 
                 progress_callback=_batch_trace, 
                 batch_size=config.EMBEDDING_BATCH_SIZE
             )
 
-            # 2. Upsert to unified fallback collection
-            _trace(f"[QDRANT] Upserting batch {(i // UPSERT_BATCH_SIZE) + 1} ({len(batch_chunks)} chunks) to unified collection...")
             meta_dict = {
                 "global_metadata": {
                     "source_artifact_id": source_artifact_id,
-                    "original_filename":  original_filename
+                    "original_filename": original_filename
                 },
                 "chunk_metadata": batch_meta
             }
-            batch_indices = list(range(i, i + len(batch_chunks)))
+            batch_indices = list(range(i, i + len(batch_texts)))
+            # Unified collection
             batch_upserted, lookup_dur, insert_dur = upsert_document_chunks(
                 pipeline_id=pipeline_id,
                 file_id=file_id,
                 task_id=task_id,
-                chunks=batch_chunks,
+                chunks=batch_texts,   # still pass plain text for legacy compatibility
                 vectors=batch_vectors,
                 metadata=meta_dict,
                 collection_name=config.QDRANT_COLLECTION_NAME,
@@ -744,21 +648,17 @@ def handle_generate_embeddings(payload, input_artifacts):
             qdrant_lookup_duration += lookup_dur
             qdrant_insertion_duration += insert_dur
 
-            # 3. Upsert to paragraphs collection
+            # Paragraph/Tables collections remain as before
             p_indices = [idx for idx, m in enumerate(batch_meta) if m.get("content_type") != "table"]
             if p_indices:
-                p_chunks = [batch_chunks[idx] for idx in p_indices]
+                p_chunks = [batch_texts[idx] for idx in p_indices]
                 p_vectors = [batch_vectors[idx] for idx in p_indices]
                 p_meta = [batch_meta[idx] for idx in p_indices]
                 meta_dict_p = {
-                    "global_metadata": {
-                        "source_artifact_id": source_artifact_id,
-                        "original_filename":  original_filename
-                    },
+                    "global_metadata": {"source_artifact_id": source_artifact_id, "original_filename": original_filename},
                     "chunk_metadata": p_meta
                 }
                 p_global_indices = [i + idx for idx in p_indices]
-                _trace(f"[QDRANT] Upserting {len(p_chunks)} paragraph vectors to paragraphs collection...")
                 upsert_document_chunks(
                     pipeline_id=pipeline_id,
                     file_id=file_id,
@@ -770,21 +670,16 @@ def handle_generate_embeddings(payload, input_artifacts):
                     chunk_indices=p_global_indices
                 )
 
-            # 4. Upsert to tables collection
             t_indices = [idx for idx, m in enumerate(batch_meta) if m.get("content_type") == "table"]
             if t_indices:
-                t_chunks = [batch_chunks[idx] for idx in t_indices]
+                t_chunks = [batch_texts[idx] for idx in t_indices]
                 t_vectors = [batch_vectors[idx] for idx in t_indices]
                 t_meta = [batch_meta[idx] for idx in t_indices]
                 meta_dict_t = {
-                    "global_metadata": {
-                        "source_artifact_id": source_artifact_id,
-                        "original_filename":  original_filename
-                    },
+                    "global_metadata": {"source_artifact_id": source_artifact_id, "original_filename": original_filename},
                     "chunk_metadata": t_meta
                 }
                 t_global_indices = [i + idx for idx in t_indices]
-                _trace(f"[QDRANT] Upserting {len(t_chunks)} table vectors to tables collection...")
                 upsert_document_chunks(
                     pipeline_id=pipeline_id,
                     file_id=file_id,
@@ -806,12 +701,12 @@ def handle_generate_embeddings(payload, input_artifacts):
     ]
 
     artifact_data = {
-        "collection":      "scaleflow_chunks",
-        "vector_count":    len(chunks),
+        "collection": "scaleflow_chunks",
+        "vector_count": len(chunks),
         "embedding_model": config.EMBEDDING_MODEL,
-        "dimension":       config.EMBEDDING_DIMENSION,
+        "dimension": config.EMBEDDING_DIMENSION,
         "qdrant_upserted": qdrant_upserted,
-        "chunk_refs":      chunk_refs,
+        "chunk_refs": chunk_refs,
         "model_load_duration": round(model_load_duration, 5),
         "embedding_generation_duration": round(embed_generation_duration, 5),
         "batch_size_used": config.EMBEDDING_BATCH_SIZE,
@@ -820,7 +715,6 @@ def handle_generate_embeddings(payload, input_artifacts):
         "qdrant_insertion_duration": round(qdrant_insertion_duration, 5)
     }
 
-    _trace(f"[PROFILE] model_load_duration={model_load_duration:.5f}s embedding_generation_duration={embed_generation_duration:.5f}s qdrant_lookup_duration={qdrant_lookup_duration:.5f}s qdrant_insertion_duration={qdrant_insertion_duration:.5f}s")
     _trace(f"[EMBED] Complete — {len(chunks)} vectors (qdrant_upserted={qdrant_upserted})")
     return artifact_data
 
@@ -830,7 +724,6 @@ def handle_summarize_document(payload, input_artifacts):
     if not chunks:
         if pipeline_id:
             chunks = get_artifact_content_by_type(pipeline_id, "text_chunks")
-            
     if not chunks:
         embeddings = input_artifacts.get("embeddings_mock") or input_artifacts.get("vector_index")
         if embeddings and isinstance(embeddings, list):
@@ -843,15 +736,12 @@ def handle_summarize_document(payload, input_artifacts):
             text = input_artifacts.get("parsed_text", "")
             if not text and pipeline_id:
                 text = get_artifact_content_by_type(pipeline_id, "parsed_text")
-                
             if isinstance(text, dict):
                 text = text.get("parsed_text", "")
-                
             if text:
                 chunks = [text]
             else:
                 chunks = []
-                
     if not chunks:
         chunks = ["No content to summarize."]
         
@@ -865,7 +755,6 @@ def handle_summarize_document(payload, input_artifacts):
             processed_chunks.append(json.dumps(c))
         else:
             processed_chunks.append(str(c))
-
     summary_chunks = processed_chunks[:2]
     summary = "SUMMARY:\n" + "\n".join(summary_chunks)
     print(f"[{WORKER_ID}]   [OK] Generated extractive summary", flush=True)
@@ -881,7 +770,6 @@ def handle_parse_logs(payload, input_artifacts):
             text = list(input_artifacts.values())[0]
             if isinstance(text, dict) and "content" in text:
                 text = text["content"]
-        
     if not isinstance(text, str):
         text = str(text)
     lines = text.splitlines()
@@ -896,7 +784,6 @@ def handle_detect_error_patterns(payload, input_artifacts):
         log_upper = log.upper()
         if "ERROR" in log_upper or "WARN" in log_upper or "FAIL" in log_upper or "CRITICAL" in log_upper:
             errors.append(log)
-            
     print(f"[{WORKER_ID}]   [OK] Detected {len(errors)} error patterns in logs", flush=True)
     return errors
 
@@ -907,21 +794,18 @@ def handle_summarize_logs(payload, input_artifacts):
         summary += "Sample errors:\n"
         for err in errors[:5]:
             summary += f"- {err}\n"
-            
     print(f"[{WORKER_ID}]   [OK] Summarized logs with {len(errors)} anomalies", flush=True)
     return summary
 
 def handle_final_report(payload, input_artifacts):
     errors = input_artifacts.get("error_patterns", [])
     summary = input_artifacts.get("log_summary", "")
-    
     report = "========================================\n"
     report += "FINAL LOG ANALYSIS PIPELINE REPORT\n"
     report += "========================================\n\n"
     report += f"Status: COMPLETED\n"
     report += f"Anomalies Count: {len(errors)}\n\n"
     report += summary
-    
     print(f"[{WORKER_ID}]   [OK] Generated final report", flush=True)
     return report
 
@@ -938,15 +822,12 @@ def handle_embed_query(payload, input_artifacts):
     query = payload.get("query")
     if not query:
         raise ValueError("Missing 'query' in embed_query task payload")
-    
     vector = embed_text(query)
-    
     print("=" * 80, flush=True)
     print("EMBEDDING QUERY", flush=True)
     print(f"QUERY: {query}", flush=True)
     print(f"GENERATED EMBEDDING SIZE: {len(vector)}", flush=True)
     print("=" * 80, flush=True)
-
     artifact_data = {
         "query": query,
         "embedding_model": "BAAI/bge-base-en-v1.5",
@@ -980,46 +861,38 @@ def handle_retrieve_context(payload, input_artifacts):
     query_vector_data = input_artifacts.get("query_vector")
     if not query_vector_data:
         raise ValueError("Missing 'query_vector' in retrieve_context input artifacts")
-        
     query = query_vector_data.get("query")
     vector = query_vector_data.get("vector")
     top_k = query_vector_data.get("top_k")
     pipeline_id_filter = query_vector_data.get("pipeline_id_filter") or query_vector_data.get("pipeline_id")
     file_id_filter = query_vector_data.get("file_id_filter") or query_vector_data.get("file_id")
-
     p_id = pipeline_id_filter
     if p_id is not None:
         try:
             p_id = int(p_id)
         except (ValueError, TypeError):
             pass
-
     print("=" * 80, flush=True)
     print("RETRIEVAL TASK INITIATED", flush=True)
     print(f"QUERY: {query}", flush=True)
     print(f"PIPELINE FILTER: {p_id if p_id is not None else 'GLOBAL (all documents)'}", flush=True)
     print(f"TOP-K: {top_k}", flush=True)
     print("=" * 80, flush=True)
-        
     from services.retrieval_service import retrieve_and_rerank
     artifact_data = retrieve_and_rerank(query_vector=vector, pipeline_id=p_id, top_k=top_k or 5, query=query)
-    
     filtered_results = artifact_data.get("results", [])
     print(f"[{WORKER_ID}] [OK] Retrieved {len(filtered_results)} context chunks", flush=True)
     return artifact_data
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Answer Synthesis — Fully integrated with multi-tier LLM RAG engine (Groq)
+# Answer Synthesis
 # ─────────────────────────────────────────────────────────────────────────────
 def handle_generate_answer_report(payload, input_artifacts):
     context_data = input_artifacts.get("retrieved_context")
     if not context_data:
         raise ValueError("Missing 'retrieved_context' in generate_answer_report input artifacts")
-        
     query = context_data.get("query", "")
     results: list[Any] = context_data.get("results", [])
-    
-    # Filter based on score threshold parameters
     min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
     try:
         valid_results = [r for r in results if float(r.get("score") or 0.0) >= min_score or r.get("chunk_index") == -1]
@@ -1042,12 +915,8 @@ def handle_generate_answer_report(payload, input_artifacts):
     print("=" * 80, flush=True)
 
     top_chunks = valid_results[:3]
-    
-    # Calculate RAG observability logs metrics
     retrieved_count = len(results) * 3  
     reranked_count = len(results)
-    
-    # Build prompt context window for token estimation profile logs
     context_window = ""
     for idx, c in enumerate(top_chunks):
         context_window += f"[Source {idx+1}]: {c.get('chunk_text', '')}\n"
@@ -1062,22 +931,16 @@ def handle_generate_answer_report(payload, input_artifacts):
         provider_used = "Local Heuristic Synthesizer"
         response_status = "404 Empty"
     else:
-        # Route directly into your updated multi-tier service routing layer
         from services.llm_service import generate_answer
         answer, provider_used, response_status = generate_answer(query, top_chunks)
-        
-        # Grounding scoring logic to calibrate confidence
         fallback_phrases = [
             "sufficient information", "no sufficiently relevant context", 
             "does not contain sufficient information", "not contain sufficient"
         ]
         is_fallback = any(phrase in answer.lower() for phrase in fallback_phrases)
-        
         if is_fallback:
             confidence = "low"
         else:
-            # Calculate grounding score based on keyword overlap
-            # Extract alphanumeric tokens of length >= 2, excluding common stopwords
             stopwords = {
                 "the", "a", "an", "and", "or", "but", "if", "then", "else", "when", "at", "by", "from", 
                 "for", "with", "about", "against", "between", "into", "through", "during", "before", 
@@ -1086,22 +949,16 @@ def handle_generate_answer_report(payload, input_artifacts):
                 "did", "shall", "will", "should", "would", "may", "might", "must", "can", "could", "this", 
                 "that", "these", "those", "based", "on", "retrieved", "context", "document"
             }
-            # Clean answers like "Based on the retrieved context:" or "The document states..."
             clean_answer = re.sub(r'^(based on the retrieved|according to the|the document states|the patent states)[^:]*:\s*', '', answer, flags=re.IGNORECASE)
-            
             words = re.findall(r"\b[a-zA-Z0-9_-]+\b", clean_answer.lower())
             content_words = [w for w in words if w not in stopwords]
-            
             if content_words:
                 context_lower = context_window.lower()
                 matches = sum(1 for w in content_words if w in context_lower)
                 grounding_score = matches / len(content_words)
             else:
                 grounding_score = 1.0
-                
             top_score = valid_results[0].get("score", 0.0) if valid_results else 0.0
-            
-            # Calibrate confidence based on grounding score and retrieval score
             if grounding_score >= 0.85:
                 if top_score >= 0.65:
                     confidence = "high"
@@ -1116,15 +973,12 @@ def handle_generate_answer_report(payload, input_artifacts):
                     confidence = "low"
             else:
                 confidence = "low"
-        
-        # Construct cross-referenced verification citations
         citations = []
         seen_citations = set()
         for idx, hit in enumerate(top_chunks):
             fname = hit.get("original_filename") or "unknown_file"
             fid = hit.get("file_id")
             cidx = hit.get("chunk_index", 0)
-            
             citation_key = (fid, cidx)
             if citation_key not in seen_citations:
                 seen_citations.add(citation_key)
@@ -1225,7 +1079,6 @@ class LeaseRenewer(threading.Thread):
     def run(self):
         lease_duration = LEASE_DURATIONS.get(self.task_type, 30)
         interval = max(1, min(15, lease_duration // 3))
-        
         while not self.stop_event.wait(interval):
             if self.stop_event.is_set():
                 break
@@ -1376,7 +1229,6 @@ def execute_task(task: Any):
         print(f"[{WORKER_ID}]   [WARN] Unknown task type / handler: {task_type}", flush=True)
 
 def register_worker():
-    """Registers worker and its capabilities with the orchestrator, retrying until success"""
     print(f"[{WORKER_ID}] Registering worker with backend at {API_URL}...", flush=True)
     while True:
         try:
@@ -1441,7 +1293,7 @@ def get_next_task():
                 return result
     except RedisConnectionError as ce:
         print(f"[{WORKER_ID}] Redis connection error during task pop: {ce}. Will retry shortly.", flush=True)
-        time.sleep(3)  # brief pause before the outer loop retries
+        time.sleep(3)
         return None
     except RedisTimeoutError:
         pass
@@ -1453,7 +1305,6 @@ def get_next_task():
 def worker_loop():
     worker_state['last_action'] = 'Registering worker'
     print(f"[{WORKER_ID}] Worker started! Verifying Redis connection...", flush=True)
-    # Retry loop: Docker DNS can take a moment to resolve 'redis' after container start
     max_redis_retries = 12
     for attempt in range(1, max_redis_retries + 1):
         try:
@@ -1461,7 +1312,7 @@ def worker_loop():
             print(f"[{WORKER_ID}] Connected to Redis successfully!", flush=True)
             break
         except Exception as e:
-            wait = min(2 ** attempt, 30)  # 2s, 4s, 8s … capped at 30s
+            wait = min(2 ** attempt, 30)
             if attempt < max_redis_retries:
                 print(f"[{WORKER_ID}] Redis not ready (attempt {attempt}/{max_redis_retries}): {e}. Retrying in {wait}s...", flush=True)
                 time.sleep(wait)
@@ -1613,12 +1464,12 @@ if __name__ == "__main__":
     print("WORKER MAIN STARTED", flush=True)
     try:
         from services.embedding_service import get_embedding_model
-        print(f"[{WORKER_ID}] [STARTUP] Preloading embedding model: BAAI/bge-base-en-v1.5...", flush=True)
+        print(f"[{WORKER_ID}] [STARTUP] Preloading embedding model...", flush=True)
         get_embedding_model()
         print(f"[{WORKER_ID}] [STARTUP] Embedding model preloaded successfully!", flush=True)
         
         from services.reranker_service import get_reranker
-        print(f"[{WORKER_ID}] [STARTUP] Preloading reranker model: cross-encoder/ms-marco-MiniLM-L-6-v2...", flush=True)
+        print(f"[{WORKER_ID}] [STARTUP] Preloading reranker model...", flush=True)
         get_reranker()
         print(f"[{WORKER_ID}] [STARTUP] Reranker model preloaded successfully!", flush=True)
     except Exception as e:
