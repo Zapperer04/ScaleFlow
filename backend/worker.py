@@ -583,10 +583,6 @@ def handle_generate_embeddings(payload, input_artifacts):
     embedded_chunks_data = []
     for i, chunk_text in enumerate(chunks):
         meta = chunk_metadata[i] if i < len(chunk_metadata) else {}
-        # If metadata contains section/type, we might enrich embedding, but the embedding service's
-        # build_embedding_text will handle it if we pass the whole dict.
-        # For backward compatibility, we pass the dict if the original chunk was a dict with metadata.
-        # In the graph-native case, raw items are already full dicts (with text+metadata).
         if isinstance(raw, list) and raw and isinstance(raw[0], dict) and "text" in raw[0]:
             embedded_chunks_data.append(raw[i])  # pass full dict
         else:
@@ -616,7 +612,6 @@ def handle_generate_embeddings(payload, input_artifacts):
             batch_texts = chunks[i:i + UPSERT_BATCH_SIZE]
             batch_meta = chunk_metadata[i:i + UPSERT_BATCH_SIZE]
 
-            # Embed using the new service (handles dicts)
             def _batch_trace(batch_num, total_batches, done, total):
                 pass
             batch_vectors = embed_chunks_with_progress(
@@ -885,6 +880,46 @@ def handle_retrieve_context(payload, input_artifacts):
     return artifact_data
 
 # ─────────────────────────────────────────────────────────────────────────────
+# BM25 Index Building Handler
+# ─────────────────────────────────────────────────────────────────────────────
+def handle_build_bm25_index(payload, input_artifacts):
+    """
+    Build a BM25 index for the pipeline using graph chunks.
+    """
+    from services.bm25_service import build_bm25_index
+
+    pipeline_id = payload.get('_pipeline_id')
+    task_id = payload.get('_task_id')
+
+    def _trace(msg: str):
+        print(f"[{WORKER_ID}] {msg}", flush=True)
+        emit_task_trace(task_id, msg)
+
+    # Obtain chunks from input artifacts (either 'text_chunks' or 'graph_chunks')
+    chunks = input_artifacts.get("text_chunks") or input_artifacts.get("graph_chunks") or []
+    if not chunks:
+        raise ValueError("No graph chunks provided for BM25 indexing")
+
+    # Ensure each chunk has a proper chunk_id and pipeline_id
+    for idx, chunk in enumerate(chunks):
+        if isinstance(chunk, dict):
+            chunk.setdefault("pipeline_id", pipeline_id)
+            # Generate unique chunk_id if missing; use index to avoid duplicates
+            if "chunk_id" not in chunk:
+                chunk["chunk_id"] = chunk.get("chunk_index", f"cg_{pipeline_id}_{idx}")
+
+    result = build_bm25_index(pipeline_id=pipeline_id, chunks=chunks)
+    _trace(f"[BM25] Index built: {result['documents_indexed']} documents indexed at {result['index_path']}")
+
+    return {
+        "pipeline_id": pipeline_id,
+        "bm25_indexed_documents": result["documents_indexed"],
+        "bm25_index_path": result["index_path"],
+        "bm25_success": result["success"]
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Answer Synthesis
 # ─────────────────────────────────────────────────────────────────────────────
 def handle_generate_answer_report(payload, input_artifacts):
@@ -1026,7 +1061,8 @@ TASK_HANDLERS = {
     "final_report": handle_final_report,
     "embed_query": handle_embed_query,
     "retrieve_context": handle_retrieve_context,
-    "generate_answer_report": handle_generate_answer_report
+    "generate_answer_report": handle_generate_answer_report,
+    "build_bm25_index": handle_build_bm25_index
 }
 
 OUTPUT_ARTIFACT_TYPES = {
@@ -1042,7 +1078,8 @@ OUTPUT_ARTIFACT_TYPES = {
     "final_report": "final_report",
     "embed_query": "query_vector",
     "retrieve_context": "retrieved_context",
-    "generate_answer_report": "final_answer"
+    "generate_answer_report": "final_answer",
+    "build_bm25_index": "bm25_index"
 }
 
 LEASE_DURATIONS = {
@@ -1061,7 +1098,8 @@ LEASE_DURATIONS = {
     "final_report": 60,
     "embed_query": 60,
     "retrieve_context": 60,
-    "generate_answer_report": 60
+    "generate_answer_report": 60,
+    "build_bm25_index": 300
 }
 
 current_renewer = None
@@ -1141,10 +1179,20 @@ def execute_task(task: Any):
     if current_renewer and current_renewer.aborted:
         raise Exception("Task execution aborted: lease expired or rejected.")
 
+    # Task types that are part of real pipeline and should not be randomly failed
     REAL_PIPELINE_TASK_TYPES = {
-        "parse_document", "chunk_text", "generate_embeddings", "summarize_document",
-        "embed_query", "retrieve_context", "generate_answer_report"
+        "preprocess_document",
+        "parse_document",
+        "validate_parse_quality",
+        "chunk_text",
+        "generate_embeddings",
+        "build_bm25_index",
+        "summarize_document",
+        "embed_query",
+        "retrieve_context",
+        "generate_answer_report"
     }
+
     if task_type not in REAL_PIPELINE_TASK_TYPES and random.random() < 0.1 and retry_count < 2:
         print(f"[{WORKER_ID}]   [FAIL] Task failed! Will retry...", flush=True)
         raise Exception(f"Simulated failure for task {task_id}")
