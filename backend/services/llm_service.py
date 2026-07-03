@@ -1,6 +1,5 @@
 import os
 import requests
-import json
 import re
 
 def generate_answer(query: str, chunks: list[dict]) -> tuple[str, str, str]:
@@ -92,13 +91,22 @@ def generate_answer(query: str, chunks: list[dict]) -> tuple[str, str, str]:
         if res.status_code == 200:
             answer = res.json().get("response", "").strip()
             return answer, "Ollama (llama3)", "200 OK"
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Ollama error: {e}", flush=True)
 
     # ──────────────────────────────────────────────────────────────────────────
-    # Document-Agnostic Extractive RAG Fallback
+    # Document-Agnostic Extractive RAG Fallback (without boilerplate)
     # ──────────────────────────────────────────────────────────────────────────
     query_lower = query.lower()
+
+    # Simple general‑query detection (mirrors worker.py's is_general_query)
+    general_phrases = [
+        "what is it about", "what is this document about", "what is this about",
+        "summarize", "summary", "give me a summary", "what does it talk about",
+        "what is this", "tell me about this", "what is the document about",
+        "what is the file about", "summarize this document", "summarize this file"
+    ]
+    is_general = any(phrase in query_lower for phrase in general_phrases)
 
     # Tokenize query to extract keywords (excluding standard stopwords)
     stopwords = {
@@ -137,7 +145,6 @@ def generate_answer(query: str, chunks: list[dict]) -> tuple[str, str, str]:
                     total_occurrences = sum(s_lower.count(kw) for kw in keywords)
                     
                     # Chunk position weight (semantic relevance from vector database/reranker)
-                    # The top chunk is the most semantically relevant
                     chunk_weight = 10.0 / (chunk_idx + 1)
                     
                     # Combine keyword matches and semantic position weight
@@ -147,10 +154,12 @@ def generate_answer(query: str, chunks: list[dict]) -> tuple[str, str, str]:
     # Sort sentences by score descending
     sentences_pool.sort(key=lambda x: x[0], reverse=True)
 
-    # Select top 4 sentences
-    selected_sentences = [s for _, s in sentences_pool[:4]]
+    # Use more sentences for summary queries
+    top_n = 6 if is_general else 4
+    selected_sentences = [s for _, s in sentences_pool[:top_n]]
     if not selected_sentences:
         return "No sufficiently relevant context was found for this query.", "Local Heuristic Synthesizer", "404 Empty"
 
-    ans = "Based on the retrieved document context:\n" + "\n".join([f"- {s}" for s in selected_sentences])
+    # Simple concatenation without boilerplate
+    ans = " ".join(selected_sentences)
     return ans, "Local Heuristic Synthesizer", "200 OK (Heuristic)"
