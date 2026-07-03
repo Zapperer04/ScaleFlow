@@ -61,18 +61,23 @@ def evaluate_text_quality(text: str) -> dict:
 def validate_quality(text: str, parse_stats: dict, document_type: str = "SCANNED", extractable_text_ratio: float = 0.0) -> dict:
     """
     Quality Gate verifying the parsed document text before chunking.
-    Relaxed to prevent hard failures on printable ratio, average word length, or whitespace.
+    Uses a three-part sample (front, middle, end) for a more representative quality snapshot.
     """
     t_start = time.perf_counter()
     
     if not text or len(text.strip()) < 10:
         raise ValueError(f"Document unreadable / OCR quality too low: Extracted text too short ({len(text.strip()) if text else 0} chars) — likely extraction failure")
-        
-    mid = len(text) // 2
-    sample = text[mid : mid + 500]
-    if not sample.strip():
-        sample = text[:500]  # fallback to start of text
-        
+    
+    # Build a representative sample: front, middle, and end of the document
+    text_len = len(text)
+    front_part = text[:2000] if text_len > 2000 else text
+    middle_start = text_len // 2
+    middle_part = text[middle_start:middle_start + 2000] if text_len > middle_start + 2000 else ""
+    end_part = text[-1000:] if text_len > 1000 else ""
+    sample = (front_part + " " + middle_part + " " + end_part).strip()
+    if not sample:
+        # Fallback to first 5000 chars if the above yields empty
+        sample = text[:5000]
     if not sample.strip():
         raise ValueError("Document unreadable / OCR quality too low: Empty extraction output")
         
@@ -89,12 +94,14 @@ def validate_quality(text: str, parse_stats: dict, document_type: str = "SCANNED
         warnings_list.append(f"Unusual average word length: {avg_len:.1f}")
     if whitespace < 0.05:
         warnings_list.append(f"Low whitespace ratio: {whitespace:.2f}")
+    if extractable_text_ratio < 0.05:
+        warnings_list.append(f"Very low extractable text ratio: {extractable_text_ratio:.3f}")
         
     if warnings_list:
         logger.warning(f"[QUALITY_GATE] Quality warnings for document: {', '.join(warnings_list)}")
         
-    # All checks passed!
-    confidence, signals = compute_quality_score(text, document_type)
+    # Compute quality confidence on the sample
+    confidence, signals = compute_quality_score(sample, document_type)
     
     ocr_pages = parse_stats.get("ocr_pages", 0)
     avg_ocr_confidence = parse_stats.get("avg_ocr_confidence", 100.0)

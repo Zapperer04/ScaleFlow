@@ -127,3 +127,32 @@ PREPROCESS_ENHANCE_TIMEOUT_SECS = 60
 QDRANT_PARAGRAPH_COLLECTION = "scaleflow_paragraphs"
 QDRANT_TABLE_COLLECTION = "scaleflow_tables"
 QDRANT_COLLECTION_NAME = "scaleflow_chunks"  # keep as unified fallback
+
+# 10. Reranker Config
+RERANKER_MODEL = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "20"))
+RERANK_BATCH_SIZE = int(os.getenv("RERANK_BATCH_SIZE", "16"))
+
+# 11. Graph Expansion Config
+GRAPH_EXPANSION_ENABLED = os.getenv("GRAPH_EXPANSION_ENABLED", "True").lower() in ("true", "1", "yes")
+GRAPH_MAX_HOPS = int(os.getenv("GRAPH_MAX_HOPS", "2"))
+GRAPH_MAX_NEIGHBORS = int(os.getenv("GRAPH_MAX_NEIGHBORS", "10"))
+
+# 12. BM25 Config
+BM25_ENABLED = os.getenv("BM25_ENABLED", "True").lower() in ("true", "1", "yes")
+BM25_TOP_K = int(os.getenv("BM25_TOP_K", "30"))
+
+# 13. Hybrid Retrieval Weights
+DENSE_WEIGHT = float(os.getenv("DENSE_WEIGHT", "0.6"))
+BM25_WEIGHT = float(os.getenv("BM25_WEIGHT", "0.4"))
+IMPORTANCE_WEIGHT = float(os.getenv("IMPORTANCE_WEIGHT", "0.15"))
+
+# 14. Debug Flags
+DEBUG_VECTOR_STORE = os.getenv("DEBUG_VECTOR_STORE", "False").lower() in ("true", "1", "yes")
+DEBUG_RETRIEVAL = os.getenv("DEBUG_RETRIEVAL", "False").lower() in ("true", "1", "yes")
+DEBUG_GRAPH = os.getenv("DEBUG_GRAPH", "False").lower() in ("true", "1", "yes")
+
+# 15. Worker / Lease Configuration
+WORKER_HEARTBEAT_SECONDS = int(os.getenv("WORKER_HEARTBEAT_SECONDS", "10"))
+LEASE_RENEW_INTERVAL_SECONDS = int(os.getenv("LEASE_RENEW_INTERVAL_SECONDS", "15"))
+LEASE_TIMEOUT_SECONDS = int(os.getenv("LEASE_TIMEOUT_SECONDS", "60"))

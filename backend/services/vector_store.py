@@ -209,9 +209,11 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
     if collection_name is None:
         collection_name = config.QDRANT_COLLECTION_NAME
         
-    print("=" * 80, flush=True)
-    print("QDRANT INSERTION COLLECTION NAME:", collection_name, flush=True)
-    print("=" * 80, flush=True)
+    # Development logging – gate behind config.DEBUG_VECTOR_STORE if desired
+    if getattr(config, 'DEBUG_VECTOR_STORE', False):
+        print("=" * 80, flush=True)
+        print("QDRANT INSERTION COLLECTION NAME:", collection_name, flush=True)
+        print("=" * 80, flush=True)
 
     import time
     t_lookup_start = time.perf_counter()
@@ -257,13 +259,28 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             section = chunk_data.get("section", "unknown")
             content_type = chunk_data.get("content_type", "paragraph")
             section_path = chunk_data.get("section_path", "")
+
+            # Normalize list-based fields to strings to ensure compatibility
+            raw_neighbors = chunk_data.get("neighbors", [])
+            neighbors = [str(x) for x in raw_neighbors if x is not None]
+
+            raw_semantic_children = chunk_data.get("semantic_children", [])
+            semantic_children = [str(x) for x in raw_semantic_children if x is not None]
+
+            raw_entities = chunk_data.get("entities", [])
+            entities = []
+            for e in raw_entities:
+                if isinstance(e, dict):
+                    entities.append(str(e.get("value", e)))
+                else:
+                    entities.append(str(e))
+
+            raw_keywords = chunk_data.get("keywords", [])
+            keywords = [str(k) for k in raw_keywords if k is not None]
+
             node_ids = chunk_data.get("node_ids", [])
-            neighbors = chunk_data.get("neighbors", [])
             cross_refs = chunk_data.get("cross_refs", {})
             semantic_parent = chunk_data.get("semantic_parent")
-            semantic_children = chunk_data.get("semantic_children", [])
-            entities = chunk_data.get("entities", [])
-            keywords = chunk_data.get("keywords", [])
             graph_depth = chunk_data.get("graph_depth", 0)
             importance_score = chunk_data.get("importance_score", 0.0)
             bbox = chunk_data.get("bbox", {})
@@ -335,7 +352,7 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             "token_count": token_count,
             "page_number": 0,
             
-            # Graph-native fields
+            # Graph-native fields (normalized)
             "embedding_text": embedding_text,
             "bm25_text": bm25_text,
             "node_ids": node_ids,
@@ -381,19 +398,20 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             )
         )
         
-    print("=" * 80, flush=True)
-    print("INSERTING VECTOR PAYLOADS TO QDRANT (EXAMPLES):", flush=True)
-    for idx, pt in enumerate(points[:5]):
-        safe_payload = {}
-        for k, v in pt.payload.items():
-            if isinstance(v, str):
-                safe_payload[k] = v.encode(sys.stdout.encoding or 'utf-8', errors='ignore').decode(sys.stdout.encoding or 'utf-8')
-            else:
-                safe_payload[k] = v
-        print(f"Point {idx}: {safe_payload}", flush=True)
-    if len(points) > 5:
-        print(f"... and {len(points) - 5} more points.", flush=True)
-    print("=" * 80, flush=True)
+    if getattr(config, 'DEBUG_VECTOR_STORE', False):
+        print("=" * 80, flush=True)
+        print("INSERTING VECTOR PAYLOADS TO QDRANT (EXAMPLES):", flush=True)
+        for idx, pt in enumerate(points[:5]):
+            safe_payload = {}
+            for k, v in pt.payload.items():
+                if isinstance(v, str):
+                    safe_payload[k] = v.encode(sys.stdout.encoding or 'utf-8', errors='ignore').decode(sys.stdout.encoding or 'utf-8')
+                else:
+                    safe_payload[k] = v
+            print(f"Point {idx}: {safe_payload}", flush=True)
+        if len(points) > 5:
+            print(f"... and {len(points) - 5} more points.", flush=True)
+        print("=" * 80, flush=True)
 
     t_insert_start = time.perf_counter()
     try:
@@ -414,9 +432,10 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
         return False, lookup_duration, insertion_duration
 
 def search_similar(collection_name, query_vector, top_k=5, filters=None):
-    print("=" * 80, flush=True)
-    print("QDRANT RETRIEVAL COLLECTION NAME:", collection_name, flush=True)
-    print("=" * 80, flush=True)
+    if getattr(config, 'DEBUG_VECTOR_STORE', False):
+        print("=" * 80, flush=True)
+        print("QDRANT RETRIEVAL COLLECTION NAME:", collection_name, flush=True)
+        print("=" * 80, flush=True)
     try:
         ensure_collection(collection_name, config.EMBEDDING_DIMENSION)
         client = get_client()
