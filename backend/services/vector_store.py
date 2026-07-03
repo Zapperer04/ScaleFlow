@@ -85,6 +85,11 @@ def ensure_collections_exist():
                 ("importance_score", qmodels.PayloadSchemaType.FLOAT),
                 ("entities", qmodels.PayloadSchemaType.KEYWORD),
                 ("keywords", qmodels.PayloadSchemaType.KEYWORD),
+                # Additional indexes for GraphRAG expansion
+                ("semantic_parent", qmodels.PayloadSchemaType.KEYWORD),
+                ("semantic_children", qmodels.PayloadSchemaType.KEYWORD),
+                ("neighbors", qmodels.PayloadSchemaType.KEYWORD),
+                ("collection_source", qmodels.PayloadSchemaType.KEYWORD),
             ]
             for field_name, field_schema in _index_specs:
                 try:
@@ -157,6 +162,11 @@ def ensure_collection(collection_name="scaleflow_chunks", vector_size=None):
                 ("importance_score", qmodels.PayloadSchemaType.FLOAT),
                 ("entities", qmodels.PayloadSchemaType.KEYWORD),
                 ("keywords", qmodels.PayloadSchemaType.KEYWORD),
+                # Additional indexes for GraphRAG expansion
+                ("semantic_parent", qmodels.PayloadSchemaType.KEYWORD),
+                ("semantic_children", qmodels.PayloadSchemaType.KEYWORD),
+                ("neighbors", qmodels.PayloadSchemaType.KEYWORD),
+                ("collection_source", qmodels.PayloadSchemaType.KEYWORD),
             ]
             for field_name, field_schema in _index_specs:
                 try:
@@ -234,7 +244,8 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
     points = []
     for i, (chunk_data, vector) in enumerate(zip(chunks, vectors)):
         pt_index = chunk_indices[i] if chunk_indices is not None else i
-        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{pipeline_id}_{pt_index}"))
+        # Deterministic unique point id using pipeline_id, file_id, and chunk_index
+        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{pipeline_id}_{file_id}_{pt_index}"))
         
         # ── Determine whether chunk_data is a graph-native dict or legacy string ──
         if isinstance(chunk_data, dict):
@@ -315,7 +326,7 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             # Compatibility keys
             "document_id": stored_file_id,
             "filename": global_meta.get("original_filename") if global_meta else None,
-            "chunk_id": final_chunk_id,   # <-- fixed: only one assignment
+            "chunk_id": final_chunk_id,
             "text": chunk_text,
             
             # Default metadata fields (overwritten if graph-native)
@@ -386,8 +397,8 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
 
     t_insert_start = time.perf_counter()
     try:
-        # Batch upsert points in chunks of 100 to reduce HTTP/network overhead
-        batch_size = 100
+        # Use larger batch size for better performance
+        batch_size = 256
         for offset in range(0, len(points), batch_size):
             batch_points = points[offset:offset + batch_size]
             client.upsert(
@@ -478,6 +489,10 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
                 "pages": payload.get("pages", []),
                 "token_count": payload.get("token_count", 0),
                 "char_count": payload.get("char_count", 0),
+                # Retrieval metadata
+                "retrieval_type": "dense",
+                "retrieval_backend": "qdrant",
+                "retrieval_score": round(hit.score, 4),
             })
         return results
     except Exception as e:
@@ -527,7 +542,7 @@ def search_keyword(collection_name, query_text, top_k=5, filters=None):
         for point in scroll_result:
             payload = point.payload
             results.append({
-                "score": 0.5, # default base score for keyword matching before reranking
+                "score": 1.0,  # nominal score before reranking
                 "chunk_text": payload.get("chunk_text"),
                 "text": payload.get("text") or payload.get("chunk_text"),
                 "section": payload.get("section", "unknown"),
@@ -564,6 +579,10 @@ def search_keyword(collection_name, query_text, top_k=5, filters=None):
                 "pages": payload.get("pages", []),
                 "token_count": payload.get("token_count", 0),
                 "char_count": payload.get("char_count", 0),
+                # Retrieval metadata
+                "retrieval_type": "keyword",
+                "retrieval_backend": "qdrant_text",
+                "retrieval_score": 1.0,
             })
         return results
     except Exception as e:
