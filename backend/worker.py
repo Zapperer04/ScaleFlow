@@ -972,12 +972,47 @@ def handle_build_bm25_index(payload, input_artifacts):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Graph Context Expansion
+# ─────────────────────────────────────────────────────────────────────────────
+def handle_expand_graph_context(payload, input_artifacts):
+    context_data = input_artifacts.get("retrieved_context") or {}
+    top_chunks = context_data.get("results", [])
+    pipeline_id = context_data.get("pipeline_id")
+    if not pipeline_id:
+        pipeline_id = payload.get("_pipeline_id")
+    
+    from services.graph_expansion_service import expand_graph_context
+    expanded_chunks = expand_graph_context(top_chunks, pipeline_id=pipeline_id)
+    return {
+        "query": context_data.get("query", ""),
+        "results": expanded_chunks,
+        "pipeline_id": pipeline_id
+    }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Graph Context Reranking
+# ─────────────────────────────────────────────────────────────────────────────
+def handle_rerank_context(payload, input_artifacts):
+    context_data = input_artifacts.get("expanded_context") or {}
+    top_chunks = context_data.get("results", [])
+    query = context_data.get("query", "")
+    pipeline_id = context_data.get("pipeline_id")
+    
+    from services.reranker_service import rerank
+    reranked_chunks = rerank(query, top_chunks)
+    return {
+        "query": query,
+        "results": reranked_chunks,
+        "pipeline_id": pipeline_id
+    }
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Answer Synthesis
 # ─────────────────────────────────────────────────────────────────────────────
 def handle_generate_answer_report(payload, input_artifacts):
-    context_data = input_artifacts.get("retrieved_context")
+    context_data = input_artifacts.get("reranked_context") or input_artifacts.get("retrieved_context")
     if not context_data:
-        raise ValueError("Missing 'retrieved_context' in generate_answer_report input artifacts")
+        raise ValueError("Missing 'retrieved_context' or 'reranked_context' in generate_answer_report input artifacts")
     query = context_data.get("query", "")
     results: list[Any] = context_data.get("results", [])
     min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
@@ -1118,6 +1153,8 @@ TASK_HANDLERS = {
     "final_report": handle_final_report,
     "embed_query": handle_embed_query,
     "retrieve_context": handle_retrieve_context,
+    "expand_graph_context": handle_expand_graph_context,
+    "rerank_context": handle_rerank_context,
     "generate_answer_report": handle_generate_answer_report,
     "build_bm25_index": handle_build_bm25_index
 }
@@ -1136,6 +1173,8 @@ OUTPUT_ARTIFACT_TYPES = {
     "final_report": "final_report",
     "embed_query": "query_vector",
     "retrieve_context": "retrieved_context",
+    "expand_graph_context": "expanded_context",
+    "rerank_context": "reranked_context",
     "generate_answer_report": "final_answer",
     "build_bm25_index": "bm25_index"
 }
@@ -1249,6 +1288,8 @@ def execute_task(task: Any):
         "summarize_document",
         "embed_query",
         "retrieve_context",
+        "expand_graph_context",
+        "rerank_context",
         "generate_answer_report"
     }
 

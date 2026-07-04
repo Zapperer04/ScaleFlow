@@ -19,7 +19,8 @@ def generate_answer(query: str, chunks: list[dict]) -> tuple[str, str, str]:
         "Strict Grounding Rules:\n"
         "1. Do NOT use external knowledge, infer, or extrapolate beyond the provided sources.\n"
         "2. Do NOT conflate or combine unrelated facts from different sources. For example, if one source mentions a scaling technique for outliers (like RobustScaler) and another mentions categorical encoding, do not assume or state that the scaling technique is a categorical encoder. Keep concepts strictly distinct.\n"
-        "3. Answer directly and concisely — do NOT use bullet points or numbered lists.\n"
+        "   Exception: You may synthesize and combine information across multiple retrieved sources when they represent elements of the same structured entity list (such as inventors, authors, applicants, contributors, references, table rows, or enumerated lists).\n"
+        "3. Answer directly and concisely. Avoid bullet points or numbered lists unless explicitly presenting members of a structured list (e.g. inventors, authors, references).\n"
         "4. Do NOT copy-paste raw source text verbatim. Write a proper synthesized sentence.\n"
         "5. If the sources do not contain direct, explicit information to answer the question, or if you must guess, you MUST respond exactly: 'The document does not contain sufficient information to answer this question.'"
     )

@@ -230,6 +230,24 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
     if not has_collection:
         logger.error("Could not ensure collection exists in Qdrant. Aborting upsert.")
         return False, lookup_duration, 0.0
+
+    if pipeline_id is not None:
+        try:
+            pid_int = int(pipeline_id)
+            client.delete(
+                collection_name=collection_name,
+                points_selector=qmodels.Filter(
+                    must=[
+                        qmodels.FieldCondition(
+                            key="pipeline_id",
+                            match=qmodels.MatchValue(value=pid_int)
+                        )
+                    ]
+                )
+            )
+            logger.info(f"Cleared old Qdrant points for pipeline_id={pid_int}")
+        except Exception as ed:
+            logger.warning(f"Failed to delete old points for pipeline {pipeline_id}: {ed}")
         
     global_meta = {}
     chunk_meta_list = None
