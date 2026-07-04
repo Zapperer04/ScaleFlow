@@ -523,3 +523,43 @@ def chunk_text_parent_child(text: str) -> dict:
         process_parent(current_parent, f"parent_{parent_id_counter}")
         
     return {"parents": parents, "children": children}
+
+
+def chunk_document_graph(document_graph: dict) -> dict:
+    """
+    Chunks a document graph by extracting texts from nodes and utilizing semantic chunking.
+    Returns a dict with {"chunks": list_of_chunks}.
+    """
+    chunks = []
+    if not document_graph:
+        return {"chunks": []}
+
+    # Extract pages
+    pages = document_graph.get("pages", [])
+    for page in pages:
+        page_number = page.get("page_number", 1)
+        nodes = page.get("nodes", [])
+        # Sort nodes by reading order
+        nodes = sorted(nodes, key=lambda n: n.get("reading_order", 0))
+        
+        for node in nodes:
+            node_text = node.get("text", "")
+            if not node_text.strip():
+                continue
+            
+            # Chunk the node's text using the existing chunk_text function
+            node_chunks = chunk_text(
+                node_text, 
+                page_number=page_number,
+                default_section=node.get("section", "unknown"),
+                default_parent=node.get("chunk_id")
+            )
+            for chunk in node_chunks:
+                # Enrich chunk metadata with node information
+                if "metadata" not in chunk:
+                    chunk["metadata"] = {}
+                chunk["metadata"]["node_type"] = node.get("type", "paragraph")
+                chunk["metadata"]["chunk_id"] = node.get("chunk_id")
+                chunks.append(chunk)
+                
+    return {"chunks": chunks}

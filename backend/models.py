@@ -1,8 +1,10 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, ForeignKey, Boolean
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, ForeignKey, Boolean, LargeBinary
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from sqlalchemy.types import TypeDecorator
 from datetime import datetime
+import gzip
 import json
+import logging
 import os
 
 def load_env():
@@ -81,6 +83,37 @@ else:
 
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
+logger = logging.getLogger(__name__)
+
+
+class GzippedBinary(TypeDecorator):
+    impl = LargeBinary
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value.encode("utf-8")
+        return bytes(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+
+        if isinstance(value, bytes):
+            return value
+
+        logger.warning(
+            "[SNAPSHOT] Legacy snapshot format detected (type=%s)",
+            type(value).__name__,
+        )
+
+        if isinstance(value, memoryview):
+            return value.tobytes()
+        if isinstance(value, str):
+            return value.encode("utf-8")
+        return bytes(value)
 
 class Pipeline(Base):
     __tablename__ = 'pipelines'
@@ -304,6 +337,9 @@ class OrchestrationEvent(Base):
     payload_json = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     segment_index = Column(Integer, default=0)
+    # Event versioning for schema evolution
+    event_version = Column(Integer, default=1)
+    schema_version = Column(String(20), default="1.0")
 
     def to_dict(self):
         return {
@@ -318,7 +354,9 @@ class OrchestrationEvent(Base):
             'correlation_id': self.correlation_id,
             'payload_json': json.loads(self.payload_json) if self.payload_json else {},
             'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
-            'segment_index': self.segment_index
+            'segment_index': self.segment_index,
+            'event_version': self.event_version,
+            'schema_version': self.schema_version
         }
 
 class OrchestrationSnapshot(Base):
@@ -327,18 +365,36 @@ class OrchestrationSnapshot(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True, index=True)
     last_event_id = Column(Integer, nullable=False)
-    snapshot_data = Column(Text, nullable=False)
+    snapshot_data = Column(GzippedBinary, nullable=False)  # gzip compressed JSON
     created_at = Column(DateTime, default=datetime.utcnow)
     segment_index = Column(Integer, default=0)
 
     def to_dict(self):
+        snapshot = {}
+
+        try:
+            if self.snapshot_data:
+                data = self.snapshot_data
+
+                if isinstance(data, str):
+                    data = data.encode("utf-8")
+
+                snapshot = json.loads(
+                    gzip.decompress(data).decode("utf-8")
+                )
+        except Exception:
+            snapshot = {
+                "__error__": "snapshot_decode_failed"
+            }
+
         return {
-            'id': self.id,
-            'pipeline_id': self.pipeline_id,
-            'last_event_id': self.last_event_id,
-            'snapshot_data': json.loads(self.snapshot_data) if self.snapshot_data else {},
-            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
-            'segment_index': self.segment_index
+            "id": self.id,
+            "pipeline_id": self.pipeline_id,
+            "last_event_id": self.last_event_id,
+            "snapshot_data": snapshot,
+            "created_at": self.created_at.isoformat() + "Z"
+            if self.created_at else None,
+            "segment_index": self.segment_index
         }
 
 class OrchestratorInstance(Base):
@@ -407,7 +463,13 @@ def init_db():
         ("pipelines", "is_critical", "BOOLEAN DEFAULT FALSE"),
         
         ("orchestration_events", "segment_index", "INTEGER DEFAULT 0"),
-        ("orchestration_snapshots", "segment_index", "INTEGER DEFAULT 0")
+        ("orchestration_events", "event_version", "INTEGER DEFAULT 1"),
+        ("orchestration_events", "schema_version", "VARCHAR(20) DEFAULT '1.0'"),
+        ("orchestration_snapshots", "segment_index", "INTEGER DEFAULT 0"),
+        # Note: changing snapshot_data from TEXT to LargeBinary is a breaking change.
+        # In a production migration, you'd need to handle conversion; here we assume a fresh DB or manual migration.
+        # For SQLite, we need to alter table; for PostgreSQL we'd use ALTER COLUMN TYPE.
+        # However, we rely on create_all for new DB, and for existing, we'll skip this ALTER as it's complex.
     ]:
         try:
             with engine.begin() as conn:
@@ -435,4 +497,3 @@ def init_db():
                     conn.execute(text(f"CREATE INDEX {idx_name} ON {table} ({col})"))
             except Exception:
                 pass
-

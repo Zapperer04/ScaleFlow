@@ -101,6 +101,27 @@ def _trace(trace_fn: Optional[Callable[[str], None]], message: str) -> None:
 # ------------------------------------------------------------------------------
 # Page rendering (PDF → list of PIL images)
 # ------------------------------------------------------------------------------
+def _estimate_pdf_render_memory_mb(reader: Any, limit: int, target_dpi: int) -> float:
+    bytes_per_pixel = 4.0
+    estimated_mb = 0.0
+
+    for page_index in range(limit):
+        page = reader.pages[page_index]
+        width_pt = float(getattr(page.mediabox, "width", 0) or 0)
+        height_pt = float(getattr(page.mediabox, "height", 0) or 0)
+        if width_pt <= 0 or height_pt <= 0:
+            continue
+
+        width_px = (width_pt / 72.0) * target_dpi
+        height_px = (height_pt / 72.0) * target_dpi
+        estimated_mb += (width_px * height_px * bytes_per_pixel) / (1024.0 * 1024.0)
+
+    if estimated_mb <= 0:
+        estimated_mb = limit * 25.0 * (target_dpi / 300.0) ** 2
+
+    return estimated_mb
+
+
 def render_pdf_pages(
     filepath: str,
     dpi: Optional[int] = None,
@@ -128,12 +149,12 @@ def render_pdf_pages(
     target_dpi = int(dpi or getattr(config, "PREPROCESS_TARGET_DPI", 300))
     poppler_path = getattr(config, "PREPROCESS_POPPLER_PATH", "") or os.getenv("PREPROCESS_POPPLER_PATH", "") or None
 
-    # Memory estimate (conservative)
-    estimated_mb = limit * 30.0 * (target_dpi / 72.0) ** 2
+    # Memory estimate based on actual page dimensions at the target DPI.
+    estimated_mb = _estimate_pdf_render_memory_mb(reader, limit, target_dpi)
     available_mb = psutil.virtual_memory().available / (1024.0 * 1024.0)
     if estimated_mb > available_mb * 0.70:
         raise MemoryError(
-            f"Rendering {limit} pages requires ~{estimated_mb:.0f} MB, exceeds safe memory budget"
+            f"Rendering {limit} pages at {target_dpi} DPI requires ~{estimated_mb:.0f} MB, exceeds safe memory budget"
         )
 
     images = convert_from_path(

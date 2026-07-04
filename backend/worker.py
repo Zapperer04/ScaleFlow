@@ -355,10 +355,31 @@ def handle_validate_parse_quality(payload, input_artifacts):
         
     _trace("[QUALITY GATE] Starting parse quality validation gate...")
     
-    raw_input = input_artifacts.get("parsed_text", {})
+    raw_input = input_artifacts.get("document_graph")
+    if raw_input is None:
+        raw_input = input_artifacts.get("parsed_text", {})
     text = ""
     parse_stats = {}
-    document_graph = raw_input.get("document_graph") if isinstance(raw_input, dict) else None
+
+    if isinstance(raw_input, str):
+        try:
+            raw_input = json.loads(raw_input)
+        except Exception:
+            pass
+
+    document_graph = None
+    if isinstance(raw_input, dict):
+        document_graph = raw_input.get("document_graph")
+        if isinstance(document_graph, str):
+            try:
+                document_graph = json.loads(document_graph)
+            except Exception:
+                document_graph = None
+
+        if document_graph is None:
+            pages = raw_input.get("pages")
+            if isinstance(pages, list) and pages and isinstance(pages[0], dict) and "nodes" in pages[0]:
+                document_graph = raw_input
     # For quality gate, we extract text from the graph for analysis (if available)
     if document_graph:
         # Concatenate all node texts for quality scoring
@@ -367,16 +388,47 @@ def handle_validate_parse_quality(payload, input_artifacts):
             for node in page.get("nodes", []):
                 all_texts.append(node.get("text", ""))
         text = "\n".join(all_texts)
-        parse_stats = raw_input.get("parse_stats", {})
+        parse_stats = raw_input.get("parse_stats", {}) if isinstance(raw_input, dict) else {}
+        if not parse_stats and isinstance(document_graph, dict):
+            parse_stats = document_graph.get("statistics", {})
     else:
         if isinstance(raw_input, dict):
             text = raw_input.get("parsed_text", "")
             parse_stats = raw_input.get("parse_stats", {})
+            if not text:
+                pages = raw_input.get("pages", [])
+                if isinstance(pages, list):
+                    page_texts = []
+                    for page in pages:
+                        if not isinstance(page, dict):
+                            continue
+                        for node in page.get("nodes", []):
+                            if isinstance(node, dict):
+                                node_text = node.get("text", "")
+                                if node_text:
+                                    page_texts.append(node_text)
+                    text = "\n".join(page_texts)
         else:
             text = raw_input or payload.get("source_text", "")
     
     if not text:
-        _trace("[QUALITY GATE] FAILED: No text was extracted from the document.")
+        graph_pages = len(document_graph.get("pages", [])) if isinstance(document_graph, dict) else 0
+        graph_nodes = 0
+        graph_edges = 0
+        if isinstance(document_graph, dict):
+            for page in document_graph.get("pages", []):
+                if isinstance(page, dict):
+                    graph_nodes += len(page.get("nodes", []))
+            graph_edges = len(document_graph.get("edges", []))
+        graph_stats = document_graph.get("statistics", {}) if isinstance(document_graph, dict) else {}
+        _trace(
+            f"[QUALITY GATE] FAILED: No text was extracted from the document. "
+            f"graph_pages={graph_pages}, graph_nodes={graph_nodes}, graph_edges={graph_edges}, "
+            f"vlm_pages={graph_stats.get('vlm_success_pages', 0)}, "
+            f"ocr_pages={graph_stats.get('ocr_fallback_pages', 0)}, "
+            f"failed_pages={graph_stats.get('failed_pages', graph_pages)}, "
+            f"raw_type={type(raw_input).__name__}"
+        )
         raise ValueError("Document unreadable / OCR quality too low: Extracted text is empty.")
 
     preprocess_report = input_artifacts.get("preprocessing_report", {})
@@ -1041,9 +1093,14 @@ def handle_generate_answer_report(payload, input_artifacts):
     print(f"[{WORKER_ID}] [OK] Generated final answer with {len(citations)} citations and confidence '{confidence}'", flush=True)
     return artifact_data
 
+def handle_persist_document_graph(payload, input_artifacts):
+    # Simply passes through the document graph
+    return input_artifacts.get("parsed_text") or input_artifacts.get("document_graph") or {}
+
 TASK_HANDLERS = {
     "preprocess_document": handle_preprocess_document,
     "parse_document": handle_parse_document,
+    "persist_document_graph": handle_persist_document_graph,
     "process_video": handle_process_video,
     "generate_report": handle_generate_report,
     "data_backup": handle_data_backup,
@@ -1068,6 +1125,7 @@ TASK_HANDLERS = {
 OUTPUT_ARTIFACT_TYPES = {
     "preprocess_document": "preprocessing_report",
     "parse_document": "parsed_text",
+    "persist_document_graph": "document_graph",
     "validate_parse_quality": "parsed_text",
     "chunk_text": "text_chunks",
     "generate_embeddings": "vector_index",
@@ -1183,6 +1241,7 @@ def execute_task(task: Any):
     REAL_PIPELINE_TASK_TYPES = {
         "preprocess_document",
         "parse_document",
+        "persist_document_graph",
         "validate_parse_quality",
         "chunk_text",
         "generate_embeddings",
@@ -1209,15 +1268,18 @@ def execute_task(task: Any):
             input_artifacts = {}
             for art_id in task.get('input_artifact_ids', []):
                 try:
-                    res_art = requests.get(f"{API_URL}/artifacts/{art_id}", headers=HEADERS, timeout=5)
+                    res_art = requests.get(f"{API_URL}/artifacts/{art_id}", headers=HEADERS, timeout=30)
                     if res_art.status_code == 200:
                         meta = res_art.json()
                         art_type = meta.get('artifact_type')
                         storage_uri = meta.get('storage_uri')
                         data = load_artifact_from_disk(storage_uri)
                         input_artifacts[art_type] = data
+                    else:
+                        raise RuntimeError(f"Artifact {art_id} fetch returned {res_art.status_code}")
                 except Exception as ex:
                     print(f"[{WORKER_ID}] Error loading input artifact {art_id}: {ex}", flush=True)
+                    raise RuntimeError(f"Failed to load required input artifact {art_id}: {ex}") from ex
             
             if isinstance(task_data, dict):
                 task_data['_task_id'] = task_id
@@ -1264,7 +1326,7 @@ def execute_task(task: Any):
                     "metadata": metadata
                 },
                 headers=HEADERS,
-                timeout=5
+                timeout=30
             )
             if res_reg.status_code != 201:
                 raise Exception(f"Failed to register output artifact: {res_reg.status_code} - {res_reg.text}")
@@ -1285,7 +1347,7 @@ def register_worker():
                 "capabilities": WORKER_CAPABILITIES,
                 "resource_limits": {"concurrency": 1}
             }
-            res = requests.post(f"{API_URL}/workers/register", json=payload, headers=HEADERS, timeout=5)
+            res = requests.post(f"{API_URL}/workers/register", json=payload, headers=HEADERS, timeout=30)
             if res.status_code in [200, 201]:
                 print(f"[{WORKER_ID}] Registered with capabilities: {WORKER_CAPABILITIES}", flush=True)
                 break
@@ -1462,7 +1524,7 @@ def worker_loop():
                                          'worker_id': WORKER_ID, 
                                          'lease_token': lease_token,
                                          'output_artifact_ids': output_artifact_ids
-                                     }, headers=HEADERS, timeout=5)
+                                     }, headers=HEADERS, timeout=30)
                         if res_complete.status_code != 200:
                             print(f"[{WORKER_ID}] Warning: failed to patch status to completed: {res_complete.status_code} - {res_complete.text}", flush=True)
                             if res_complete.status_code == 409:
@@ -1488,7 +1550,7 @@ def worker_loop():
                                          'error_message': str(e),
                                          'worker_id': WORKER_ID,
                                          'lease_token': lease_token
-                                     }, headers=HEADERS, timeout=5)
+                                     }, headers=HEADERS, timeout=15)
                         if res_fail.status_code != 200:
                             print(f"[{WORKER_ID}] Warning: failed to patch status to failed: {res_fail.status_code} - {res_fail.text}", flush=True)
                             if res_fail.status_code == 409:

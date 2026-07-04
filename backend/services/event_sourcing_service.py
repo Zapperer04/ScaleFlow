@@ -1,7 +1,9 @@
 import json
+import gzip
 import logging
+from collections import deque
 from datetime import datetime, timedelta
-from sqlalchemy import text
+from sqlalchemy import text, and_, or_
 from models import OrchestrationEvent, OrchestrationSnapshot, Pipeline, Task, Artifact
 
 logger = logging.getLogger(__name__)
@@ -234,6 +236,10 @@ EVENT_SCHEMAS = {
     }
 }
 
+# Event versioning constants
+CURRENT_EVENT_VERSION = 1
+CURRENT_SCHEMA_VERSION = "2.0"
+
 def validate_event_payload(event_type, payload):
     """
     Validates that the given payload meets the schema requirements for event_type.
@@ -322,19 +328,17 @@ def publish_event(db, event_type, pipeline_id=None, task_id=None, message=None, 
         lease_token=lease_token,
         correlation_id=correlation_id,
         payload_json=json.dumps(payload),
-        segment_index=segment_index
+        segment_index=segment_index,
+        event_version=CURRENT_EVENT_VERSION,
+        schema_version=CURRENT_SCHEMA_VERSION
     )
     db.add(evt)
     db.flush() # populate ID
     
-    # Automatically trigger periodic snapshot generation for critical paths
-    # Trigger a snapshot check every 10 events for a pipeline
-    if pipeline_id and category == "critical":
+    # Automatically trigger periodic snapshot generation for critical paths (avoid race condition)
+    if pipeline_id and category == "critical" and evt.id % 10 == 0:
         try:
-            # Simple heuristic: check count of events for this pipeline
-            count = db.query(OrchestrationEvent).filter(OrchestrationEvent.pipeline_id == pipeline_id).count()
-            if count > 0 and count % 10 == 0:
-                create_pipeline_snapshot(db, pipeline_id)
+            create_pipeline_snapshot(db, pipeline_id)
         except Exception as e:
             logger.warning(f"Failed to generate auto-snapshot for pipeline {pipeline_id}: {e}")
             
@@ -361,7 +365,8 @@ def create_pipeline_snapshot(db, pipeline_id):
     if "critical_path" in state:
         state.pop("critical_path")
         
-    snapshot_data = json.dumps(state)
+    # Compress snapshot data
+    snapshot_data = gzip.compress(json.dumps(state).encode())
     
     # 3. Create snapshot
     snapshot = OrchestrationSnapshot(
@@ -391,7 +396,7 @@ def create_segmented_snapshot(db, pipeline_id, segment_index):
     if "critical_path" in state:
         state.pop("critical_path")
         
-    snapshot_data = json.dumps(state)
+    snapshot_data = gzip.compress(json.dumps(state).encode())
     
     existing = db.query(OrchestrationSnapshot).filter(
         OrchestrationSnapshot.pipeline_id == pipeline_id,
@@ -503,7 +508,7 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
     }
     
     start_event_id = 0
-    target_segment = 0
+    snapshot_segment = -1  # segment index of the snapshot we base on
     
     # 1. Determine target segment
     if target_event_id is not None:
@@ -514,8 +519,7 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
         latest_evt = db.query(OrchestrationEvent).filter(
             OrchestrationEvent.pipeline_id == pipeline_id
         ).order_by(OrchestrationEvent.id.desc()).first()
-        if latest_evt:
-            target_segment = latest_evt.segment_index or 0
+        target_segment = latest_evt.segment_index if latest_evt else 0
 
     # 2. Query nearest snapshot if not skipped
     if not skip_snapshot:
@@ -523,33 +527,56 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
         if target_event_id is not None:
             snapshot_query = snapshot_query.filter(OrchestrationSnapshot.last_event_id <= target_event_id)
         
-        # We prefer a snapshot in the current or preceding segment index
         snapshot = snapshot_query.filter(OrchestrationSnapshot.segment_index <= target_segment)\
                                  .order_by(OrchestrationSnapshot.segment_index.desc(), OrchestrationSnapshot.last_event_id.desc())\
                                  .first()
         
         if snapshot:
-            state = json.loads(snapshot.snapshot_data)
+            # Load state from snapshot (decompress if needed)
+            snapshot_data = snapshot.snapshot_data
+            # Defensive: encode to bytes if DB driver returned a str (causes
+            # "string argument without an encoding" inside gzip.decompress)
+            if isinstance(snapshot_data, str):
+                snapshot_data = snapshot_data.encode('utf-8')
+            if isinstance(snapshot_data, bytes):
+                try:
+                    snapshot_data = gzip.decompress(snapshot_data)
+                except gzip.BadGzipFile:
+                    # Already uncompressed or legacy plain JSON bytes
+                    pass
+            if isinstance(snapshot_data, bytes):
+                snapshot_data = snapshot_data.decode('utf-8')
+            state = json.loads(snapshot_data)
             start_event_id = snapshot.last_event_id
+            snapshot_segment = snapshot.segment_index or 0
             
-    # 3. Retrieve ordered events after the snapshot watermark
+    # 3. Retrieve events after the snapshot (or all if no snapshot)
+    # We need all events that happened after the snapshot's last_event_id,
+    # but still within the target segment boundaries, including events from
+    # later segments up to target_segment.
+    # Condition: (segment == snapshot_segment AND id > start_event_id) OR (segment > snapshot_segment AND segment <= target_segment)
+    event_query = db.query(OrchestrationEvent).filter(
+        OrchestrationEvent.pipeline_id == pipeline_id
+    )
     if start_event_id > 0:
-        event_query = db.query(OrchestrationEvent).filter(
-            OrchestrationEvent.pipeline_id == pipeline_id,
-            OrchestrationEvent.segment_index == target_segment,
-            OrchestrationEvent.id > start_event_id
+        event_query = event_query.filter(
+            or_(
+                and_(
+                    OrchestrationEvent.segment_index == snapshot_segment,
+                    OrchestrationEvent.id > start_event_id
+                ),
+                and_(
+                    OrchestrationEvent.segment_index > snapshot_segment,
+                    OrchestrationEvent.segment_index <= target_segment
+                )
+            )
         )
     else:
-        # Fallback to load everything up to target segment if no snapshot is available
-        event_query = db.query(OrchestrationEvent).filter(
-            OrchestrationEvent.pipeline_id == pipeline_id,
-            OrchestrationEvent.segment_index <= target_segment
-        )
+        event_query = event_query.filter(OrchestrationEvent.segment_index <= target_segment)
     
     if target_event_id is not None:
         event_query = event_query.filter(OrchestrationEvent.id <= target_event_id)
     if target_time is not None:
-        # Handle string or datetime target_time
         if isinstance(target_time, str):
             try:
                 target_time = datetime.fromisoformat(target_time)
@@ -569,7 +596,6 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
         payload = json.loads(evt.payload_json) if evt.payload_json else {}
         tid = str(evt.task_id) if evt.task_id else None
         
-        # Format datetimes
         evt_created_str = evt.created_at.isoformat() if evt.created_at else None
         
         if event_type == "PIPELINE_CREATED":
@@ -629,15 +655,15 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
                 t_state = state["tasks"][tid]
                 t_state["status"] = "running"
                 t_state["started_at"] = evt_created_str
-                t_state["assigned_worker_id"] = payload.get("worker_id")
-                t_state["lease_token"] = payload.get("lease_token")
+                # Use payload or fallback to event columns
+                t_state["assigned_worker_id"] = payload.get("worker_id") or evt.worker_id
+                t_state["lease_token"] = payload.get("lease_token") or evt.lease_token
                 duration = payload.get("lease_duration", 30)
                 if evt.created_at:
                     t_state["lease_expires_at"] = (evt.created_at + timedelta(seconds=duration)).isoformat()
                 if not state["pipeline"]["started_at"]:
                     state["pipeline"]["started_at"] = evt_created_str
                     state["pipeline"]["status"] = "running"
-                # Compute queue wait duration
                 if tid in task_queued_times and evt.created_at:
                     t_state["queue_wait_duration"] = round(
                         (evt.created_at - task_queued_times[tid]).total_seconds(), 2
@@ -663,12 +689,11 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
                 t_state = state["tasks"][tid]
                 t_state["status"] = "running"
                 t_state["started_at"] = evt_created_str
-                t_state["assigned_worker_id"] = payload.get("worker_id")
-                t_state["lease_token"] = payload.get("lease_token")
+                t_state["assigned_worker_id"] = payload.get("worker_id") or evt.worker_id
+                t_state["lease_token"] = payload.get("lease_token") or evt.lease_token
                 if not state["pipeline"]["started_at"]:
                     state["pipeline"]["started_at"] = evt_created_str
                     state["pipeline"]["status"] = "running"
-                # Compute queue wait duration
                 if tid in task_queued_times and evt.created_at:
                     t_state["queue_wait_duration"] = round(
                         (evt.created_at - task_queued_times[tid]).total_seconds(), 2
@@ -679,7 +704,6 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
                 t_state = state["tasks"][tid]
                 t_state["status"] = "completed"
                 t_state["completed_at"] = evt_created_str
-                # Compute execution duration
                 if t_state["started_at"] and evt.created_at:
                     st_dt = datetime.fromisoformat(t_state["started_at"])
                     t_state["execution_duration"] = round(
@@ -734,13 +758,11 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
             }
             state["artifacts"].append(art)
             if tid and tid in state["tasks"]:
-                # Ensure artifact ID is tracked
                 art_id = payload.get("artifact_id")
                 if art_id not in state["tasks"][tid]["output_artifact_ids"]:
                     state["tasks"][tid]["output_artifact_ids"].append(art_id)
                     
         elif event_type == "DEPENDENCY_RELEASED":
-            # Tracks dependency release logic
             parent = str(payload.get("parent_task_id"))
             child = str(payload.get("child_task_id"))
             if child not in state["dependency_releases"]:
@@ -772,8 +794,6 @@ def compute_critical_path(state):
     adj = {tid: [] for tid in tasks}
     in_degree = {tid: 0 for tid in tasks}
     
-    # Reconstruct dependencies from original relationships (depends_on list per task)
-    # We parse the dependencies map stored in the reconstructed state
     deps = state.get("dependencies", {})
     
     for child, parents in deps.items():
@@ -784,31 +804,28 @@ def compute_critical_path(state):
                 adj[parent_str].append(child_str)
                 in_degree[child_str] += 1
                 
-    # Calculate weight per task node: duration = wait + execution
     weights = {}
     for tid, tdata in tasks.items():
         w = tdata.get("queue_wait_duration", 0.0) + tdata.get("execution_duration", 0.0)
         weights[tid] = w if w is not None else 0.0
 
-    # DP over DAG: find max path ending at each node
-    # Topological sort first
+    # Topological sort using deque for O(V+E)
     topo_order = []
-    zero_in = [tid for tid in tasks if in_degree[tid] == 0]
+    zero_in = deque([tid for tid in tasks if in_degree[tid] == 0])
     in_deg_temp = dict(in_degree)
     
     while zero_in:
-        curr = zero_in.pop(0)
+        curr = zero_in.popleft()
         topo_order.append(curr)
         for child in adj[curr]:
             in_deg_temp[child] -= 1
             if in_deg_temp[child] == 0:
                 zero_in.append(child)
                 
-    # If there is a cycle (should not happen in DAG), fallback to basic list
     if len(topo_order) != len(tasks):
+        # Fallback in case of cycle (should not happen)
         topo_order = list(tasks.keys())
         
-    # dist[node] = (max_distance, path_list)
     dist = {}
     for tid in tasks:
         dist[tid] = (weights[tid], [int(tid)])
@@ -821,7 +838,6 @@ def compute_critical_path(state):
             if child not in dist or new_dist > dist[child][0]:
                 dist[child] = (new_dist, curr_path + [int(child)])
                 
-    # Find the node with the maximum total distance
     max_tid = None
     max_val = -1.0
     for tid, (val, path) in dist.items():
@@ -838,7 +854,6 @@ def purge_transient_events(db, days_retention=7):
     Cleans up old telemetry and transient events to prevent unbounded growth of logs.
     """
     cutoff = datetime.now() - timedelta(days=days_retention)
-    # Delete telemetry and debug events older than cutoff
     stmt = text(
         "DELETE FROM orchestration_events "
         "WHERE event_category IN ('telemetry', 'debug', 'transient') "

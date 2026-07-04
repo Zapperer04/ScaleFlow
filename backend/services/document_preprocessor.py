@@ -168,7 +168,7 @@ def _gemini_throttle() -> None:
 def _check_memory_before_render(pages_to_render: int, target_dpi: int) -> None:
     pages_to_render = max(1, int(pages_to_render))
     target_dpi = max(72, int(target_dpi))
-    estimated_mb = pages_to_render * 30.0 * (target_dpi / 72.0) ** 2
+    estimated_mb = pages_to_render * 25.0 * (target_dpi / 300.0) ** 2
     available_mb = psutil.virtual_memory().available / (1024.0 * 1024.0)
     if estimated_mb > available_mb * 0.70:
         raise MemoryError(
@@ -419,14 +419,15 @@ def _page_to_image_metadata(image: Any, page_number: int) -> Dict[str, Any]:
     }
 
 
-def _generate_spatial_edges(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _generate_spatial_edges(nodes: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], bool]:
     """
     Build spatial relationships between nodes using bounding box overlap and relative positions.
-    Returns a list of edges with relations: ABOVE, BELOW, LEFT_OF, RIGHT_OF, INSIDE.
+    Returns a tuple of (edges, is_truncated).
     """
     edges = []
+    is_truncated = False
     if len(nodes) < 2:
-        return edges
+        return edges, is_truncated
 
     # Pre-extract boxes
     node_data = []
@@ -437,6 +438,10 @@ def _generate_spatial_edges(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]
         x2 = _safe_float(bbox.get("x2", 1))
         y2 = _safe_float(bbox.get("y2", 1))
         node_data.append((node["chunk_id"], x1, y1, x2, y2))
+
+    VERTICAL_THRESHOLD = 0.10
+    HORIZONTAL_THRESHOLD = 0.10
+    MAX_GRAPH_EDGES = 5000
 
     n = len(node_data)
     for i in range(n):
@@ -466,20 +471,26 @@ def _generate_spatial_edges(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]
             center_j_y = (y1_j + y2_j) / 2.0
             center_j_x = (x1_j + x2_j) / 2.0
 
-            # Vertical relationship
-            if y2_i <= y1_j:
+            # Vertical relationship with proximity threshold (0.10)
+            if y2_i <= y1_j and (y1_j - y2_i) < VERTICAL_THRESHOLD:
                 edges.append({"from": id_i, "to": id_j, "relation": "ABOVE"})
-            elif y2_j <= y1_i:
+            elif y2_j <= y1_i and (y1_i - y2_j) < VERTICAL_THRESHOLD:
                 edges.append({"from": id_j, "to": id_i, "relation": "ABOVE"})
-            # Horizontal relationship
-            elif x2_i <= x1_j:
+            # Horizontal relationship with proximity threshold (0.10)
+            elif x2_i <= x1_j and (x1_j - x2_i) < HORIZONTAL_THRESHOLD:
                 edges.append({"from": id_i, "to": id_j, "relation": "LEFT_OF"})
-            elif x2_j <= x1_i:
+            elif x2_j <= x1_i and (x1_i - x2_j) < HORIZONTAL_THRESHOLD:
                 edges.append({"from": id_j, "to": id_i, "relation": "LEFT_OF"})
-            # Overlap but not inside: could still be considered ABOVE/BELOW if vertical offset large
-            # For simplicity we skip ambiguous cases.
 
-    return edges
+    # Hard edge cap to prevent memory/performance degradation
+    if len(edges) > MAX_GRAPH_EDGES:
+        logger.warning(
+            f"Graph edge explosion: {len(edges)} edges; truncating to {MAX_GRAPH_EDGES}"
+        )
+        edges = edges[:MAX_GRAPH_EDGES]
+        is_truncated = True
+
+    return edges, is_truncated
 
 
 class DocumentPreprocessor:
@@ -833,13 +844,67 @@ def _call_gemini_page_parser(
             response.raise_for_status()
             response_json = response.json()
             raw_text = _extract_gemini_text(response_json)
+
+            # =================== DEBUG BLOCK 1: Raw Gemini response ===================
+            logger.error("\n========== RAW GEMINI ==========")
+            logger.error("PAGE=%s", page_number)
+            logger.error("HTTP=%s", response.status_code)
+            logger.error(
+                "RAW RESPONSE:\n%s",
+                json.dumps(response_json, indent=2)[:10000]
+            )
+            logger.error(
+                "RAW TEXT LEN=%s",
+                len(raw_text or "")
+            )
+            logger.error(
+                "RAW TEXT START:\n%s",
+                (raw_text or "")[:1000]
+            )
+            logger.error("========== END GEMINI ==========\n")
+            # ========================================================================
+
             cleaned = _clean_json_text(raw_text)
+            candidates = response_json.get("candidates", [])
+            finish_reason = candidates[0].get("finishReason") if candidates else None
+            if finish_reason and finish_reason != "STOP":
+                raise RuntimeError(f"Gemini generation failed: {finish_reason}")
+
             if not cleaned:
                 raise ValueError("Gemini response did not contain JSON text")
             json.loads(cleaned)
             return cleaned
         except Exception as exc:
             last_exception = exc
+            try:
+                raw_tail = raw_text[-1000:] if isinstance(raw_text, str) and raw_text else ""
+            except Exception:
+                raw_tail = ""
+            try:
+                cleaned_tail = cleaned[-1000:] if isinstance(cleaned, str) and cleaned else ""
+            except Exception:
+                cleaned_tail = ""
+
+            _trace(
+                trace_fn,
+                (
+                    f"[VLM] Gemini JSON parse failure on page {page_number or '?'} "
+                    f"(attempt {attempt + 1}/{retries}): {exc}"
+                ),
+            )
+            logger.error(
+                "[VLM] Gemini JSON parse failure details: page=%s attempt=%s/%s raw_len=%s cleaned_len=%s",
+                page_number if page_number is not None else "?",
+                attempt + 1,
+                retries,
+                len(raw_text) if isinstance(raw_text, str) else 0,
+                len(cleaned) if isinstance(cleaned, str) else 0,
+            )
+            if raw_tail:
+                logger.error("[VLM] Gemini raw response tail:\n%s", raw_tail)
+            if cleaned_tail:
+                logger.error("[VLM] Gemini cleaned JSON tail:\n%s", cleaned_tail)
+
             if attempt >= retries - 1:
                 break
             backoff_seconds = min(20.0, (2.0 ** attempt) + (0.25 * attempt))
@@ -909,7 +974,7 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
         # Sort by reading_order (by index) for sequential edges later
         nodes.sort(key=lambda n: n["reading_order"])
         # Build spatial edges for this page
-        spatial_edges = _generate_spatial_edges(nodes)
+        spatial_edges, is_truncated = _generate_spatial_edges(nodes)
         # Sequential edges between consecutive nodes
         seq_edges = []
         for idx in range(len(nodes) - 1):
@@ -928,9 +993,11 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
             "nodes": nodes,
             "edges": all_edges,
             "status": "ocr_fallback",
+            "metadata": {"graph_truncated": is_truncated},
         }
         return page_graph
-    except Exception:
+    except Exception as exc:
+        logger.exception("[VLM] OCR fallback failed for page %s: %s", page_number, exc)
         return None
 
 
@@ -990,7 +1057,7 @@ def _normalize_page_graph(
             }
         )
     # Add spatial edges
-    spatial_edges = _generate_spatial_edges(normalized_nodes)
+    spatial_edges, is_truncated = _generate_spatial_edges(normalized_nodes)
     edges.extend(spatial_edges)
 
     return {
@@ -1001,6 +1068,7 @@ def _normalize_page_graph(
         "nodes": normalized_nodes,
         "edges": edges,
         "status": "success",
+        "metadata": {"graph_truncated": is_truncated},
     }
 
 
@@ -1123,6 +1191,38 @@ def execute_vlm_document_graph_extraction(
             "pipeline_id": pipeline_id,
         },
     }
+
+    # =================== DEBUG BLOCK 2: Graph debug ===================
+    logger.error(
+        "\n========== GRAPH DEBUG =========="
+    )
+    logger.error(
+        "VLM pages=%s",
+        total_vlm_success
+    )
+    logger.error(
+        "OCR pages=%s",
+        total_ocr_success
+    )
+    logger.error(
+        "Failed pages=%s",
+        total_failed
+    )
+    logger.error(
+        "Total nodes=%s",
+        total_nodes
+    )
+    logger.error(
+        "First page nodes=%s",
+        len(
+            pages[0]["nodes"]
+        ) if pages else 0
+    )
+    logger.error(
+        "================================="
+    )
+    # ===============================================================
+
     return graph
 
 

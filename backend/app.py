@@ -1323,6 +1323,29 @@ def scan_and_fix_missing_queue_tasks(db):
             
             from task_registry import get_queue_name
             queue_name = get_queue_name(task.type, task.priority, is_test)
+            dependencies_complete = True
+            try:
+                if getattr(task, "dependent_on", None):
+                    dependencies_complete = all(parent.status == 'completed' for parent in task.dependent_on)
+            except Exception:
+                dependencies_complete = False
+
+            if not dependencies_complete:
+                continue
+
+            if not task.input_artifact_ids:
+                input_artifact_ids = []
+                try:
+                    for parent in getattr(task, "dependent_on", []) or []:
+                        if parent.output_artifact_ids:
+                            out_ids = json.loads(parent.output_artifact_ids)
+                            if isinstance(out_ids, list):
+                                input_artifact_ids.extend(out_ids)
+                except Exception:
+                    input_artifact_ids = []
+                if input_artifact_ids:
+                    task.input_artifact_ids = json.dumps(input_artifact_ids)
+
             queue_items = redis_client.lrange(queue_name, 0, -1)
             task_id_str = str(task.id)
             if task_id_str not in [item.decode() if isinstance(item, bytes) else str(item) for item in queue_items]:
@@ -4742,6 +4765,7 @@ def reconcile_active_orchestrations(db):
         print(f"[Resilience] Error during active orchestration reconciliation: {e}", flush=True)
 
 def run_event_compaction_sweeper():
+    import traceback
     print("[Event Compaction Sweeper] Started background thread.", flush=True)
     while True:
         try:
@@ -4753,13 +4777,18 @@ def run_event_compaction_sweeper():
             try:
                 from services.event_sourcing_service import compact_completed_pipeline_segments
                 compact_completed_pipeline_segments(db)
-            except Exception as e:
+            except Exception:
                 db.rollback()
-                print(f"[Event Compaction Sweeper] Error during compaction: {e}", flush=True)
+                print(
+                    "[Event Compaction Sweeper] Error during compaction:\n"
+                    + traceback.format_exc(),
+                    flush=True
+                )
             finally:
                 db.close()
         except Exception as e:
             print(f"[Event Compaction Sweeper] Error in loop: {e}", flush=True)
+            print(f"[Event Compaction Sweeper] Traceback:\n{traceback.format_exc()}", flush=True)
 
 import threading
 scanner_thread = threading.Thread(target=run_recovery_scanner, daemon=True)
