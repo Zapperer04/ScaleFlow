@@ -728,6 +728,7 @@ def claim_task(task_id):
         task.lease_token = lease_token
         task.lease_expires_at = datetime.utcnow() + timedelta(seconds=lease_duration)
         task.started_at = datetime.utcnow()
+        task.last_progress_at = datetime.utcnow()
         task.lease_renewal_count = 0
         
         create_task_log(db, task.id, "task_claimed", f"Worker claimed task", worker_id=worker_id)
@@ -850,6 +851,7 @@ def renew_task_lease(task_id):
 
         # Extend lease_expires_at = now + extend_by_seconds
         task.lease_expires_at = datetime.utcnow() + timedelta(seconds=extend_by_seconds)
+        task.last_progress_at = datetime.utcnow()
         
         # Increment lease_renewal_count
         if hasattr(task, 'lease_renewal_count') and task.lease_renewal_count is not None:
@@ -910,6 +912,7 @@ def update_task(task_id):
             task.status = data['status']
             if data['status'] == 'running':
                 task.started_at = datetime.utcnow()
+                task.last_progress_at = datetime.utcnow()
                 create_task_log(db, task.id, "task_started", "Worker started execution", worker_id=worker_id)
             elif data['status'] == 'completed':
                 task.completed_at = datetime.utcnow()
@@ -1960,6 +1963,9 @@ def register_artifact():
         # Log artifact creation
         if task_id:
             try:
+                task = db.query(Task).filter(Task.id == task_id).first()
+                if task:
+                    task.last_progress_at = datetime.utcnow()
                 worker_id = meta.get("worker_id") if isinstance(meta, dict) else None
                 create_task_log(
                     db, 

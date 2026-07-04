@@ -922,39 +922,57 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
         pil_image = _ensure_pil_image(image)
         width, height = pil_image.size
 
-        # Use image_to_data to preserve layout (word-level bboxes)
+        # Group words by block and paragraph to form paragraph-level nodes
         data = pytesseract.image_to_data(pil_image, output_type=Output.DICT, config="--psm 6")
-        nodes = []
+        groups = {}
         n_boxes = len(data['level'])
         for i in range(n_boxes):
-            # level 5 is word
-            if data['level'][i] == 5:
+            if data['level'][i] == 5:  # Word level
                 text = data['text'][i].strip()
                 if not text:
                     continue
-                x = data['left'][i]
-                y = data['top'][i]
-                w = data['width'][i]
-                h = data['height'][i]
                 conf = int(data['conf'][i]) if data['conf'][i] != '-1' else 0
-                # Skip very low confidence words
                 if conf < 20:
                     continue
-                # Normalize bbox
-                bbox = {
-                    "x1": x / width,
-                    "y1": y / height,
-                    "x2": (x + w) / width,
-                    "y2": (y + h) / height,
-                }
-                nodes.append({
-                    "chunk_id": f"p{page_number}_ocr_word_{i}",
-                    "type": "paragraph",
+                
+                block_num = data['block_num'][i]
+                par_num = data['par_num'][i]
+                group_key = (block_num, par_num)
+                if group_key not in groups:
+                    groups[group_key] = []
+                groups[group_key].append({
                     "text": text,
-                    "section": "ocr_fallback",
-                    "reading_order": i,  # approximate
-                    "bbox": bbox,
+                    "left": data['left'][i],
+                    "top": data['top'][i],
+                    "width": data['width'][i],
+                    "height": data['height'][i]
                 })
+
+        nodes = []
+        for idx, (group_key, words) in enumerate(groups.items()):
+            if not words:
+                continue
+            # Sort words by top-left coordinate to preserve reading order
+            sorted_words = sorted(words, key=lambda w: (w["top"], w["left"]))
+            paragraph_text = " ".join([w["text"] for w in sorted_words])
+            x1 = min(w["left"] for w in words)
+            y1 = min(w["top"] for w in words)
+            x2 = max(w["left"] + w["width"] for w in words)
+            y2 = max(w["top"] + w["height"] for w in words)
+            bbox = {
+                "x1": x1 / width,
+                "y1": y1 / height,
+                "x2": x2 / width,
+                "y2": y2 / height,
+            }
+            nodes.append({
+                "chunk_id": f"p{page_number}_ocr_para_{idx + 1}",
+                "type": "paragraph",
+                "text": paragraph_text,
+                "section": "ocr_fallback",
+                "reading_order": idx + 1,
+                "bbox": bbox,
+            })
 
         if not nodes:
             # fallback: full page single node
