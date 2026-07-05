@@ -1,0 +1,1175 @@
+{
+  "document_graph": {
+    "document_id": "1563",
+    "parser": "gemini_vlm",
+    "schema_version": "1.0",
+    "document_type": "MULTIMODAL",
+    "created_at": "2026-07-05T12:36:59Z",
+    "page_count": 1,
+    "pages": [
+      {
+        "page_number": 1,
+        "source": "gemini",
+        "width": 1390,
+        "height": 1799,
+        "nodes": [
+          {
+            "chunk_id": "p1_n1",
+            "type": "header",
+            "text": "(12) PATENT APPLICATION PUBLICATION",
+            "section": "",
+            "reading_order": 1,
+            "bbox": {
+              "x1": 0.058,
+              "y1": 0.05,
+              "x2": 0.359,
+              "y2": 0.062
+            }
+          },
+          {
+            "chunk_id": "p1_n2",
+            "type": "header",
+            "text": "(21) Application No.202511028901 A",
+            "section": "",
+            "reading_order": 2,
+            "bbox": {
+              "x1": 0.505,
+              "y1": 0.05,
+              "x2": 0.701,
+              "y2": 0.062
+            }
+          },
+          {
+            "chunk_id": "p1_n3",
+            "type": "header",
+            "text": "(19) INDIA",
+            "section": "",
+            "reading_order": 3,
+            "bbox": {
+              "x1": 0.058,
+              "y1": 0.07,
+              "x2": 0.12,
+              "y2": 0.082
+            }
+          },
+          {
+            "chunk_id": "p1_n4",
+            "type": "header",
+            "text": "(22) Date of filing of Application :27/03/2025",
+            "section": "",
+            "reading_order": 4,
+            "bbox": {
+              "x1": 0.058,
+              "y1": 0.089,
+              "x2": 0.302,
+              "y2": 0.101
+            }
+          },
+          {
+            "chunk_id": "p1_n5",
+            "type": "header",
+            "text": "(43) Publication Date : 18/04/2025",
+            "section": "",
+            "reading_order": 5,
+            "bbox": {
+              "x1": 0.505,
+              "y1": 0.089,
+              "x2": 0.68,
+              "y2": 0.101
+            }
+          },
+          {
+            "chunk_id": "p1_n6",
+            "type": "paragraph",
+            "text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH EFFICIENT TRADE, LEARNING, AND PRODUCTIVITY SOLUTIONS",
+            "section": "",
+            "reading_order": 6,
+            "bbox": {
+              "x1": 0.058,
+              "y1": 0.129,
+              "x2": 0.916,
+              "y2": 0.153
+            }
+          },
+          {
+            "chunk_id": "p1_n7",
+            "type": "paragraph",
+            "text": "(71)Name of Applicant :\n1)Manipal University Jaipur\nAddress of Applicant :Manipal University Jaipur, Off Jaipur-Ajmer Expressway, Post: Dehmi Kalan, Jaipur-303007, Rajasthan, India Jaipur",
+            "section": "",
+            "reading_order": 7,
+            "bbox": {
+              "x1": 0.505,
+              "y1": 0.159,
+              "x2": 0.939,
+              "y2": 0.209
+            }
+          },
+          {
+            "chunk_id": "p1_n8",
+            "type": "paragraph",
+            "text": "(51) International classification",
+            "section": "",
+            "reading_order": 8,
+            "bbox": {
+              "x1": 0.058,
+              "y1": 0.175,
+              "x2": 0.159,
+              "y2": 0.199
+            }
+          },
+          {
+            "chunk_id": "p1_n9",
+            "type": "paragraph",
+            "text": ":H04L0051020000, G06Q0050020000, A61P0031100000, G06Q0040040000, A61K0036539000",
+            "section": "",
+            "reading_order": 9,
+            "bbox": {
+              "x1": 0.205,
+              "y1": 0.175,
+              "x2": 0.45,
+              "y2": 0.225
+            }
+          },
+          {
+            "chunk_id": "p1_n10",
+            "type": "paragraph",
+            "text": "Name of Applicant : NA\nAddress of Applicant : NA\n(72)Name of Inventor :\n1)Mr. Kaustav Kumar\nAddress of Applicant :B.TECH IT Student, Department of Information Technology, Manipal University Jaipur, Jaipur-Ajmer Express Highway, Dehmi Kalan, Near GVK Toll Plaza, Jaipur, Rajasthan 303007 Jaipur",
+            "section": "",
+            "reading_order": 10,
+            "bbox": {
+              "x1": 0.505,
+              "y1": 0.229,
+              "x2": 0.939,
+              "y2": 0.299
+            }
+          },
+          {
+            "chunk_id": "p1_n11",
+            "type": "paragraph",
+            "text": "(19) International Filing Date",
+            "section": "",
+            "reading_order": 11,
+            "bbox": {
+              "x1": 0.058,
+              "y1": 0.23,
+              "x2": 0.159,
+              "y2": 0.254
+            }
+          },
+          {
+            "chunk_id": "p1_n12",
+            "type": "paragraph",
+            "text": ":NA",
+            "section": "",
+            "reading_order": 12,
+            "bbox": {
+              "x1": 0.205,
+              "y1": 0.23,
+              "x2": 0.229,
+              "y2": 0.242
+            }
+          },
+          {
+            "chunk_id": "p1_n13",
+            "type": "paragraph",
+            "text": "(87) International Publication No",
+            "section": "",
+            "reading_order": 13,
+            "bbox": {
+              "x1": 0.058,
+              "y1": 0.26,
+              "x2": 0.159,
+              "y2": 0.284
+            }
+          },
+          {
+            "chunk_id": "p1_n14",
+            "type": "paragraph",
+            "text": ": NA",
+            "section": "",
+            "reading_order": 14,
+            "bbox": {
+              "x1": 0.205,
+              "y1": 0.26,
+              "x2": 0.229,
+              "y2": 0.272
+            }
+          },
+          {
+            "chunk_id": "p1_n15",
+            "type": "paragraph",
+            "text": "(86) International Application No Filing Date",
+            "section": "",
+            "reading_order": 15,
+            "bbox": {
+              "x1": 0.058,
+              "y1": 0.29,
+              "x2": 0.159,
+              "y2": 0.314
+            }
+          },
+          {
+            "chunk_id": "p1_n16",
+            "type": "paragraph",
+            "text": ":NA\n:NA",
+            "section": "",
+            "reading_order": 16,
+            "bbox": {
+              "x1": 0.205,
+              "y1": 0.29,
+              "x2": 0.229,
+              "y2": 0.314
+            }
+          },
+          {
+            "chunk_id": "p1_n17",
+            "type": "paragraph",
+            "text": "(61) Patent of Addition to Application Number Filing Date",
+            "section": "",
+            "reading_order": 17,
+            "bbox": {
+              "x1": 0.058,
+              "y1": 0.32,
+              "x2": 0.159,
+              "y2": 0.356
+            }
+          },
+          {
+            "chunk_id": "p1_n18",
+            "type": "paragraph",
+            "text": ":NA\n:NA",
+            "section": "",
+            "reading_order": 18,
+            "bbox": {
+              "x1": 0.205,
+              "y1": 0.32,
+              "x2": 0.229,
+              "y2": 0.344
+            }
+          },
+          {
+            "chunk_id": "p1_n19",
+            "type": "paragraph",
+            "text": "2)Mr. Anurag Bhatnagar\nAddress of Applicant :Assistant Professor (Senior Scale), Department of Information Technology, Manipal University Jaipur, Jaipur-Ajmer Express Highway, Dehmi Kalan, Near GVK Toll Plaza, Jaipur, Rajasthan 303007 Jaipur",
+            "section": "",
+            "reading_order": 19,
+            "bbox": {
+              "x1": 0.505,
+              "y1": 0.309,
+              "x2": 0.939,
+              "y2": 0.379
+            }
+          },
+          {
+            "chunk_id": "p1_n20",
+            "type": "paragraph",
+            "text": "(62) Divisional to Application Number Filing Date",
+            "section": "",
+            "reading_order": 20,
+            "bbox": {
+              "x1": 0.058,
+              "y1": 0.366,
+              "x2": 0.159,
+              "y2": 0.402
+            }
+          },
+          {
+            "chunk_id": "p1_n21",
+            "type": "paragraph",
+            "text": ":NA\n:NA",
+            "section": "",
+            "reading_order": 21,
+            "bbox": {
+              "x1": 0.205,
+              "y1": 0.366,
+              "x2": 0.229,
+              "y2": 0.39
+            }
+          },
+          {
+            "chunk_id": "p1_n22",
+            "type": "paragraph",
+            "text": "(57) Abstract :\nThe present invention relates to a chatbot that provides a digital, intuitive platform for farmers across the globe to access various farming solutions and details, such as Minimum Support Price (MSP) updates, contractor details, and crop-specific farming tips to boost yield and financial gains. The chatbot comprises a centralized platform where farmers can access all necessary information and solutions, including crop MSPs, farming tips, weather updates, and government schemes, without the need to navigate multiple platforms; Multilanguage support to make accessibility easy for farmers from diverse regions; and resource redirection to redirect farmers on government websites, FAQs, tutorials etc. which are verified. The chatbot provides a support-focused interface that delivers well-organized responses to a diverse range of queries. Additionally, it provides farmers with real-time updates on government schemes, financial assistance programs, and resources. By enabling this chatbot for farmers, this tool aims to provide A-Z solutions to farmers' problems. With this digital approach to catering to farmers, overall farming efficiency will be increased, making it an essential tool for the growth of the farming community.",
+            "section": "",
+            "reading_order": 22,
+            "bbox": {
+              "x1": 0.058,
+              "y1": 0.422,
+              "x2": 0.939,
+              "y2": 0.489
+            }
+          },
+          {
+            "chunk_id": "p1_n23",
+            "type": "paragraph",
+            "text": "No. of Pages : 13 No. of Claims : 4",
+            "section": "",
+            "reading_order": 23,
+            "bbox": {
+              "x1": 0.058,
+              "y1": 0.47,
+              "x2": 0.29,
+              "y2": 0.482
+            }
+          },
+          {
+            "chunk_id": "p1_n24",
+            "type": "footer",
+            "text": "The Patent Office Journal No. 16/2025 Dated 18/04/2025",
+            "section": "",
+            "reading_order": 24,
+            "bbox": {
+              "x1": 0.265,
+              "y1": 0.921,
+              "x2": 0.717,
+              "y2": 0.933
+            }
+          },
+          {
+            "chunk_id": "p1_n25",
+            "type": "footer",
+            "text": "36524",
+            "section": "",
+            "reading_order": 25,
+            "bbox": {
+              "x1": 0.893,
+              "y1": 0.921,
+              "x2": 0.939,
+              "y2": 0.933
+            }
+          }
+        ],
+        "edges": [
+          {
+            "from": "p1_n1",
+            "to": "p1_n2",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n2",
+            "to": "p1_n3",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n3",
+            "to": "p1_n4",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n4",
+            "to": "p1_n5",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n5",
+            "to": "p1_n6",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n6",
+            "to": "p1_n7",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n7",
+            "to": "p1_n8",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n8",
+            "to": "p1_n9",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n9",
+            "to": "p1_n10",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n10",
+            "to": "p1_n11",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n11",
+            "to": "p1_n12",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n12",
+            "to": "p1_n13",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n13",
+            "to": "p1_n14",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n14",
+            "to": "p1_n15",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n15",
+            "to": "p1_n16",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n16",
+            "to": "p1_n17",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n17",
+            "to": "p1_n18",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n18",
+            "to": "p1_n19",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n19",
+            "to": "p1_n20",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n20",
+            "to": "p1_n21",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n21",
+            "to": "p1_n22",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n22",
+            "to": "p1_n23",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n23",
+            "to": "p1_n24",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n24",
+            "to": "p1_n25",
+            "relation": "NEXT"
+          },
+          {
+            "from": "p1_n1",
+            "to": "p1_n3",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n1",
+            "to": "p1_n4",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n1",
+            "to": "p1_n5",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n1",
+            "to": "p1_n6",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n1",
+            "to": "p1_n7",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n2",
+            "to": "p1_n3",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n2",
+            "to": "p1_n4",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n2",
+            "to": "p1_n5",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n2",
+            "to": "p1_n6",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n2",
+            "to": "p1_n7",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n9",
+            "to": "p1_n2",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n3",
+            "to": "p1_n4",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n3",
+            "to": "p1_n5",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n3",
+            "to": "p1_n6",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n3",
+            "to": "p1_n7",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n3",
+            "to": "p1_n8",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n3",
+            "to": "p1_n9",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n3",
+            "to": "p1_n12",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n3",
+            "to": "p1_n14",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n3",
+            "to": "p1_n16",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n3",
+            "to": "p1_n18",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n3",
+            "to": "p1_n21",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n4",
+            "to": "p1_n6",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n4",
+            "to": "p1_n7",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n4",
+            "to": "p1_n8",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n4",
+            "to": "p1_n9",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n5",
+            "to": "p1_n6",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n5",
+            "to": "p1_n7",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n5",
+            "to": "p1_n8",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n5",
+            "to": "p1_n9",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n6",
+            "to": "p1_n7",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n6",
+            "to": "p1_n8",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n6",
+            "to": "p1_n9",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n6",
+            "to": "p1_n10",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n6",
+            "to": "p1_n11",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n6",
+            "to": "p1_n12",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n9",
+            "to": "p1_n7",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n7",
+            "to": "p1_n10",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n7",
+            "to": "p1_n11",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n7",
+            "to": "p1_n12",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n7",
+            "to": "p1_n13",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n7",
+            "to": "p1_n14",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n7",
+            "to": "p1_n15",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n7",
+            "to": "p1_n16",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n8",
+            "to": "p1_n9",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n8",
+            "to": "p1_n10",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n8",
+            "to": "p1_n11",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n8",
+            "to": "p1_n12",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n8",
+            "to": "p1_n13",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n8",
+            "to": "p1_n14",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n8",
+            "to": "p1_n15",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n8",
+            "to": "p1_n16",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n8",
+            "to": "p1_n18",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n8",
+            "to": "p1_n21",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n9",
+            "to": "p1_n10",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n9",
+            "to": "p1_n11",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n9",
+            "to": "p1_n12",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n9",
+            "to": "p1_n13",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n9",
+            "to": "p1_n14",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n9",
+            "to": "p1_n15",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n9",
+            "to": "p1_n16",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n9",
+            "to": "p1_n17",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n9",
+            "to": "p1_n18",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n9",
+            "to": "p1_n19",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n20",
+            "to": "p1_n9",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n10",
+            "to": "p1_n17",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n10",
+            "to": "p1_n18",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n10",
+            "to": "p1_n19",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n10",
+            "to": "p1_n20",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n10",
+            "to": "p1_n21",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n11",
+            "to": "p1_n12",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n11",
+            "to": "p1_n13",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n11",
+            "to": "p1_n14",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n11",
+            "to": "p1_n15",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n11",
+            "to": "p1_n16",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n11",
+            "to": "p1_n17",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n11",
+            "to": "p1_n18",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n11",
+            "to": "p1_n19",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n11",
+            "to": "p1_n21",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n12",
+            "to": "p1_n13",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n12",
+            "to": "p1_n14",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n12",
+            "to": "p1_n15",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n12",
+            "to": "p1_n16",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n12",
+            "to": "p1_n17",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n12",
+            "to": "p1_n18",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n12",
+            "to": "p1_n19",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n20",
+            "to": "p1_n12",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n12",
+            "to": "p1_n24",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n13",
+            "to": "p1_n14",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n13",
+            "to": "p1_n15",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n13",
+            "to": "p1_n16",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n13",
+            "to": "p1_n17",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n13",
+            "to": "p1_n18",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n13",
+            "to": "p1_n19",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n13",
+            "to": "p1_n20",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n13",
+            "to": "p1_n21",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n14",
+            "to": "p1_n15",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n14",
+            "to": "p1_n16",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n14",
+            "to": "p1_n17",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n14",
+            "to": "p1_n18",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n14",
+            "to": "p1_n19",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n14",
+            "to": "p1_n20",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n14",
+            "to": "p1_n21",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n14",
+            "to": "p1_n24",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n15",
+            "to": "p1_n16",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n15",
+            "to": "p1_n17",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n15",
+            "to": "p1_n18",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n15",
+            "to": "p1_n20",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n15",
+            "to": "p1_n21",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n16",
+            "to": "p1_n17",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n16",
+            "to": "p1_n18",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n16",
+            "to": "p1_n20",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n16",
+            "to": "p1_n21",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n16",
+            "to": "p1_n24",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n17",
+            "to": "p1_n18",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n17",
+            "to": "p1_n20",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n17",
+            "to": "p1_n21",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n17",
+            "to": "p1_n22",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n18",
+            "to": "p1_n20",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n18",
+            "to": "p1_n21",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n18",
+            "to": "p1_n22",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n18",
+            "to": "p1_n24",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n19",
+            "to": "p1_n22",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n19",
+            "to": "p1_n23",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n20",
+            "to": "p1_n21",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n20",
+            "to": "p1_n22",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n20",
+            "to": "p1_n23",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n21",
+            "to": "p1_n22",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n21",
+            "to": "p1_n23",
+            "relation": "ABOVE"
+          },
+          {
+            "from": "p1_n21",
+            "to": "p1_n24",
+            "relation": "LEFT_OF"
+          },
+          {
+            "from": "p1_n23",
+            "to": "p1_n22",
+            "relation": "INSIDE"
+          }
+        ],
+        "status": "success",
+        "metadata": {
+          "graph_truncated": false
+        }
+      }
+    ],
+    "edges": [],
+    "statistics": {
+      "page_count": 1,
+      "node_count": 25,
+      "edge_count": 155,
+      "vlm_success_pages": 1,
+      "ocr_fallback_pages": 0,
+      "failed_pages": 0,
+      "duration_seconds": 17.588
+    },
+    "document_metadata": {
+      "filename": "1563",
+      "file_type": "image",
+      "page_count": 1,
+      "parser": "gemini_vlm",
+      "created_at": "2026-07-05T12:36:59Z",
+      "pipeline_id": 1563
+    }
+  },
+  "parse_stats": {
+    "parser": "gemini_vlm",
+    "total_pages": 1,
+    "processed_pages": 1,
+    "vlm_pages": 1,
+    "ocr_pages": 0,
+    "failed_pages": 0,
+    "node_count": 25,
+    "edge_count": 155,
+    "duration_seconds": 18.94,
+    "memory_peak_mb": 629.265625,
+    "page_failures": [],
+    "timings": {
+      "rendering_duration": 0.0,
+      "vlm_extraction_duration": 0.0,
+      "ocr_fallback_duration": 0.0
+    }
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "table_detected": true,
+      "contains_signature": false,
+      "contains_handwriting": false,
+      "extraction_method": "vlm",
+      "parser_used": "gemini_vlm",
+      "node_count": 25
+    }
+  ],
+  "document_type": "MULTIMODAL",
+  "routing_confidence": 0.688
+}

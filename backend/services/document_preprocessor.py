@@ -96,6 +96,7 @@ Rules:
 - Keep text verbatim where possible.
 - If the page is blank, return an empty nodes array.
 - The response must be a single JSON object.
+- Do NOT transcribe horizontal dividing lines, borders, or page separators (such as long sequences of dashes, hyphens, underscores, or dots). Omit them entirely from the text.
 """
 
 
@@ -827,8 +828,11 @@ def _call_gemini_page_parser(
         "generationConfig": {
             "temperature": 0.0,
             "topP": 0.95,
-            "maxOutputTokens": 16384,  # increased from 8192
+            "maxOutputTokens": 32768,
             "responseMimeType": "application/json",
+            "thinkingConfig": {
+                "thinkingBudget": 0
+            }
         },
     }
     url = GEMINI_API_URL_TEMPLATE.format(model=GEMINI_MODEL_NAME, api_key=api_key)
@@ -836,6 +840,8 @@ def _call_gemini_page_parser(
 
     last_exception: Optional[BaseException] = None
     for attempt in range(max(1, retries)):
+        raw_text = ""
+        cleaned = ""
         try:
             _gemini_throttle()
             response = requests.post(url, headers=headers, json=body, timeout=timeout_seconds)
@@ -865,8 +871,30 @@ def _call_gemini_page_parser(
             # ========================================================================
 
             cleaned = _clean_json_text(raw_text)
+            logger.error(
+                f"JSON_SIZE={len(cleaned) if cleaned else 0} "
+                f"RAW_SIZE={len(raw_text) if raw_text else 0}"
+            )
             candidates = response_json.get("candidates", [])
             finish_reason = candidates[0].get("finishReason") if candidates else None
+
+            usage = response_json.get("usageMetadata", {})
+            prompt_tokens = usage.get("promptTokenCount", 0)
+            candidate_tokens = usage.get("candidatesTokenCount", 0)
+            thoughts_tokens = usage.get("thoughtsTokenCount", 0)
+            total_tokens = usage.get("totalTokenCount", 0)
+
+            logger.error(
+                f"\n========== VLM STATS ==========\n"
+                f"finish_reason={finish_reason}\n"
+                f"prompt_tokens={prompt_tokens}\n"
+                f"candidate_tokens={candidate_tokens}\n"
+                f"thoughts_tokens={thoughts_tokens}\n"
+                f"total_tokens={total_tokens}\n"
+                f"raw_length={len(raw_text) if raw_text else 0}\n"
+                f"===============================\n"
+            )
+
             if finish_reason and finish_reason != "STOP":
                 raise RuntimeError(f"Gemini generation failed: {finish_reason}")
 
@@ -919,11 +947,11 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
         return None
 
     try:
-        pil_image = _ensure_pil_image(image)
+        pil_image = _ensure_pil_image(image).convert("L")
         width, height = pil_image.size
 
         # Group words by block and paragraph to form paragraph-level nodes
-        data = pytesseract.image_to_data(pil_image, output_type=Output.DICT, config="--psm 6")
+        data = pytesseract.image_to_data(pil_image, output_type=Output.DICT, config="--oem 3 --psm 3")
         groups = {}
         n_boxes = len(data['level'])
         for i in range(n_boxes):
@@ -976,7 +1004,7 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
 
         if not nodes:
             # fallback: full page single node
-            full_text = pytesseract.image_to_string(pil_image, config="--psm 6").strip()
+            full_text = pytesseract.image_to_string(pil_image, config="--oem 3 --psm 3").strip()
             if not full_text:
                 return None
             node = {
@@ -1120,6 +1148,7 @@ def execute_vlm_document_graph_extraction(
             fallback_page = _ocr_fallback_page(image, page_number)
             if fallback_page is not None:
                 _trace(trace_fn, f"[VLM] OCR fallback succeeded on page {page_number}")
+                fallback_page["fallback_reason"] = str(exc)
                 return fallback_page
             _trace(trace_fn, f"[VLM] OCR fallback failed on page {page_number}")
             return None

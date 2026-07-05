@@ -25,6 +25,44 @@ from services.reranker_service import rerank
 
 logger = logging.getLogger(__name__)
 
+def _qdrant_chunk_lookup(pipeline_id: int, file_id: int, chunk_id: str) -> dict | None:
+    try:
+        from services.vector_store import get_client
+        import qdrant_client.models as qmodels
+        import config
+        client = get_client()
+        must_filters = [
+            qmodels.FieldCondition(
+                key="chunk_id",
+                match=qmodels.MatchValue(value=chunk_id)
+            )
+        ]
+        if pipeline_id is not None:
+            must_filters.append(
+                qmodels.FieldCondition(
+                    key="pipeline_id",
+                    match=qmodels.MatchValue(value=int(pipeline_id))
+                )
+            )
+        res, _ = client.scroll(
+            collection_name=config.QDRANT_COLLECTION_NAME,
+            scroll_filter=qmodels.Filter(must=must_filters),
+            limit=1,
+            with_payload=True,
+            with_vectors=False
+        )
+        if res:
+            point = res[0]
+            payload = dict(point.payload)
+            payload["score"] = 1.0
+            return payload
+    except Exception as e:
+        logger.warning(f"Qdrant chunk lookup failed for chunk {chunk_id}: {e}")
+    return None
+
+from services.graph_expansion_service import set_chunk_lookup
+set_chunk_lookup(_qdrant_chunk_lookup)
+
 
 # ------------------------------------------------------------------------------
 # Query intent detection
@@ -266,6 +304,36 @@ def retrieve_and_rerank(
     # 8. Cross‑encoder rerank
     reranked = rerank(query, candidates_for_rerank, top_k=top_k)
     logger.info(f"[RERANK] Reranked down to {len(reranked)} results")
+
+    # 9. Group-expansion for structured entity lists (e.g. inventors, applicants, authors)
+    special_sections = {"inventor_info", "inventors", "applicant_info", "applicants", "author_info", "authors"}
+    top_sections = {r.get("section", "").lower() for r in reranked[:2] if r.get("section")}
+    matching_special = top_sections.intersection(special_sections)
+    if matching_special:
+        added_keys = {(r.get("pipeline_id"), r.get("file_id"), r.get("chunk_id")) for r in reranked}
+        for cand in candidates_for_rerank:
+            c_sec = cand.get("section", "").lower()
+            if c_sec in matching_special:
+                key = (cand.get("pipeline_id"), cand.get("file_id"), cand.get("chunk_id"))
+                if key not in added_keys:
+                    reranked.append(cand)
+                    added_keys.add(key)
+        logger.info(f"[ENTITY GROUPING] Expanded to {len(reranked)} chunks to include all entities in section: {matching_special}")
+
+    # Print debug log for evaluation
+    logger.info(
+        f"\n==================== RETRIEVAL FLOW EVALUATION ====================\n"
+        f"Query: {query}\n"
+        f"Retrieved candidate count: {len(merged)}\n"
+        f"Expanded candidate count: {len(expanded)}\n"
+        f"Reranked candidate count: {len(reranked)}\n"
+        f"Final context chunks: {[c.get('chunk_id') for c in reranked]}\n"
+        f"===================================================================\n"
+    )
+
+    # 10. Calibrate score for UI presentation (use dense_score representing cosine similarity)
+    for r in reranked:
+        r["score"] = r.get("dense_score") or r.get("score", 0.0)
 
     # Compute statistics – graph expansion count is net new
     graph_expansion_count = max(0, len(expanded) - len(merged))

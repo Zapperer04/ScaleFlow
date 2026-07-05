@@ -536,6 +536,16 @@ def chunk_document_graph(document_graph: dict) -> dict:
 
     # Extract pages
     pages = document_graph.get("pages", [])
+    
+    # Detect if the document is a patent
+    is_patent = False
+    all_text = ""
+    for page in pages:
+        for node in page.get("nodes", []):
+            all_text += node.get("text", "") + " "
+    if _is_patent_text(all_text):
+        is_patent = True
+
     for page in pages:
         page_number = page.get("page_number", 1)
         nodes = page.get("nodes", [])
@@ -547,6 +557,22 @@ def chunk_document_graph(document_graph: dict) -> dict:
             if not node_text.strip():
                 continue
             
+            if is_patent:
+                # Preserve whole nodes as semantic chunks for patent documents
+                chunks.append({
+                    "text": node_text,
+                    "metadata": {
+                        "section": node.get("section") or "unknown",
+                        "content_type": node.get("type", "paragraph"),
+                        "page_number": page_number,
+                        "chunk_id": node.get("chunk_id"),
+                        "node_type": node.get("type", "paragraph"),
+                        "token_count": len(node_text.split()),
+                        "char_count": len(node_text)
+                    }
+                })
+                continue
+
             # Chunk the node's text using the existing chunk_text function
             node_chunks = chunk_text(
                 node_text, 

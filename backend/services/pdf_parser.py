@@ -525,14 +525,23 @@ def parse_pdf(
     # 7. Compute final statistics
     # --------------------------------------------------------------------------
     duration = round(time.time() - start_time, 2)
-    vlm_pages = document_graph.get("statistics", {}).get("vlm_success_pages", 0) if vlm_success else 0
-    ocr_pages = document_graph.get("statistics", {}).get("ocr_fallback_pages", 0) if ocr_fallback_used else 0
+    vlm_pages = document_graph.get("statistics", {}).get("vlm_success_pages", 0) if (document_graph and vlm_success) else 0
+    ocr_pages = document_graph.get("statistics", {}).get("ocr_fallback_pages", 0) if (document_graph and (ocr_fallback_used or vlm_success)) else 0
     failed_pages = document_graph.get("statistics", {}).get("failed_pages", 0)
     node_count = document_graph.get("statistics", {}).get("node_count", sum(m["node_count"] for m in page_metadata))
     edge_count = document_graph.get("statistics", {}).get("edge_count", 0)
 
+    parser_name = "gemini_vlm"
+    if vlm_success:
+        if ocr_pages > 0:
+            parser_name = "ocr_fallback" if vlm_pages == 0 else "gemini_vlm_ocr_fallback"
+    elif ocr_fallback_used:
+        parser_name = "tesseract_ocr"
+    else:
+        parser_name = "none"
+
     stats = {
-        "parser": "gemini_vlm" if vlm_success else "tesseract_ocr" if ocr_fallback_used else "none",
+        "parser": parser_name,
         "total_pages": total_pages,
         "processed_pages": len(images),
         "vlm_pages": vlm_pages,

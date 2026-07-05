@@ -685,7 +685,7 @@ def handle_generate_embeddings(payload, input_artifacts):
                 pipeline_id=pipeline_id,
                 file_id=file_id,
                 task_id=task_id,
-                chunks=batch_texts,   # still pass plain text for legacy compatibility
+                chunks=batch_data,
                 vectors=batch_vectors,
                 metadata=meta_dict,
                 collection_name=config.QDRANT_COLLECTION_NAME,
@@ -698,7 +698,7 @@ def handle_generate_embeddings(payload, input_artifacts):
             # Paragraph/Tables collections remain as before
             p_indices = [idx for idx, m in enumerate(batch_meta) if m.get("content_type") != "table"]
             if p_indices:
-                p_chunks = [batch_texts[idx] for idx in p_indices]
+                p_chunks = [batch_data[idx] for idx in p_indices]
                 p_vectors = [batch_vectors[idx] for idx in p_indices]
                 p_meta = [batch_meta[idx] for idx in p_indices]
                 meta_dict_p = {
@@ -719,7 +719,7 @@ def handle_generate_embeddings(payload, input_artifacts):
 
             t_indices = [idx for idx, m in enumerate(batch_meta) if m.get("content_type") == "table"]
             if t_indices:
-                t_chunks = [batch_texts[idx] for idx in t_indices]
+                t_chunks = [batch_data[idx] for idx in t_indices]
                 t_vectors = [batch_vectors[idx] for idx in t_indices]
                 t_meta = [batch_meta[idx] for idx in t_indices]
                 meta_dict_t = {
@@ -1017,7 +1017,7 @@ def handle_generate_answer_report(payload, input_artifacts):
     results: list[Any] = context_data.get("results", [])
     min_score = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.3"))
     try:
-        valid_results = [r for r in results if float(r.get("score") or 0.0) >= min_score or r.get("chunk_index") == -1]
+        valid_results = [r for r in results if float(r.get("dense_score") or r.get("score") or 0.0) >= min_score or r.get("chunk_index") == -1]
     except Exception as e:
         print(f"[{WORKER_ID}] [ERROR] Filtering results failed: {e}. Results: {results}", flush=True)
         valid_results = []

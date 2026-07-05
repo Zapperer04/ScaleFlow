@@ -273,10 +273,11 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             chunk_text = chunk_data.get("text", "")
             embedding_text = chunk_data.get("embedding_text", chunk_text)
             bm25_text = chunk_data.get("bm25_text", chunk_text)
-            chunk_id = chunk_data.get("chunk_id")
-            section = chunk_data.get("section", "unknown")
-            content_type = chunk_data.get("content_type", "paragraph")
-            section_path = chunk_data.get("section_path", "")
+            chunk_meta = chunk_data.get("metadata", {}) or {}
+            chunk_id = chunk_data.get("chunk_id") or chunk_meta.get("chunk_id")
+            section = chunk_data.get("section") or chunk_meta.get("section") or "unknown"
+            content_type = chunk_data.get("content_type") or chunk_meta.get("content_type") or "paragraph"
+            section_path = chunk_data.get("section_path") or chunk_meta.get("section_path") or ""
 
             # Normalize list-based fields to strings to ensure compatibility
             raw_neighbors = chunk_data.get("neighbors", [])

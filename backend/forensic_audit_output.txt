@@ -1,0 +1,2520 @@
+==================== PHASE 1: DOCUMENT GRAPH QUALITY ====================
+Total Nodes: 25
+Total Edges: 155
+Node Types: ['footer', 'header', 'paragraph']
+Section Labels: ['']
+Graph Metadata: {}
+Page Metadata: Width=1390, Height=1799
+
+--- NODES DUMP ---
+{
+  "chunk_id": "p1_n1",
+  "node_type": "header",
+  "section": "",
+  "text": "(12) PATENT APPLICATION PUBLICATION...",
+  "bbox": {
+    "x1": 0.058,
+    "y1": 0.05,
+    "x2": 0.359,
+    "y2": 0.062
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n2",
+  "node_type": "header",
+  "section": "",
+  "text": "(21) Application No.202511028901 A...",
+  "bbox": {
+    "x1": 0.505,
+    "y1": 0.05,
+    "x2": 0.701,
+    "y2": 0.062
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n3",
+  "node_type": "header",
+  "section": "",
+  "text": "(19) INDIA...",
+  "bbox": {
+    "x1": 0.058,
+    "y1": 0.07,
+    "x2": 0.12,
+    "y2": 0.082
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n4",
+  "node_type": "header",
+  "section": "",
+  "text": "(22) Date of filing of Application :27/03/2025...",
+  "bbox": {
+    "x1": 0.058,
+    "y1": 0.089,
+    "x2": 0.302,
+    "y2": 0.101
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n5",
+  "node_type": "header",
+  "section": "",
+  "text": "(43) Publication Date : 18/04/2025...",
+  "bbox": {
+    "x1": 0.505,
+    "y1": 0.089,
+    "x2": 0.68,
+    "y2": 0.101
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n6",
+  "node_type": "paragraph",
+  "section": "",
+  "text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH EFFICIENT TRADE, LEAR...",
+  "bbox": {
+    "x1": 0.058,
+    "y1": 0.129,
+    "x2": 0.916,
+    "y2": 0.153
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n7",
+  "node_type": "paragraph",
+  "section": "",
+  "text": "(71)Name of Applicant :\n1)Manipal University Jaipur\nAddress of Applicant :Manipal University Jaipur,...",
+  "bbox": {
+    "x1": 0.505,
+    "y1": 0.159,
+    "x2": 0.939,
+    "y2": 0.209
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n8",
+  "node_type": "paragraph",
+  "section": "",
+  "text": "(51) International classification...",
+  "bbox": {
+    "x1": 0.058,
+    "y1": 0.175,
+    "x2": 0.159,
+    "y2": 0.199
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n9",
+  "node_type": "paragraph",
+  "section": "",
+  "text": ":H04L0051020000, G06Q0050020000, A61P0031100000, G06Q0040040000, A61K0036539000...",
+  "bbox": {
+    "x1": 0.205,
+    "y1": 0.175,
+    "x2": 0.45,
+    "y2": 0.225
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n10",
+  "node_type": "paragraph",
+  "section": "",
+  "text": "Name of Applicant : NA\nAddress of Applicant : NA\n(72)Name of Inventor :\n1)Mr. Kaustav Kumar\nAddress ...",
+  "bbox": {
+    "x1": 0.505,
+    "y1": 0.229,
+    "x2": 0.939,
+    "y2": 0.299
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n11",
+  "node_type": "paragraph",
+  "section": "",
+  "text": "(19) International Filing Date...",
+  "bbox": {
+    "x1": 0.058,
+    "y1": 0.23,
+    "x2": 0.159,
+    "y2": 0.254
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n12",
+  "node_type": "paragraph",
+  "section": "",
+  "text": ":NA...",
+  "bbox": {
+    "x1": 0.205,
+    "y1": 0.23,
+    "x2": 0.229,
+    "y2": 0.242
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n13",
+  "node_type": "paragraph",
+  "section": "",
+  "text": "(87) International Publication No...",
+  "bbox": {
+    "x1": 0.058,
+    "y1": 0.26,
+    "x2": 0.159,
+    "y2": 0.284
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n14",
+  "node_type": "paragraph",
+  "section": "",
+  "text": ": NA...",
+  "bbox": {
+    "x1": 0.205,
+    "y1": 0.26,
+    "x2": 0.229,
+    "y2": 0.272
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n15",
+  "node_type": "paragraph",
+  "section": "",
+  "text": "(86) International Application No Filing Date...",
+  "bbox": {
+    "x1": 0.058,
+    "y1": 0.29,
+    "x2": 0.159,
+    "y2": 0.314
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n16",
+  "node_type": "paragraph",
+  "section": "",
+  "text": ":NA\n:NA...",
+  "bbox": {
+    "x1": 0.205,
+    "y1": 0.29,
+    "x2": 0.229,
+    "y2": 0.314
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n17",
+  "node_type": "paragraph",
+  "section": "",
+  "text": "(61) Patent of Addition to Application Number Filing Date...",
+  "bbox": {
+    "x1": 0.058,
+    "y1": 0.32,
+    "x2": 0.159,
+    "y2": 0.356
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n18",
+  "node_type": "paragraph",
+  "section": "",
+  "text": ":NA\n:NA...",
+  "bbox": {
+    "x1": 0.205,
+    "y1": 0.32,
+    "x2": 0.229,
+    "y2": 0.344
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n19",
+  "node_type": "paragraph",
+  "section": "",
+  "text": "2)Mr. Anurag Bhatnagar\nAddress of Applicant :Assistant Professor (Senior Scale), Department of Infor...",
+  "bbox": {
+    "x1": 0.505,
+    "y1": 0.309,
+    "x2": 0.939,
+    "y2": 0.379
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n20",
+  "node_type": "paragraph",
+  "section": "",
+  "text": "(62) Divisional to Application Number Filing Date...",
+  "bbox": {
+    "x1": 0.058,
+    "y1": 0.366,
+    "x2": 0.159,
+    "y2": 0.402
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n21",
+  "node_type": "paragraph",
+  "section": "",
+  "text": ":NA\n:NA...",
+  "bbox": {
+    "x1": 0.205,
+    "y1": 0.366,
+    "x2": 0.229,
+    "y2": 0.39
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n22",
+  "node_type": "paragraph",
+  "section": "",
+  "text": "(57) Abstract :\nThe present invention relates to a chatbot that provides a digital, intuitive platfo...",
+  "bbox": {
+    "x1": 0.058,
+    "y1": 0.422,
+    "x2": 0.939,
+    "y2": 0.489
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n23",
+  "node_type": "paragraph",
+  "section": "",
+  "text": "No. of Pages : 13 No. of Claims : 4...",
+  "bbox": {
+    "x1": 0.058,
+    "y1": 0.47,
+    "x2": 0.29,
+    "y2": 0.482
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n24",
+  "node_type": "footer",
+  "section": "",
+  "text": "The Patent Office Journal No. 16/2025 Dated 18/04/2025...",
+  "bbox": {
+    "x1": 0.265,
+    "y1": 0.921,
+    "x2": 0.717,
+    "y2": 0.933
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+{
+  "chunk_id": "p1_n25",
+  "node_type": "footer",
+  "section": "",
+  "text": "36524...",
+  "bbox": {
+    "x1": 0.893,
+    "y1": 0.921,
+    "x2": 0.939,
+    "y2": 0.933
+  },
+  "neighbors": null,
+  "semantic_parent": null,
+  "metadata": null
+}
+==================== PHASE 2: CHUNKING QUALITY ====================
+Total Chunks: 25
+
+--- CHUNKS DUMP ---
+{
+  "chunk_index": 0,
+  "chunk_text": "(12) PATENT APPLICATION PUBLICATION...",
+  "section": "unknown",
+  "node_type": "header",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "header",
+    "page_number": 1,
+    "chunk_id": "p1_n1",
+    "node_type": "header",
+    "token_count": 4,
+    "char_count": 35
+  }
+}
+{
+  "chunk_index": 1,
+  "chunk_text": "(21) Application No.202511028901 A...",
+  "section": "unknown",
+  "node_type": "header",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "header",
+    "page_number": 1,
+    "chunk_id": "p1_n2",
+    "node_type": "header",
+    "token_count": 4,
+    "char_count": 34
+  }
+}
+{
+  "chunk_index": 2,
+  "chunk_text": "(19) INDIA...",
+  "section": "unknown",
+  "node_type": "header",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "header",
+    "page_number": 1,
+    "chunk_id": "p1_n3",
+    "node_type": "header",
+    "token_count": 2,
+    "char_count": 10
+  }
+}
+{
+  "chunk_index": 3,
+  "chunk_text": "(22) Date of filing of Application :27/03/2025...",
+  "section": "unknown",
+  "node_type": "header",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "header",
+    "page_number": 1,
+    "chunk_id": "p1_n4",
+    "node_type": "header",
+    "token_count": 7,
+    "char_count": 46
+  }
+}
+{
+  "chunk_index": 4,
+  "chunk_text": "(43) Publication Date : 18/04/2025...",
+  "section": "unknown",
+  "node_type": "header",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "header",
+    "page_number": 1,
+    "chunk_id": "p1_n5",
+    "node_type": "header",
+    "token_count": 5,
+    "char_count": 34
+  }
+}
+{
+  "chunk_index": 5,
+  "chunk_text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH EFFICIENT TRADE, LEAR...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n6",
+    "node_type": "paragraph",
+    "token_count": 19,
+    "char_count": 132
+  }
+}
+{
+  "chunk_index": 6,
+  "chunk_text": "(71)Name of Applicant :\n1)Manipal University Jaipur\nAddress of Applicant :Manipal University Jaipur,...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n7",
+    "node_type": "paragraph",
+    "token_count": 23,
+    "char_count": 187
+  }
+}
+{
+  "chunk_index": 7,
+  "chunk_text": "(51) International classification...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n8",
+    "node_type": "paragraph",
+    "token_count": 3,
+    "char_count": 33
+  }
+}
+{
+  "chunk_index": 8,
+  "chunk_text": ":H04L0051020000, G06Q0050020000, A61P0031100000, G06Q0040040000, A61K0036539000...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n9",
+    "node_type": "paragraph",
+    "token_count": 5,
+    "char_count": 79
+  }
+}
+{
+  "chunk_index": 9,
+  "chunk_text": "Name of Applicant : NA\nAddress of Applicant : NA\n(72)Name of Inventor :\n1)Mr. Kaustav Kumar\nAddress ...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n10",
+    "node_type": "paragraph",
+    "token_count": 43,
+    "char_count": 293
+  }
+}
+{
+  "chunk_index": 10,
+  "chunk_text": "(19) International Filing Date...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n11",
+    "node_type": "paragraph",
+    "token_count": 4,
+    "char_count": 30
+  }
+}
+{
+  "chunk_index": 11,
+  "chunk_text": ":NA...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n12",
+    "node_type": "paragraph",
+    "token_count": 1,
+    "char_count": 3
+  }
+}
+{
+  "chunk_index": 12,
+  "chunk_text": "(87) International Publication No...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n13",
+    "node_type": "paragraph",
+    "token_count": 4,
+    "char_count": 33
+  }
+}
+{
+  "chunk_index": 13,
+  "chunk_text": ": NA...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n14",
+    "node_type": "paragraph",
+    "token_count": 2,
+    "char_count": 4
+  }
+}
+{
+  "chunk_index": 14,
+  "chunk_text": "(86) International Application No Filing Date...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n15",
+    "node_type": "paragraph",
+    "token_count": 6,
+    "char_count": 45
+  }
+}
+{
+  "chunk_index": 15,
+  "chunk_text": ":NA\n:NA...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n16",
+    "node_type": "paragraph",
+    "token_count": 2,
+    "char_count": 7
+  }
+}
+{
+  "chunk_index": 16,
+  "chunk_text": "(61) Patent of Addition to Application Number Filing Date...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n17",
+    "node_type": "paragraph",
+    "token_count": 9,
+    "char_count": 57
+  }
+}
+{
+  "chunk_index": 17,
+  "chunk_text": ":NA\n:NA...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n18",
+    "node_type": "paragraph",
+    "token_count": 2,
+    "char_count": 7
+  }
+}
+{
+  "chunk_index": 18,
+  "chunk_text": "2)Mr. Anurag Bhatnagar\nAddress of Applicant :Assistant Professor (Senior Scale), Department of Infor...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n19",
+    "node_type": "paragraph",
+    "token_count": 30,
+    "char_count": 241
+  }
+}
+{
+  "chunk_index": 19,
+  "chunk_text": "(62) Divisional to Application Number Filing Date...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n20",
+    "node_type": "paragraph",
+    "token_count": 7,
+    "char_count": 49
+  }
+}
+{
+  "chunk_index": 20,
+  "chunk_text": ":NA\n:NA...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n21",
+    "node_type": "paragraph",
+    "token_count": 2,
+    "char_count": 7
+  }
+}
+{
+  "chunk_index": 21,
+  "chunk_text": "(57) Abstract :\nThe present invention relates to a chatbot that provides a digital, intuitive platfo...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n22",
+    "node_type": "paragraph",
+    "token_count": 178,
+    "char_count": 1252
+  }
+}
+{
+  "chunk_index": 22,
+  "chunk_text": "No. of Pages : 13 No. of Claims : 4...",
+  "section": "unknown",
+  "node_type": "paragraph",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "paragraph",
+    "page_number": 1,
+    "chunk_id": "p1_n23",
+    "node_type": "paragraph",
+    "token_count": 10,
+    "char_count": 35
+  }
+}
+{
+  "chunk_index": 23,
+  "chunk_text": "The Patent Office Journal No. 16/2025 Dated 18/04/2025...",
+  "section": "unknown",
+  "node_type": "footer",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "footer",
+    "page_number": 1,
+    "chunk_id": "p1_n24",
+    "node_type": "footer",
+    "token_count": 8,
+    "char_count": 54
+  }
+}
+{
+  "chunk_index": 24,
+  "chunk_text": "36524...",
+  "section": "unknown",
+  "node_type": "footer",
+  "semantic_parent": null,
+  "neighbors": [],
+  "metadata": {
+    "section": "unknown",
+    "content_type": "footer",
+    "page_number": 1,
+    "chunk_id": "p1_n25",
+    "node_type": "footer",
+    "token_count": 1,
+    "char_count": 5
+  }
+}
+==================== PHASE 3: QDRANT STORAGE AUDIT ====================
+Qdrant collection: scaleflow_chunks
+Found 25 points for pipeline 549 in Qdrant
+{
+  "id": "08b654c8-23d5-5dcf-a03d-3904c624353d",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 11,
+    "chunk_text": ":NA",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.805244",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "08b654c8-23d5-5dcf-a03d-3904c624353d",
+    "text": ":NA",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": ":NA",
+    "bm25_text": ":NA",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 3,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "207b4e5d-37e2-5667-8c8b-0bc8d12910ed",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 21,
+    "chunk_text": "(57) Abstract :\nThe present invention relates to a chatbot that provides a digital, intuitive platfo...",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.806039",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "207b4e5d-37e2-5667-8c8b-0bc8d12910ed",
+    "text": "(57) Abstract :\nThe present invention relates to a chatbot that provides a digital, intuitive platfo...",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "(57) Abstract :\nThe present invention relates to a chatbot that provides a digital, intuitive platfo...",
+    "bm25_text": "(57) Abstract :\nThe present invention relates to a chatbot that provides a digital, intuitive platfo...",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 1252,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "2c4c1a85-c211-5510-8eae-28e0d7614c81",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 7,
+    "chunk_text": "(51) International classification",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.804919",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "2c4c1a85-c211-5510-8eae-28e0d7614c81",
+    "text": "(51) International classification",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "(51) International classification",
+    "bm25_text": "(51) International classification",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 33,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "3a5ef383-9910-5436-9ee3-7d5e7bed211b",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 17,
+    "chunk_text": ":NA\n:NA",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.805748",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "3a5ef383-9910-5436-9ee3-7d5e7bed211b",
+    "text": ":NA\n:NA",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": ":NA\n:NA",
+    "bm25_text": ":NA\n:NA",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 7,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "445e238d-5925-5086-868f-d77f35d0a358",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 20,
+    "chunk_text": ":NA\n:NA",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.805971",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "445e238d-5925-5086-868f-d77f35d0a358",
+    "text": ":NA\n:NA",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": ":NA\n:NA",
+    "bm25_text": ":NA\n:NA",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 7,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "5cf9d3fc-f7fb-565b-be98-a5ba236a5704",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 15,
+    "chunk_text": ":NA\n:NA",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.805595",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "5cf9d3fc-f7fb-565b-be98-a5ba236a5704",
+    "text": ":NA\n:NA",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": ":NA\n:NA",
+    "bm25_text": ":NA\n:NA",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 7,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "61a7432c-5edc-56fa-94bd-2410ad715528",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 5,
+    "chunk_text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH EFFICIENT TRADE, LEAR...",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.804674",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "61a7432c-5edc-56fa-94bd-2410ad715528",
+    "text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH EFFICIENT TRADE, LEAR...",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH EFFICIENT TRADE, LEAR...",
+    "bm25_text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH EFFICIENT TRADE, LEAR...",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 132,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "65381cbe-163c-5d75-a351-61614fbc7abf",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 14,
+    "chunk_text": "(86) International Application No Filing Date",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.805518",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "65381cbe-163c-5d75-a351-61614fbc7abf",
+    "text": "(86) International Application No Filing Date",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "(86) International Application No Filing Date",
+    "bm25_text": "(86) International Application No Filing Date",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 45,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "66ce623b-f605-5833-92cb-b3b3e04acf44",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 23,
+    "chunk_text": "The Patent Office Journal No. 16/2025 Dated 18/04/2025",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.806228",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "66ce623b-f605-5833-92cb-b3b3e04acf44",
+    "text": "The Patent Office Journal No. 16/2025 Dated 18/04/2025",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "The Patent Office Journal No. 16/2025 Dated 18/04/2025",
+    "bm25_text": "The Patent Office Journal No. 16/2025 Dated 18/04/2025",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 54,
+    "node_type": "footer",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "7085fb65-af68-5df8-8229-19cd4400a200",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 12,
+    "chunk_text": "(87) International Publication No",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.805340",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "7085fb65-af68-5df8-8229-19cd4400a200",
+    "text": "(87) International Publication No",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "(87) International Publication No",
+    "bm25_text": "(87) International Publication No",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 33,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "789b0e1f-ccf8-5b89-ba2c-3a62bd6c9190",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 3,
+    "chunk_text": "(22) Date of filing of Application :27/03/2025",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.804381",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "789b0e1f-ccf8-5b89-ba2c-3a62bd6c9190",
+    "text": "(22) Date of filing of Application :27/03/2025",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "(22) Date of filing of Application :27/03/2025",
+    "bm25_text": "(22) Date of filing of Application :27/03/2025",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 46,
+    "node_type": "header",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "810e2b46-29c5-589d-9acc-b6a4a8458d9a",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 0,
+    "chunk_text": "(12) PATENT APPLICATION PUBLICATION",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.802885",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "810e2b46-29c5-589d-9acc-b6a4a8458d9a",
+    "text": "(12) PATENT APPLICATION PUBLICATION",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "(12) PATENT APPLICATION PUBLICATION",
+    "bm25_text": "(12) PATENT APPLICATION PUBLICATION",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 35,
+    "node_type": "header",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "858e747e-d030-54bc-8a76-81f2957ad0ce",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 9,
+    "chunk_text": "Name of Applicant : NA\nAddress of Applicant : NA\n(72)Name of Inventor :\n1)Mr. Kaustav Kumar\nAddress ...",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.805112",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "858e747e-d030-54bc-8a76-81f2957ad0ce",
+    "text": "Name of Applicant : NA\nAddress of Applicant : NA\n(72)Name of Inventor :\n1)Mr. Kaustav Kumar\nAddress ...",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "Name of Applicant : NA\nAddress of Applicant : NA\n(72)Name of Inventor :\n1)Mr. Kaustav Kumar\nAddress ...",
+    "bm25_text": "Name of Applicant : NA\nAddress of Applicant : NA\n(72)Name of Inventor :\n1)Mr. Kaustav Kumar\nAddress ...",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 293,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "8bde7830-c777-51bc-9591-b2425d988cd5",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 22,
+    "chunk_text": "No. of Pages : 13 No. of Claims : 4",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.806103",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "8bde7830-c777-51bc-9591-b2425d988cd5",
+    "text": "No. of Pages : 13 No. of Claims : 4",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "No. of Pages : 13 No. of Claims : 4",
+    "bm25_text": "No. of Pages : 13 No. of Claims : 4",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 35,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "8c45319c-0c1e-5546-a6d7-f3098b0df01d",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 24,
+    "chunk_text": "36524",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.806322",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "8c45319c-0c1e-5546-a6d7-f3098b0df01d",
+    "text": "36524",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "36524",
+    "bm25_text": "36524",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 5,
+    "node_type": "footer",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "935d3edc-f205-5f1a-ac02-d12ca316c318",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 19,
+    "chunk_text": "[Section: p1_n20 > Bibliographic Data] (62) Divisional to Application Number Filing Date",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.805904",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "935d3edc-f205-5f1a-ac02-d12ca316c318",
+    "text": "[Section: p1_n20 > Bibliographic Data] (62) Divisional to Application Number Filing Date",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "[Section: p1_n20 > Bibliographic Data] (62) Divisional to Application Number Filing Date",
+    "bm25_text": "[Section: p1_n20 > Bibliographic Data] (62) Divisional to Application Number Filing Date",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0",
+    "child_chunk_id": "p1_s0_c0",
+    "char_count": 88,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "9aaf5da8-ea86-5568-8393-4a60dcfa12b3",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 8,
+    "chunk_text": ":H04L0051020000, G06Q0050020000, A61P0031100000, G06Q0040040000, A61K0036539000",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.805046",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "9aaf5da8-ea86-5568-8393-4a60dcfa12b3",
+    "text": ":H04L0051020000, G06Q0050020000, A61P0031100000, G06Q0040040000, A61K0036539000",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": ":H04L0051020000, G06Q0050020000, A61P0031100000, G06Q0040040000, A61K0036539000",
+    "bm25_text": ":H04L0051020000, G06Q0050020000, A61P0031100000, G06Q0040040000, A61K0036539000",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 79,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "b9f24415-3507-5c34-ab08-50dc617a97f3",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 16,
+    "chunk_text": "[Section: p1_n17 > Bibliographic Data] (61) Patent of Addition to Application Number Filing Date",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.805664",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "b9f24415-3507-5c34-ab08-50dc617a97f3",
+    "text": "[Section: p1_n17 > Bibliographic Data] (61) Patent of Addition to Application Number Filing Date",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "[Section: p1_n17 > Bibliographic Data] (61) Patent of Addition to Application Number Filing Date",
+    "bm25_text": "[Section: p1_n17 > Bibliographic Data] (61) Patent of Addition to Application Number Filing Date",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0",
+    "child_chunk_id": "p1_s0_c0",
+    "char_count": 96,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "c3c66f9f-516f-5c7f-a756-0704238016c8",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 6,
+    "chunk_text": "(71)Name of Applicant :\n1)Manipal University Jaipur\nAddress of Applicant :Manipal University Jaipur,...",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.804759",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "c3c66f9f-516f-5c7f-a756-0704238016c8",
+    "text": "(71)Name of Applicant :\n1)Manipal University Jaipur\nAddress of Applicant :Manipal University Jaipur,...",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "(71)Name of Applicant :\n1)Manipal University Jaipur\nAddress of Applicant :Manipal University Jaipur,...",
+    "bm25_text": "(71)Name of Applicant :\n1)Manipal University Jaipur\nAddress of Applicant :Manipal University Jaipur,...",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 187,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "d00c3a1d-4fe9-581a-95af-23204c6d3541",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 10,
+    "chunk_text": "(19) International Filing Date",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.805170",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "d00c3a1d-4fe9-581a-95af-23204c6d3541",
+    "text": "(19) International Filing Date",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "(19) International Filing Date",
+    "bm25_text": "(19) International Filing Date",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 30,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "dad6ecaf-3756-5bea-a20d-fd4d6f2fc993",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 4,
+    "chunk_text": "(43) Publication Date : 18/04/2025",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.804596",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "dad6ecaf-3756-5bea-a20d-fd4d6f2fc993",
+    "text": "(43) Publication Date : 18/04/2025",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "(43) Publication Date : 18/04/2025",
+    "bm25_text": "(43) Publication Date : 18/04/2025",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 34,
+    "node_type": "header",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "e0ec7950-9043-5b71-bea6-04a07a2d776c",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 2,
+    "chunk_text": "(19) INDIA",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.804282",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "e0ec7950-9043-5b71-bea6-04a07a2d776c",
+    "text": "(19) INDIA",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "(19) INDIA",
+    "bm25_text": "(19) INDIA",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 10,
+    "node_type": "header",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "ee6b66d8-d831-55ca-bde6-d6dac842de31",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 18,
+    "chunk_text": "2)Mr. Anurag Bhatnagar\nAddress of Applicant :Assistant Professor (Senior Scale), Department of Infor...",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.805827",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "ee6b66d8-d831-55ca-bde6-d6dac842de31",
+    "text": "2)Mr. Anurag Bhatnagar\nAddress of Applicant :Assistant Professor (Senior Scale), Department of Infor...",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "2)Mr. Anurag Bhatnagar\nAddress of Applicant :Assistant Professor (Senior Scale), Department of Infor...",
+    "bm25_text": "2)Mr. Anurag Bhatnagar\nAddress of Applicant :Assistant Professor (Senior Scale), Department of Infor...",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 241,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "f8d3ad64-027c-5993-90e8-2f72e002cffd",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 13,
+    "chunk_text": ": NA",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.805426",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "f8d3ad64-027c-5993-90e8-2f72e002cffd",
+    "text": ": NA",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": ": NA",
+    "bm25_text": ": NA",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 4,
+    "node_type": "paragraph",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+{
+  "id": "fa000428-fb5c-5520-bef3-0b2ebdf46026",
+  "payload": {
+    "pipeline_id": 549,
+    "file_id": 178,
+    "task_id": 1567,
+    "chunk_index": 1,
+    "chunk_text": "(21) Application No.202511028901 A",
+    "source_artifact_id": 1476,
+    "original_filename": "PBL_Patent.pdf",
+    "created_at": "2026-07-05T12:37:43.804138",
+    "document_id": 178,
+    "filename": "PBL_Patent.pdf",
+    "chunk_id": "fa000428-fb5c-5520-bef3-0b2ebdf46026",
+    "text": "(21) Application No.202511028901 A",
+    "section": "unknown",
+    "content_type": "paragraph",
+    "token_count": 0,
+    "page_number": 0,
+    "embedding_text": "(21) Application No.202511028901 A",
+    "bm25_text": "(21) Application No.202511028901 A",
+    "node_ids": [],
+    "neighbors": [],
+    "cross_refs": {},
+    "semantic_parent": null,
+    "semantic_children": [],
+    "entities": [],
+    "keywords": [],
+    "section_path": "",
+    "graph_depth": 0,
+    "importance_score": 0.0,
+    "bbox": {},
+    "pages": [],
+    "prev_page_number": null,
+    "next_page_number": 2,
+    "parent_chunk_id": "p1_s0_pa0",
+    "child_chunk_id": "p1_s0_pa0_c0",
+    "char_count": 34,
+    "node_type": "header",
+    "collection_source": "paragraphs"
+  },
+  "vector_size": 768,
+  "metadata": {
+    "section_exists": true,
+    "node_type_exists": true,
+    "semantic_parent_exists": true,
+    "neighbors_exist": true,
+    "pipeline_id_exists": true,
+    "document_id_exists": true
+  }
+}
+==================== PHASES 4-8: AUDIT QUERIES RUNNER ====================
+
+========================================
+QUERY: who are the inventors
+========================================
+[RETRIEVAL] SEARCHING COLLECTIONS: ['scaleflow_paragraphs'] for query: 'who are the inventors'
+RETRIEVED CANDIDATES AFTER EXPANSION & RERANKING:
+{
+  "chunk_id": "858e747e-d030-54bc-8a76-81f2957ad0ce",
+  "dense_score": 0.6402,
+  "bm25_score": null,
+  "rerank_score": 0.04319394489867225,
+  "final_score": 0.6402,
+  "section": "unknown",
+  "text": "Name of Applicant : NA\nAddress of Applicant : NA\n(72)Name of Inventor :\n1)Mr. Kaustav Kumar\nAddress of Applicant :B.TECH..."
+}
+{
+  "chunk_id": "207b4e5d-37e2-5667-8c8b-0bc8d12910ed",
+  "dense_score": 0.4001,
+  "bm25_score": null,
+  "rerank_score": 0.0013515989591869617,
+  "final_score": 0.4001,
+  "section": "unknown",
+  "text": "(57) Abstract :\nThe present invention relates to a chatbot that provides a digital, intuitive platform for farmers acros..."
+}
+{
+  "chunk_id": "61a7432c-5edc-56fa-94bd-2410ad715528",
+  "dense_score": 0.5251,
+  "bm25_score": null,
+  "rerank_score": 0.001164350352417766,
+  "final_score": 0.5251,
+  "section": "unknown",
+  "text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH EFFICIENT TRADE, LEARNING, AND PRODUCTIVI..."
+}
+{
+  "chunk_id": "66ce623b-f605-5833-92cb-b3b3e04acf44",
+  "dense_score": 0.5577,
+  "bm25_score": null,
+  "rerank_score": 2.1387129558831786e-05,
+  "final_score": 0.5577,
+  "section": "unknown",
+  "text": "The Patent Office Journal No. 16/2025 Dated 18/04/2025..."
+}
+{
+  "chunk_id": "08b654c8-23d5-5dcf-a03d-3904c624353d",
+  "dense_score": 0.4756,
+  "bm25_score": null,
+  "rerank_score": 1.8299440220425145e-05,
+  "final_score": 0.4756,
+  "section": "unknown",
+  "text": ":NA..."
+}
+
+EXACT CONTEXT WINDOW FOR LLM:
+[Source 1]: Name of Applicant : NA
+Address of Applicant : NA
+(72)Name of Inventor :
+1)Mr. Kaustav Kumar
+Address of Applicant :B.TECH IT Student, Department of Information Technology, Manipal University Jaipur, Jaipur-Ajmer Express Highway, Dehmi Kalan, Near GVK Toll Plaza, Jaipur, Rajasthan 303007 Jaipur
+
+[Source 2]: (57) Abstract :
+The present invention relates to a chatbot that provides a digital, intuitive platform for farmers across the globe to access various farming solutions and details, such as Minimum Support Price (MSP) updates, contractor details, and crop-specific farming tips to boost yield and financial gains. The chatbot comprises a centralized platform where farmers can access all necessary information and solutions, including crop MSPs, farming tips, weather updates, and government schemes, without the need to navigate multiple platforms; Multilanguage support to make accessibility easy for farmers from diverse regions; and resource redirection to redirect farmers on g...
+
+GENERATED ANSWER (Groq (llama-3.1-8b-instant)):
+The inventors of the chatbot are Mr. Kaustav Kumar.
+
+========================================
+QUERY: what is this patent about
+========================================
+[RETRIEVAL] SEARCHING COLLECTIONS: ['scaleflow_paragraphs'] for query: 'what is this patent about'
+RETRIEVED CANDIDATES AFTER EXPANSION & RERANKING:
+{
+  "chunk_id": "b9f24415-3507-5c34-ab08-50dc617a97f3",
+  "dense_score": 0.6691,
+  "bm25_score": null,
+  "rerank_score": 0.0008131112833190874,
+  "final_score": 0.6691,
+  "section": "unknown",
+  "text": "[Section: p1_n17 > Bibliographic Data] (61) Patent of Addition to Application Number Filing Date..."
+}
+{
+  "chunk_id": "66ce623b-f605-5833-92cb-b3b3e04acf44",
+  "dense_score": 0.6706,
+  "bm25_score": null,
+  "rerank_score": 0.000715703239164048,
+  "final_score": 0.6706,
+  "section": "unknown",
+  "text": "The Patent Office Journal No. 16/2025 Dated 18/04/2025..."
+}
+{
+  "chunk_id": "207b4e5d-37e2-5667-8c8b-0bc8d12910ed",
+  "dense_score": 0.4434,
+  "bm25_score": null,
+  "rerank_score": 0.0005069755384860048,
+  "final_score": 0.4434,
+  "section": "unknown",
+  "text": "(57) Abstract :\nThe present invention relates to a chatbot that provides a digital, intuitive platform for farmers acros..."
+}
+{
+  "chunk_id": "810e2b46-29c5-589d-9acc-b6a4a8458d9a",
+  "dense_score": 0.7108,
+  "bm25_score": null,
+  "rerank_score": 0.00016818800353003612,
+  "final_score": 0.7108,
+  "section": "unknown",
+  "text": "(12) PATENT APPLICATION PUBLICATION..."
+}
+{
+  "chunk_id": "61a7432c-5edc-56fa-94bd-2410ad715528",
+  "dense_score": 0.4861,
+  "bm25_score": null,
+  "rerank_score": 6.255777123414089e-05,
+  "final_score": 0.4861,
+  "section": "unknown",
+  "text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH EFFICIENT TRADE, LEARNING, AND PRODUCTIVI..."
+}
+
+EXACT CONTEXT WINDOW FOR LLM:
+[Source 1]: [Section: p1_n17 > Bibliographic Data] (61) Patent of Addition to Application Number Filing Date
+
+[Source 2]: The Patent Office Journal No. 16/2025 Dated 18/04/2025
+
+[Source 3]: (57) Abstract :
+The present invention relates to a chatbot that provides a digital, intuitive platform for farmers across the globe to access various farming solutions and details, such as Minimum Support Price (MSP) updates, contractor details, and crop-specific farming tips to boost yield and financial gains. The chatbot comprises a centralized platform where farmers can access all necessary information and solutions, including crop MSPs, farming tips, weather updates, and government schemes, without the need to navigate multiple platforms; Multilanguage support to make accessibility easy for farmers from diverse regions; and resource redirection to redirect farmers on government websites, FAQs, tutorials etc. which are verified. The chatbot provides a support-focused interface that delivers well-...
+Groq API error: HTTPSConnectionPool(host='api.groq.com', port=443): Read timed out. (read timeout=10)
+Ollama error: HTTPConnectionPool(host='localhost', port=11434): Max retries exceeded with url: /api/generate (Caused by NewConnectionError("HTTPConnection(host='localhost', port=11434): Failed to establish a new connection: [Errno 111] Connection refused"))
+
+GENERATED ANSWER (Local Heuristic Synthesizer):
+[Section: p1_n17 > Bibliographic Data] (61) Patent of Addition to Application Number Filing Date The Patent Office Journal No. 16/2025 Dated 18/04/2025 (57) Abstract : The present invention relates to a chatbot that provides a digital, intuitive platform for farmers across the globe to access various farming solutions and details, such as Minimum Support Price (MSP) updates, contractor details, and crop-specific farming tips to boost yield and financial gains. The chatbot comprises a centralized platform where farmers can access all necessary information and solutions, including crop MSPs, farming tips, weather updates, and government schemes, without the need to navigate multiple platforms; Multilanguage support to make accessibility easy for farmers from diverse regions; and resource redirection to redirect farmers on government websites, FAQs, tutorials etc. which are verified.
+
+========================================
+QUERY: in which country is this patent valid in
+========================================
+[RETRIEVAL] SEARCHING COLLECTIONS: ['scaleflow_paragraphs'] for query: 'in which country is this patent valid in'
+RETRIEVED CANDIDATES AFTER EXPANSION & RERANKING:
+{
+  "chunk_id": "e0ec7950-9043-5b71-bea6-04a07a2d776c",
+  "dense_score": 0.5677,
+  "bm25_score": null,
+  "rerank_score": 0.020110710203908873,
+  "final_score": 0.5677,
+  "section": "unknown",
+  "text": "(19) INDIA..."
+}
+{
+  "chunk_id": "66ce623b-f605-5833-92cb-b3b3e04acf44",
+  "dense_score": 0.7051,
+  "bm25_score": null,
+  "rerank_score": 0.0010820198047927826,
+  "final_score": 0.7051,
+  "section": "unknown",
+  "text": "The Patent Office Journal No. 16/2025 Dated 18/04/2025..."
+}
+{
+  "chunk_id": "b9f24415-3507-5c34-ab08-50dc617a97f3",
+  "dense_score": 0.6568,
+  "bm25_score": null,
+  "rerank_score": 0.0001211060866153391,
+  "final_score": 0.6568,
+  "section": "unknown",
+  "text": "[Section: p1_n17 > Bibliographic Data] (61) Patent of Addition to Application Number Filing Date..."
+}
+{
+  "chunk_id": "810e2b46-29c5-589d-9acc-b6a4a8458d9a",
+  "dense_score": 0.7075,
+  "bm25_score": null,
+  "rerank_score": 0.000115814160195935,
+  "final_score": 0.7075,
+  "section": "unknown",
+  "text": "(12) PATENT APPLICATION PUBLICATION..."
+}
+{
+  "chunk_id": "d00c3a1d-4fe9-581a-95af-23204c6d3541",
+  "dense_score": 0.6562,
+  "bm25_score": null,
+  "rerank_score": 7.884246797034546e-05,
+  "final_score": 0.6562,
+  "section": "unknown",
+  "text": "(19) International Filing Date..."
+}
+
+EXACT CONTEXT WINDOW FOR LLM:
+[Source 1]: (19) INDIA
+
+[Source 2]: The Patent Office Journal No. 16/2025 Dated 18/04/2025
+
+[Source 3]: [Section: p1_n17 > Bibliographic Data] (61) Patent of Addition to Application Number Filing Date
+
+...
+
+GENERATED ANSWER (Groq (llama-3.1-8b-instant)):
+The document does not contain sufficient information to answer this question.
+
+========================================
+QUERY: what problem does this invention solve
+========================================
+[RETRIEVAL] SEARCHING COLLECTIONS: ['scaleflow_paragraphs'] for query: 'what problem does this invention solve'
+RETRIEVED CANDIDATES AFTER EXPANSION & RERANKING:
+{
+  "chunk_id": "207b4e5d-37e2-5667-8c8b-0bc8d12910ed",
+  "dense_score": 0.4754,
+  "bm25_score": null,
+  "rerank_score": 0.2676044023141618,
+  "final_score": 0.4754,
+  "section": "unknown",
+  "text": "(57) Abstract :\nThe present invention relates to a chatbot that provides a digital, intuitive platform for farmers acros..."
+}
+{
+  "chunk_id": "61a7432c-5edc-56fa-94bd-2410ad715528",
+  "dense_score": 0.533,
+  "bm25_score": null,
+  "rerank_score": 0.007801074649360828,
+  "final_score": 0.533,
+  "section": "unknown",
+  "text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH EFFICIENT TRADE, LEARNING, AND PRODUCTIVI..."
+}
+{
+  "chunk_id": "08b654c8-23d5-5dcf-a03d-3904c624353d",
+  "dense_score": 0.5159,
+  "bm25_score": null,
+  "rerank_score": 1.957973669696567e-05,
+  "final_score": 0.5159,
+  "section": "unknown",
+  "text": ":NA..."
+}
+{
+  "chunk_id": "f8d3ad64-027c-5993-90e8-2f72e002cffd",
+  "dense_score": 0.5159,
+  "bm25_score": null,
+  "rerank_score": 1.957973669696567e-05,
+  "final_score": 0.5159,
+  "section": "unknown",
+  "text": ": NA..."
+}
+{
+  "chunk_id": "8c45319c-0c1e-5546-a6d7-f3098b0df01d",
+  "dense_score": 0.5234,
+  "bm25_score": null,
+  "rerank_score": 1.5977647051264568e-05,
+  "final_score": 0.5234,
+  "section": "unknown",
+  "text": "36524..."
+}
+
+EXACT CONTEXT WINDOW FOR LLM:
+[Source 1]: (57) Abstract :
+The present invention relates to a chatbot that provides a digital, intuitive platform for farmers across the globe to access various farming solutions and details, such as Minimum Support Price (MSP) updates, contractor details, and crop-specific farming tips to boost yield and financial gains. The chatbot comprises a centralized platform where farmers can access all necessary information and solutions, including crop MSPs, farming tips, weather updates, and government schemes, without the need to navigate multiple platforms; Multilanguage support to make accessibility easy for farmers from diverse regions; and resource redirection to redirect farmers on government websites, FAQs, tutorials etc. which are verified. The chatbot provides a support-focused interface that delivers well-organized responses to a diverse range of queries. Additionally, it provides farmers with real-time updates on government schemes, financial assistance programs, and resources. B...
+
+GENERATED ANSWER (Groq (llama-3.1-8b-instant)):
+The invention solves the problem of farmers having to navigate multiple platforms to access various farming solutions and information, by providing a centralized digital platform that offers a one-stop solution for their needs. This platform aims to increase overall farming efficiency and provide essential tools for the growth of the farming community. It also empowers farmers with real-time updates on government schemes and financial assistance programs.
+
+========================================
+QUERY: how does this invention improve farming productivity
+========================================
+[RETRIEVAL] SEARCHING COLLECTIONS: ['scaleflow_paragraphs'] for query: 'how does this invention improve farming productivity'
+RETRIEVED CANDIDATES AFTER EXPANSION & RERANKING:
+{
+  "chunk_id": "207b4e5d-37e2-5667-8c8b-0bc8d12910ed",
+  "dense_score": 0.6748,
+  "bm25_score": null,
+  "rerank_score": 0.9772727342094851,
+  "final_score": 0.6748,
+  "section": "unknown",
+  "text": "(57) Abstract :\nThe present invention relates to a chatbot that provides a digital, intuitive platform for farmers acros..."
+}
+{
+  "chunk_id": "61a7432c-5edc-56fa-94bd-2410ad715528",
+  "dense_score": 0.6573,
+  "bm25_score": null,
+  "rerank_score": 0.976236055573613,
+  "final_score": 0.6573,
+  "section": "unknown",
+  "text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH EFFICIENT TRADE, LEARNING, AND PRODUCTIVI..."
+}
+{
+  "chunk_id": "08b654c8-23d5-5dcf-a03d-3904c624353d",
+  "dense_score": 0.4405,
+  "bm25_score": null,
+  "rerank_score": 2.208961713038299e-05,
+  "final_score": 0.4405,
+  "section": "unknown",
+  "text": ":NA..."
+}
+{
+  "chunk_id": "f8d3ad64-027c-5993-90e8-2f72e002cffd",
+  "dense_score": 0.4405,
+  "bm25_score": null,
+  "rerank_score": 2.208961713038299e-05,
+  "final_score": 0.4405,
+  "section": "unknown",
+  "text": ": NA..."
+}
+{
+  "chunk_id": "8c45319c-0c1e-5546-a6d7-f3098b0df01d",
+  "dense_score": 0.4389,
+  "bm25_score": null,
+  "rerank_score": 2.1765850905166005e-05,
+  "final_score": 0.4389,
+  "section": "unknown",
+  "text": "36524..."
+}
+
+EXACT CONTEXT WINDOW FOR LLM:
+[Source 1]: (57) Abstract :
+The present invention relates to a chatbot that provides a digital, intuitive platform for farmers across the globe to access various farming solutions and details, such as Minimum Support Price (MSP) updates, contractor details, and crop-specific farming tips to boost yield and financial gains. The chatbot comprises a centralized platform where farmers can access all necessary information and solutions, including crop MSPs, farming tips, weather updates, and government schemes, without the need to navigate multiple platforms; Multilanguage support to make accessibility easy for farmers from diverse regions; and resource redirection to redirect farmers on government websites, FAQs, tutorials etc. which are verified. The chatbot provides a support-focused interface that delivers well-organized responses to a diverse range of queries. Additionally, it provides farmers with real-time updates on government schemes, financial assistance programs, and resources. B...
+
+GENERATED ANSWER (Groq (llama-3.1-8b-instant)):
+The invention improves farming productivity by providing farmers with real-time updates on government schemes, financial assistance programs, and resources. Additionally, it offers crop-specific farming tips to boost yield and financial gains. This digital platform also enables farmers to access various farming solutions and details, such as Minimum Support Price (MSP) updates, contractor details, and weather updates.
+
+========================================
+QUERY: who owns this patent
+========================================
+[RETRIEVAL] SEARCHING COLLECTIONS: ['scaleflow_paragraphs'] for query: 'who owns this patent'
+RETRIEVED CANDIDATES AFTER EXPANSION & RERANKING:
+{
+  "chunk_id": "66ce623b-f605-5833-92cb-b3b3e04acf44",
+  "dense_score": 0.681,
+  "bm25_score": null,
+  "rerank_score": 0.004053173224606109,
+  "final_score": 0.681,
+  "section": "unknown",
+  "text": "The Patent Office Journal No. 16/2025 Dated 18/04/2025..."
+}
+{
+  "chunk_id": "b9f24415-3507-5c34-ab08-50dc617a97f3",
+  "dense_score": 0.6466,
+  "bm25_score": null,
+  "rerank_score": 0.00020099439749564154,
+  "final_score": 0.6466,
+  "section": "unknown",
+  "text": "[Section: p1_n17 > Bibliographic Data] (61) Patent of Addition to Application Number Filing Date..."
+}
+{
+  "chunk_id": "810e2b46-29c5-589d-9acc-b6a4a8458d9a",
+  "dense_score": 0.6805,
+  "bm25_score": null,
+  "rerank_score": 6.845080049771985e-05,
+  "final_score": 0.6805,
+  "section": "unknown",
+  "text": "(12) PATENT APPLICATION PUBLICATION..."
+}
+{
+  "chunk_id": "f8d3ad64-027c-5993-90e8-2f72e002cffd",
+  "dense_score": 0.5063,
+  "bm25_score": null,
+  "rerank_score": 4.872080833140748e-05,
+  "final_score": 0.5063,
+  "section": "unknown",
+  "text": ": NA..."
+}
+{
+  "chunk_id": "08b654c8-23d5-5dcf-a03d-3904c624353d",
+  "dense_score": 0.5063,
+  "bm25_score": null,
+  "rerank_score": 4.872080833140748e-05,
+  "final_score": 0.5063,
+  "section": "unknown",
+  "text": ":NA..."
+}
+
+EXACT CONTEXT WINDOW FOR LLM:
+[Source 1]: The Patent Office Journal No. 16/2025 Dated 18/04/2025
+
+[Source 2]: [Section: p1_n17 > Bibliographic Data] (61) Patent of Addition to Application Number Filing Date
+
+[Source 3]: (12) PATENT APPLICATION PUBLICATION
+
+...
+
+GENERATED ANSWER (Groq (llama-3.1-8b-instant)):
+The document does not contain sufficient information to answer this question.
+
+========================================
+QUERY: what are the major features of this invention
+========================================
+[RETRIEVAL] SEARCHING COLLECTIONS: ['scaleflow_paragraphs'] for query: 'what are the major features of this invention'
+RETRIEVED CANDIDATES AFTER EXPANSION & RERANKING:
+{
+  "chunk_id": "207b4e5d-37e2-5667-8c8b-0bc8d12910ed",
+  "dense_score": 0.4582,
+  "bm25_score": null,
+  "rerank_score": 0.3095821564760595,
+  "final_score": 0.4582,
+  "section": "unknown",
+  "text": "(57) Abstract :\nThe present invention relates to a chatbot that provides a digital, intuitive platform for farmers acros..."
+}
+{
+  "chunk_id": "61a7432c-5edc-56fa-94bd-2410ad715528",
+  "dense_score": 0.5292,
+  "bm25_score": null,
+  "rerank_score": 0.013266981741858188,
+  "final_score": 0.5292,
+  "section": "unknown",
+  "text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH EFFICIENT TRADE, LEARNING, AND PRODUCTIVI..."
+}
+{
+  "chunk_id": "858e747e-d030-54bc-8a76-81f2957ad0ce",
+  "dense_score": 0.5724,
+  "bm25_score": null,
+  "rerank_score": 1.8363021111978658e-05,
+  "final_score": 0.5724,
+  "section": "unknown",
+  "text": "Name of Applicant : NA\nAddress of Applicant : NA\n(72)Name of Inventor :\n1)Mr. Kaustav Kumar\nAddress of Applicant :B.TECH..."
+}
+{
+  "chunk_id": "66ce623b-f605-5833-92cb-b3b3e04acf44",
+  "dense_score": 0.5496,
+  "bm25_score": null,
+  "rerank_score": 1.6485153793709934e-05,
+  "final_score": 0.5496,
+  "section": "unknown",
+  "text": "The Patent Office Journal No. 16/2025 Dated 18/04/2025..."
+}
+{
+  "chunk_id": "f8d3ad64-027c-5993-90e8-2f72e002cffd",
+  "dense_score": 0.503,
+  "bm25_score": null,
+  "rerank_score": 1.5816372853580268e-05,
+  "final_score": 0.503,
+  "section": "unknown",
+  "text": ": NA..."
+}
+
+EXACT CONTEXT WINDOW FOR LLM:
+[Source 1]: (57) Abstract :
+The present invention relates to a chatbot that provides a digital, intuitive platform for farmers across the globe to access various farming solutions and details, such as Minimum Support Price (MSP) updates, contractor details, and crop-specific farming tips to boost yield and financial gains. The chatbot comprises a centralized platform where farmers can access all necessary information and solutions, including crop MSPs, farming tips, weather updates, and government schemes, without the need to navigate multiple platforms; Multilanguage support to make accessibility easy for farmers from diverse regions; and resource redirection to redirect farmers on government websites, FAQs, tutorials etc. which are verified. The chatbot provides a support-focused interface that delivers well-organized responses to a diverse range of queries. Additionally, it provides farmers with real-time updates on government schemes, financial assistance programs, and resources. B...
+
+GENERATED ANSWER (Groq (llama-3.1-8b-instant)):
+The major features of this invention include a centralized platform for farmers to access various farming solutions and details, multilanguage support for accessibility, and resource redirection to verified government websites and resources. The chatbot also provides a support-focused interface with well-organized responses, real-time updates on government schemes and financial assistance programs, and A-Z solutions to farmers' problems. Additionally, it offers crop MSPs, farming tips, weather updates, and government schemes.
