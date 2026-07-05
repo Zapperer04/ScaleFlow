@@ -1,0 +1,509 @@
+﻿Raw Keys: dict_keys(['document_graph', 'parse_stats', 'pages', 'document_type', 'routing_confidence'])
+=== Step 1: Dump raw parser nodes ===
+Parser nodes found: 25
+[
+  {
+    "node_id": "p1_n1",
+    "text": "(12) PATENT APPLICATION PUBLICATION...",
+    "node_type": "header",
+    "semantic_type": "header",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.058,
+      "y1": 0.05,
+      "x2": 0.359,
+      "y2": 0.062
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n2",
+    "text": "(21) Application No.202511028901 A...",
+    "node_type": "header",
+    "semantic_type": "header",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.505,
+      "y1": 0.05,
+      "x2": 0.701,
+      "y2": 0.062
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n3",
+    "text": "(19) INDIA...",
+    "node_type": "header",
+    "semantic_type": "header",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.058,
+      "y1": 0.07,
+      "x2": 0.12,
+      "y2": 0.082
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n4",
+    "text": "(22) Date of filing of Application :27/03/2025...",
+    "node_type": "header",
+    "semantic_type": "header",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.058,
+      "y1": 0.089,
+      "x2": 0.302,
+      "y2": 0.101
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n5",
+    "text": "(43) Publication Date : 18/04/2025...",
+    "node_type": "header",
+    "semantic_type": "header",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.505,
+      "y1": 0.089,
+      "x2": 0.68,
+      "y2": 0.101
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n6",
+    "text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH EFFICIENT TRADE, LEAR...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.058,
+      "y1": 0.129,
+      "x2": 0.916,
+      "y2": 0.153
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n7",
+    "text": "(71)Name of Applicant :\n1)Manipal University Jaipur\nAddress of Applicant :Manipal University Jaipur,...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.505,
+      "y1": 0.159,
+      "x2": 0.939,
+      "y2": 0.209
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n8",
+    "text": "(51) International classification...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.058,
+      "y1": 0.175,
+      "x2": 0.159,
+      "y2": 0.199
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n9",
+    "text": ":H04L0051020000, G06Q0050020000, A61P0031100000, G06Q0040040000, A61K0036539000...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.205,
+      "y1": 0.175,
+      "x2": 0.45,
+      "y2": 0.225
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n10",
+    "text": "Name of Applicant : NA\nAddress of Applicant : NA\n(72)Name of Inventor :\n1)Mr. Kaustav Kumar\nAddress ...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.505,
+      "y1": 0.229,
+      "x2": 0.939,
+      "y2": 0.299
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n11",
+    "text": "(19) International Filing Date...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.058,
+      "y1": 0.23,
+      "x2": 0.159,
+      "y2": 0.254
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n12",
+    "text": ":NA...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.205,
+      "y1": 0.23,
+      "x2": 0.229,
+      "y2": 0.242
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n13",
+    "text": "(87) International Publication No...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.058,
+      "y1": 0.26,
+      "x2": 0.159,
+      "y2": 0.284
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n14",
+    "text": ": NA...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.205,
+      "y1": 0.26,
+      "x2": 0.229,
+      "y2": 0.272
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n15",
+    "text": "(86) International Application No Filing Date...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.058,
+      "y1": 0.29,
+      "x2": 0.159,
+      "y2": 0.314
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n16",
+    "text": ":NA\n:NA...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.205,
+      "y1": 0.29,
+      "x2": 0.229,
+      "y2": 0.314
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n17",
+    "text": "(61) Patent of Addition to Application Number Filing Date...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.058,
+      "y1": 0.32,
+      "x2": 0.159,
+      "y2": 0.356
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n18",
+    "text": ":NA\n:NA...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.205,
+      "y1": 0.32,
+      "x2": 0.229,
+      "y2": 0.344
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n19",
+    "text": "2)Mr. Anurag Bhatnagar\nAddress of Applicant :Assistant Professor (Senior Scale), Department of Infor...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.505,
+      "y1": 0.309,
+      "x2": 0.939,
+      "y2": 0.379
+    },
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n20",
+    "text": "(62) Divisional to Application Number Filing Date...",
+    "node_type": "paragraph",
+    "semantic_type": "paragraph",
+    "section": "",
+    "label": "",
+    "bbox": {
+      "x1": 0.058,
+      "y1": 0.366,
+      "x2": 0.159,
+      "y2": 0.402
+    },
+    "metadata": null
+  }
+]
+
+=== Step 2: Dump document graph nodes (propagated) ===
+[
+  {
+    "node_id": "p1_n1",
+    "text": "(12) PATENT APPLICATION PUBLICATION...",
+    "node_type": "header",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n2",
+    "text": "(21) Application No.202511028901 A...",
+    "node_type": "header",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n3",
+    "text": "(19) INDIA...",
+    "node_type": "header",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n4",
+    "text": "(22) Date of filing of Application :27/03/2025...",
+    "node_type": "header",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n5",
+    "text": "(43) Publication Date : 18/04/2025...",
+    "node_type": "header",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n6",
+    "text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH EFFICIENT TRADE, LEAR...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n7",
+    "text": "(71)Name of Applicant :\n1)Manipal University Jaipur\nAddress of Applicant :Manipal University Jaipur,...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n8",
+    "text": "(51) International classification...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n9",
+    "text": ":H04L0051020000, G06Q0050020000, A61P0031100000, G06Q0040040000, A61K0036539000...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n10",
+    "text": "Name of Applicant : NA\nAddress of Applicant : NA\n(72)Name of Inventor :\n1)Mr. Kaustav Kumar\nAddress ...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n11",
+    "text": "(19) International Filing Date...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n12",
+    "text": ":NA...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n13",
+    "text": "(87) International Publication No...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n14",
+    "text": ": NA...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n15",
+    "text": "(86) International Application No Filing Date...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n16",
+    "text": ":NA\n:NA...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n17",
+    "text": "(61) Patent of Addition to Application Number Filing Date...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n18",
+    "text": ":NA\n:NA...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n19",
+    "text": "2)Mr. Anurag Bhatnagar\nAddress of Applicant :Assistant Professor (Senior Scale), Department of Infor...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  },
+  {
+    "node_id": "p1_n20",
+    "text": "(62) Divisional to Application Number Filing Date...",
+    "node_type": "paragraph",
+    "section": "",
+    "semantic_parent": null,
+    "neighbors": null,
+    "metadata": null
+  }
+]
+
+=== Step 3: Semantic retention statistics ===
+{
+  "nodes_total": 25,
+  "nodes_with_section": 0,
+  "nodes_with_semantic_type": 25,
+  "nodes_with_metadata": 0,
+  "nodes_with_neighbors": 0,
+  "nodes_with_parent": 0,
+  "nodes_labeled_unknown": 0
+}
+
+=== Step 4: Graph semantics ===
+{
+  "edge_count": 155,
+  "semantic_edges": 131,
+  "spatial_edges": 0,
+  "reading_order_edges": 24,
+  "cross_reference_edges": 0
+}

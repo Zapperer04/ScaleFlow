@@ -1,0 +1,188 @@
+﻿API Key check: True
+
+=== Running Experiment 1: Current Prompt ===
+Latency: 11.38 seconds
+JSON size: 5484 characters
+Nodes found: 13
+Sample Node from Experiment 1:
+{
+  "type": "header",
+  "text": "(12) PATENT APPLICATION PUBLICATION",
+  "reading_order": 1,
+  "section": null,
+  "bbox": {
+    "x1": 0.056,
+    "y1": 0.053,
+    "x2": 0.319,
+    "y2": 0.066
+  }
+}
+
+=== Running Experiment 2: Additional Instructions ===
+Latency: 24.15 seconds
+JSON size: 9320 characters
+Usage Stats: {'promptTokenCount': 656, 'candidatesTokenCount': 3479, 'totalTokenCount': 4135, 'cachedContentTokenCount': 521, 'promptTokensDetails': [{'modality': 'TEXT', 'tokenCount': 398}, {'modality': 'IMAGE', 'tokenCount': 258}], 'cacheTokensDetails': [{'modality': 'IMAGE', 'tokenCount': 205}, {'modality': 'TEXT', 'tokenCount': 316}], 'serviceTier': 'standard'}
+Nodes found: 22
+Sample Nodes from Experiment 2 (up to 20 nodes):
+[
+  {
+    "node_id": 1,
+    "text": "(12) PATENT APPLICATION PUBLICATION...",
+    "type": "paragraph",
+    "semantic_category": "metadata",
+    "entity_group": "publication_info",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 2,
+    "text": "(21) Application No. 202511028901 A...",
+    "type": "paragraph",
+    "semantic_category": "identifier",
+    "entity_group": "application_id",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 3,
+    "text": "(19) INDIA...",
+    "type": "paragraph",
+    "semantic_category": "metadata",
+    "entity_group": "publication_info",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 4,
+    "text": "(22) Date of filing of Application :27/03/2025...",
+    "type": "paragraph",
+    "semantic_category": "date",
+    "entity_group": "filing_date",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 5,
+    "text": "(43) Publication Date : 18/04/2025...",
+    "type": "paragraph",
+    "semantic_category": "date",
+    "entity_group": "publication_date",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 6,
+    "text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH E...",
+    "type": "paragraph",
+    "semantic_category": "title",
+    "entity_group": "title",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 7,
+    "text": "(51) International\nclassification...",
+    "type": "paragraph",
+    "semantic_category": "metadata",
+    "entity_group": "international_classification",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 8,
+    "text": ":H04L0051020000, G06Q5005020000,\nA61P0031100000, G06Q0040040000,\nA61K0036539000...",
+    "type": "paragraph",
+    "semantic_category": "identifier",
+    "entity_group": "international_classification",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 9,
+    "text": "(71)Name of Applicant :\n1)Manipal University Jaipur\nAddress of Applicant :Manipa...",
+    "type": "paragraph",
+    "semantic_category": "organization",
+    "entity_group": "applicant_1",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 10,
+    "text": "(86) International\nApplication No\nFiling Date...",
+    "type": "paragraph",
+    "semantic_category": "metadata",
+    "entity_group": "international_application",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 11,
+    "text": ":NA\n:NA...",
+    "type": "paragraph",
+    "semantic_category": "identifier",
+    "entity_group": "international_application",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 12,
+    "text": "Name of Applicant : NA\nAddress of Applicant : NA\n(72)Name of Inventor :\n1)Mr. Ka...",
+    "type": "paragraph",
+    "semantic_category": "person",
+    "entity_group": "inventor_1",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 13,
+    "text": "(87) International\nPublication No...",
+    "type": "paragraph",
+    "semantic_category": "metadata",
+    "entity_group": "international_publication",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 14,
+    "text": ":NA...",
+    "type": "paragraph",
+    "semantic_category": "identifier",
+    "entity_group": "international_publication",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 15,
+    "text": "(61) Patent of Addition to\nApplication Number\nFiling Date...",
+    "type": "paragraph",
+    "semantic_category": "metadata",
+    "entity_group": "patent_addition",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 16,
+    "text": ":NA\n:NA...",
+    "type": "paragraph",
+    "semantic_category": "identifier",
+    "entity_group": "patent_addition",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 17,
+    "text": "(62) Divisional to\nApplication Number\nFiling Date...",
+    "type": "paragraph",
+    "semantic_category": "metadata",
+    "entity_group": "divisional_application",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 18,
+    "text": ":NA\n:NA...",
+    "type": "paragraph",
+    "semantic_category": "identifier",
+    "entity_group": "divisional_application",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 19,
+    "text": "(57) Abstract :\nThe present invention relates to a chatbot that provides a digit...",
+    "type": "paragraph",
+    "semantic_category": "abstract",
+    "entity_group": "abstract",
+    "confidence": 0.98
+  },
+  {
+    "node_id": 20,
+    "text": "No. of Pages : 13 No. of Claims : 4...",
+    "type": "paragraph",
+    "semantic_category": "metadata",
+    "entity_group": "page_claims_count",
+    "confidence": 0.98
+  }
+]
