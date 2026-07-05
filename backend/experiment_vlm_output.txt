@@ -1,188 +1,337 @@
-﻿API Key check: True
+﻿
+=== Running Phase 6 VLM Semantic Parser ===
 
-=== Running Experiment 1: Current Prompt ===
-Latency: 11.38 seconds
-JSON size: 5484 characters
-Nodes found: 13
-Sample Node from Experiment 1:
-{
-  "type": "header",
-  "text": "(12) PATENT APPLICATION PUBLICATION",
-  "reading_order": 1,
-  "section": null,
-  "bbox": {
-    "x1": 0.056,
-    "y1": 0.053,
-    "x2": 0.319,
-    "y2": 0.066
-  }
-}
-
-=== Running Experiment 2: Additional Instructions ===
-Latency: 24.15 seconds
-JSON size: 9320 characters
-Usage Stats: {'promptTokenCount': 656, 'candidatesTokenCount': 3479, 'totalTokenCount': 4135, 'cachedContentTokenCount': 521, 'promptTokensDetails': [{'modality': 'TEXT', 'tokenCount': 398}, {'modality': 'IMAGE', 'tokenCount': 258}], 'cacheTokensDetails': [{'modality': 'IMAGE', 'tokenCount': 205}, {'modality': 'TEXT', 'tokenCount': 316}], 'serviceTier': 'standard'}
-Nodes found: 22
-Sample Nodes from Experiment 2 (up to 20 nodes):
+=== 1. Raw Parser Output (First 20 Nodes) ===
 [
   {
-    "node_id": 1,
+    "node_id": "p1_n1",
     "text": "(12) PATENT APPLICATION PUBLICATION...",
-    "type": "paragraph",
+    "structural_type": "paragraph",
     "semantic_category": "metadata",
-    "entity_group": "publication_info",
-    "confidence": 0.98
+    "entity_group": "entity_group_001",
+    "confidence": 0.99,
+    "reading_order": 1,
+    "bbox": {
+      "x1": 0.05,
+      "y1": 0.05,
+      "x2": 0.32,
+      "y2": 0.06
+    }
   },
   {
-    "node_id": 2,
-    "text": "(21) Application No. 202511028901 A...",
-    "type": "paragraph",
+    "node_id": "p1_n2",
+    "text": "(21) Application No.202511028901 A...",
+    "structural_type": "paragraph",
     "semantic_category": "identifier",
-    "entity_group": "application_id",
-    "confidence": 0.98
+    "entity_group": "entity_group_002",
+    "confidence": 0.99,
+    "reading_order": 2,
+    "bbox": {
+      "x1": 0.5,
+      "y1": 0.05,
+      "x2": 0.7,
+      "y2": 0.06
+    }
   },
   {
-    "node_id": 3,
+    "node_id": "p1_n3",
     "text": "(19) INDIA...",
-    "type": "paragraph",
-    "semantic_category": "metadata",
-    "entity_group": "publication_info",
-    "confidence": 0.98
+    "structural_type": "paragraph",
+    "semantic_category": "location",
+    "entity_group": "entity_group_003",
+    "confidence": 0.99,
+    "reading_order": 3,
+    "bbox": {
+      "x1": 0.05,
+      "y1": 0.07,
+      "x2": 0.12,
+      "y2": 0.08
+    }
   },
   {
-    "node_id": 4,
+    "node_id": "p1_n4",
     "text": "(22) Date of filing of Application :27/03/2025...",
-    "type": "paragraph",
+    "structural_type": "paragraph",
     "semantic_category": "date",
-    "entity_group": "filing_date",
-    "confidence": 0.98
+    "entity_group": "entity_group_004",
+    "confidence": 0.99,
+    "reading_order": 4,
+    "bbox": {
+      "x1": 0.05,
+      "y1": 0.09,
+      "x2": 0.3,
+      "y2": 0.1
+    }
   },
   {
-    "node_id": 5,
+    "node_id": "p1_n5",
     "text": "(43) Publication Date : 18/04/2025...",
-    "type": "paragraph",
+    "structural_type": "paragraph",
     "semantic_category": "date",
-    "entity_group": "publication_date",
-    "confidence": 0.98
+    "entity_group": "entity_group_005",
+    "confidence": 0.99,
+    "reading_order": 5,
+    "bbox": {
+      "x1": 0.5,
+      "y1": 0.09,
+      "x2": 0.67,
+      "y2": 0.1
+    }
   },
   {
-    "node_id": 6,
+    "node_id": "p1_n6",
     "text": "(54) Title of the invention : A MULTIMODAL CHATBOT FOR EMPOWERING FARMERS WITH E...",
-    "type": "paragraph",
+    "structural_type": "paragraph",
     "semantic_category": "title",
-    "entity_group": "title",
-    "confidence": 0.98
+    "entity_group": "entity_group_006",
+    "confidence": 0.99,
+    "reading_order": 6,
+    "bbox": {
+      "x1": 0.05,
+      "y1": 0.12,
+      "x2": 0.92,
+      "y2": 0.15
+    }
   },
   {
-    "node_id": 7,
-    "text": "(51) International\nclassification...",
-    "type": "paragraph",
+    "node_id": "p1_n7",
+    "text": "(71)Name of Applicant :...",
+    "structural_type": "paragraph",
     "semantic_category": "metadata",
-    "entity_group": "international_classification",
-    "confidence": 0.98
+    "entity_group": "entity_group_007",
+    "confidence": 0.99,
+    "reading_order": 7,
+    "bbox": {
+      "x1": 0.5,
+      "y1": 0.15,
+      "x2": 0.64,
+      "y2": 0.16
+    }
   },
   {
-    "node_id": 8,
-    "text": ":H04L0051020000, G06Q5005020000,\nA61P0031100000, G06Q0040040000,\nA61K0036539000...",
-    "type": "paragraph",
-    "semantic_category": "identifier",
-    "entity_group": "international_classification",
-    "confidence": 0.98
-  },
-  {
-    "node_id": 9,
-    "text": "(71)Name of Applicant :\n1)Manipal University Jaipur\nAddress of Applicant :Manipa...",
-    "type": "paragraph",
+    "node_id": "p1_n8",
+    "text": "1)Manipal University Jaipur...",
+    "structural_type": "paragraph",
     "semantic_category": "organization",
-    "entity_group": "applicant_1",
-    "confidence": 0.98
+    "entity_group": "entity_group_008",
+    "confidence": 0.99,
+    "reading_order": 8,
+    "bbox": {
+      "x1": 0.5,
+      "y1": 0.16,
+      "x2": 0.65,
+      "y2": 0.17
+    }
   },
   {
-    "node_id": 10,
-    "text": "(86) International\nApplication No\nFiling Date...",
-    "type": "paragraph",
+    "node_id": "p1_n9",
+    "text": "Address of Applicant :Manipal University Jaipur, Off Jaipur-Ajmer Expressway, Po...",
+    "structural_type": "paragraph",
+    "semantic_category": "location",
+    "entity_group": "entity_group_009",
+    "confidence": 0.99,
+    "reading_order": 9,
+    "bbox": {
+      "x1": 0.5,
+      "y1": 0.18,
+      "x2": 0.94,
+      "y2": 0.2
+    }
+  },
+  {
+    "node_id": "p1_n10",
+    "text": "(51) International classification...",
+    "structural_type": "paragraph",
     "semantic_category": "metadata",
-    "entity_group": "international_application",
-    "confidence": 0.98
+    "entity_group": "entity_group_010",
+    "confidence": 0.99,
+    "reading_order": 10,
+    "bbox": {
+      "x1": 0.05,
+      "y1": 0.18,
+      "x2": 0.17,
+      "y2": 0.2
+    }
   },
   {
-    "node_id": 11,
-    "text": ":NA\n:NA...",
-    "type": "paragraph",
+    "node_id": "p1_n11",
+    "text": ":H04L0051020000, G06Q0050020000, A61P0031100000, G06Q0040040000, A61K0036539000...",
+    "structural_type": "paragraph",
     "semantic_category": "identifier",
-    "entity_group": "international_application",
-    "confidence": 0.98
+    "entity_group": "entity_group_011",
+    "confidence": 0.99,
+    "reading_order": 11,
+    "bbox": {
+      "x1": 0.2,
+      "y1": 0.17,
+      "x2": 0.47,
+      "y2": 0.23
+    }
   },
   {
-    "node_id": 12,
-    "text": "Name of Applicant : NA\nAddress of Applicant : NA\n(72)Name of Inventor :\n1)Mr. Ka...",
-    "type": "paragraph",
-    "semantic_category": "person",
-    "entity_group": "inventor_1",
-    "confidence": 0.98
-  },
-  {
-    "node_id": 13,
-    "text": "(87) International\nPublication No...",
-    "type": "paragraph",
+    "node_id": "p1_n12",
+    "text": "Name of Applicant : NA...",
+    "structural_type": "paragraph",
     "semantic_category": "metadata",
-    "entity_group": "international_publication",
-    "confidence": 0.98
+    "entity_group": "entity_group_012",
+    "confidence": 0.99,
+    "reading_order": 12,
+    "bbox": {
+      "x1": 0.5,
+      "y1": 0.22,
+      "x2": 0.63,
+      "y2": 0.23
+    }
   },
   {
-    "node_id": 14,
+    "node_id": "p1_n13",
+    "text": "Address of Applicant : NA...",
+    "structural_type": "paragraph",
+    "semantic_category": "metadata",
+    "entity_group": "entity_group_013",
+    "confidence": 0.99,
+    "reading_order": 13,
+    "bbox": {
+      "x1": 0.5,
+      "y1": 0.23,
+      "x2": 0.65,
+      "y2": 0.24
+    }
+  },
+  {
+    "node_id": "p1_n14",
+    "text": "(72)Name of Inventor :...",
+    "structural_type": "paragraph",
+    "semantic_category": "metadata",
+    "entity_group": "entity_group_014",
+    "confidence": 0.99,
+    "reading_order": 14,
+    "bbox": {
+      "x1": 0.5,
+      "y1": 0.25,
+      "x2": 0.64,
+      "y2": 0.26
+    }
+  },
+  {
+    "node_id": "p1_n15",
+    "text": "(86) International Application No...",
+    "structural_type": "paragraph",
+    "semantic_category": "metadata",
+    "entity_group": "entity_group_015",
+    "confidence": 0.99,
+    "reading_order": 15,
+    "bbox": {
+      "x1": 0.05,
+      "y1": 0.25,
+      "x2": 0.17,
+      "y2": 0.27
+    }
+  },
+  {
+    "node_id": "p1_n16",
     "text": ":NA...",
-    "type": "paragraph",
-    "semantic_category": "identifier",
-    "entity_group": "international_publication",
-    "confidence": 0.98
-  },
-  {
-    "node_id": 15,
-    "text": "(61) Patent of Addition to\nApplication Number\nFiling Date...",
-    "type": "paragraph",
+    "structural_type": "paragraph",
     "semantic_category": "metadata",
-    "entity_group": "patent_addition",
-    "confidence": 0.98
+    "entity_group": "entity_group_016",
+    "confidence": 0.99,
+    "reading_order": 16,
+    "bbox": {
+      "x1": 0.2,
+      "y1": 0.24,
+      "x2": 0.23,
+      "y2": 0.25
+    }
   },
   {
-    "node_id": 16,
-    "text": ":NA\n:NA...",
-    "type": "paragraph",
-    "semantic_category": "identifier",
-    "entity_group": "patent_addition",
-    "confidence": 0.98
+    "node_id": "p1_n17",
+    "text": "1)Mr. Kaustav Kumar...",
+    "structural_type": "paragraph",
+    "semantic_category": "person",
+    "entity_group": "entity_group_017",
+    "confidence": 0.99,
+    "reading_order": 17,
+    "bbox": {
+      "x1": 0.5,
+      "y1": 0.26,
+      "x2": 0.66,
+      "y2": 0.27
+    }
   },
   {
-    "node_id": 17,
-    "text": "(62) Divisional to\nApplication Number\nFiling Date...",
-    "type": "paragraph",
+    "node_id": "p1_n18",
+    "text": "Filing Date...",
+    "structural_type": "paragraph",
     "semantic_category": "metadata",
-    "entity_group": "divisional_application",
-    "confidence": 0.98
+    "entity_group": "entity_group_018",
+    "confidence": 0.99,
+    "reading_order": 18,
+    "bbox": {
+      "x1": 0.05,
+      "y1": 0.27,
+      "x2": 0.11,
+      "y2": 0.28
+    }
   },
   {
-    "node_id": 18,
-    "text": ":NA\n:NA...",
-    "type": "paragraph",
-    "semantic_category": "identifier",
-    "entity_group": "divisional_application",
-    "confidence": 0.98
-  },
-  {
-    "node_id": 19,
-    "text": "(57) Abstract :\nThe present invention relates to a chatbot that provides a digit...",
-    "type": "paragraph",
-    "semantic_category": "abstract",
-    "entity_group": "abstract",
-    "confidence": 0.98
-  },
-  {
-    "node_id": 20,
-    "text": "No. of Pages : 13 No. of Claims : 4...",
-    "type": "paragraph",
+    "node_id": "p1_n19",
+    "text": ":NA...",
+    "structural_type": "paragraph",
     "semantic_category": "metadata",
-    "entity_group": "page_claims_count",
-    "confidence": 0.98
+    "entity_group": "entity_group_019",
+    "confidence": 0.99,
+    "reading_order": 19,
+    "bbox": {
+      "x1": 0.2,
+      "y1": 0.27,
+      "x2": 0.23,
+      "y2": 0.28
+    }
+  },
+  {
+    "node_id": "p1_n20",
+    "text": "Address of Applicant :B.Tech IT Student, Department of Information Technology, M...",
+    "structural_type": "paragraph",
+    "semantic_category": "location",
+    "entity_group": "entity_group_020",
+    "confidence": 0.99,
+    "reading_order": 20,
+    "bbox": {
+      "x1": 0.5,
+      "y1": 0.28,
+      "x2": 0.94,
+      "y2": 0.33
+    }
   }
 ]
+
+=== 2. Semantic Category Statistics ===
+{
+  "metadata": 23,
+  "identifier": 2,
+  "location": 4,
+  "date": 2,
+  "title": 1,
+  "organization": 1,
+  "person": 2,
+  "summary": 1
+}
+
+=== 3. Entity Group Statistics ===
+{
+  "groups": 36,
+  "avg_nodes_per_group": 1.0,
+  "max_nodes_per_group": 1
+}
+
+=== 4. Confidence Statistics ===
+{
+  "mean": 0.99,
+  "median": 0.99,
+  "min": 0.99
+}
+
+=== 5. Retrieval Metadata Verification ===
+Total parsed nodes: 36
+Total edges generated: 347
+Total processing latency: 22.94 seconds

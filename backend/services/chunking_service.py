@@ -534,58 +534,33 @@ def chunk_document_graph(document_graph: dict) -> dict:
     if not document_graph:
         return {"chunks": []}
 
-    # Extract pages
     pages = document_graph.get("pages", [])
-    
-    # Detect if the document is a patent
-    is_patent = False
-    all_text = ""
-    for page in pages:
-        for node in page.get("nodes", []):
-            all_text += node.get("text", "") + " "
-    if _is_patent_text(all_text):
-        is_patent = True
 
     for page in pages:
         page_number = page.get("page_number", 1)
         nodes = page.get("nodes", [])
-        # Sort nodes by reading order
         nodes = sorted(nodes, key=lambda n: n.get("reading_order", 0))
         
         for node in nodes:
             node_text = node.get("text", "")
             if not node_text.strip():
                 continue
-            
-            if is_patent:
-                # Preserve whole nodes as semantic chunks for patent documents
-                chunks.append({
-                    "text": node_text,
-                    "metadata": {
-                        "section": node.get("section") or "unknown",
-                        "content_type": node.get("type", "paragraph"),
-                        "page_number": page_number,
-                        "chunk_id": node.get("chunk_id"),
-                        "node_type": node.get("type", "paragraph"),
-                        "token_count": len(node_text.split()),
-                        "char_count": len(node_text)
-                    }
-                })
-                continue
 
-            # Chunk the node's text using the existing chunk_text function
-            node_chunks = chunk_text(
-                node_text, 
-                page_number=page_number,
-                default_section=node.get("section", "unknown"),
-                default_parent=node.get("chunk_id")
-            )
-            for chunk in node_chunks:
-                # Enrich chunk metadata with node information
-                if "metadata" not in chunk:
-                    chunk["metadata"] = {}
-                chunk["metadata"]["node_type"] = node.get("type", "paragraph")
-                chunk["metadata"]["chunk_id"] = node.get("chunk_id")
-                chunks.append(chunk)
+            chunks.append({
+                "text": node_text,
+                "metadata": {
+                    "section": node.get("semantic_category") or node.get("section") or "unknown",
+                    "semantic_category": node.get("semantic_category") or "unknown",
+                    "entity_group": node.get("entity_group") or "unknown",
+                    "confidence": node.get("confidence", 1.0),
+                    "content_type": node.get("structural_type") or node.get("type", "paragraph"),
+                    "node_type": node.get("structural_type") or node.get("type", "paragraph"),
+                    "structural_type": node.get("structural_type") or node.get("type", "paragraph"),
+                    "page_number": page_number,
+                    "chunk_id": node.get("chunk_id") or node.get("node_id"),
+                    "token_count": len(node_text.split()),
+                    "char_count": len(node_text)
+                }
+            })
                 
     return {"chunks": chunks}

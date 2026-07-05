@@ -75,15 +75,17 @@ Required JSON schema:
 {
   "nodes": [
     {
-      "type": "heading|subheading|paragraph|table|list|equation|figure|caption|footer|header|reference|code|quote|form_field",
+      "structural_type": "header|heading|paragraph|footer|table|table_row|table_cell|list|list_item|figure|caption|metadata|reference|quote|code",
       "text": "...",
       "reading_order": 1,
-      "section": "...",
+      "semantic_category": "person|organization|identifier|date|location|title|heading|summary|metadata|body_text|reference|citation|concept|definition|procedure|relationship|event|measurement|table|figure|caption|financial_value|legal_reference|scientific_term",
+      "entity_group": "entity_group_001|entity_group_002|entity_group_003...",
+      "confidence": 0.95,
       "bbox": {
-        "x1": 0,
-        "y1": 0,
-        "x2": 0,
-        "y2": 0
+        "x1": 0.0,
+        "y1": 0.0,
+        "x2": 1.0,
+        "y2": 1.0
       }
     }
   ]
@@ -91,7 +93,8 @@ Required JSON schema:
 
 Rules:
 - Return normalized bounding boxes in the 0 to 1 range when possible.
-- Use only the allowed node types.
+- Use only the allowed structural types and semantic categories.
+- For every text block assign an 'entity_group' id (blocks that belong to the same conceptual entity collection should share an entity_group id, e.g. entity_group_001, entity_group_002). Do NOT use domain-specific/document-specific labels for entity groups.
 - Preserve the visual reading order.
 - Keep text verbatim where possible.
 - If the page is blank, return an empty nodes array.
@@ -995,9 +998,14 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
             }
             nodes.append({
                 "chunk_id": f"p{page_number}_ocr_para_{idx + 1}",
+                "node_id": f"p{page_number}_ocr_para_{idx + 1}",
                 "type": "paragraph",
+                "structural_type": "paragraph",
                 "text": paragraph_text,
                 "section": "ocr_fallback",
+                "semantic_category": "metadata",
+                "entity_group": "unknown",
+                "confidence": 0.80,
                 "reading_order": idx + 1,
                 "bbox": bbox,
             })
@@ -1009,9 +1017,14 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
                 return None
             node = {
                 "chunk_id": f"p{page_number}_n1",
+                "node_id": f"p{page_number}_n1",
                 "type": "paragraph",
+                "structural_type": "paragraph",
                 "text": full_text,
                 "section": "ocr_fallback",
+                "semantic_category": "metadata",
+                "entity_group": "unknown",
+                "confidence": 0.50,
                 "reading_order": 1,
                 "bbox": {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0},
             }
@@ -1081,12 +1094,22 @@ def _normalize_page_graph(
     ordered_nodes.sort(key=lambda item: (item[0],))
 
     for sequence_index, (_, node) in enumerate(ordered_nodes, start=1):
+        raw_struct_type = node.get("structural_type") or node.get("type") or "paragraph"
+        raw_sem_cat = node.get("semantic_category") or node.get("section") or "body_text"
+        raw_ent_grp = node.get("entity_group") or "unknown"
+        raw_conf = _safe_float(node.get("confidence"), 1.0)
+
         normalized_nodes.append(
             {
                 "chunk_id": f"p{page_number}_n{sequence_index}",
-                "type": _normalize_node_type(node.get("type")),
+                "node_id": f"p{page_number}_n{sequence_index}",
+                "type": _normalize_node_type(raw_struct_type),
+                "structural_type": _normalize_node_type(raw_struct_type),
                 "text": str(node.get("text", "") or "").strip(),
-                "section": str(node.get("section", "") or "").strip(),
+                "section": str(raw_sem_cat).strip(),
+                "semantic_category": str(raw_sem_cat).strip(),
+                "entity_group": str(raw_ent_grp).strip(),
+                "confidence": raw_conf,
                 "reading_order": sequence_index,
                 "bbox": _normalize_bbox(node.get("bbox"), width, height),
             }
@@ -1230,7 +1253,7 @@ def execute_vlm_document_graph_extraction(
             "duration_seconds": round(time.perf_counter() - started_at, 3),
         },
         "document_metadata": {
-            "filename": os.path.basename(images[0] if hasattr(images[0], 'filename') else document_id),
+            "filename": os.path.basename(images[0].filename if hasattr(images[0], 'filename') and isinstance(images[0].filename, str) else str(document_id)),
             "file_type": "image" if not _is_pdf_file(str(document_id)) else "pdf",
             "page_count": len(image_list),
             "parser": "gemini_vlm",

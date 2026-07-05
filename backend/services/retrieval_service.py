@@ -305,20 +305,18 @@ def retrieve_and_rerank(
     reranked = rerank(query, candidates_for_rerank, top_k=top_k)
     logger.info(f"[RERANK] Reranked down to {len(reranked)} results")
 
-    # 9. Group-expansion for structured entity lists (e.g. inventors, applicants, authors)
-    special_sections = {"inventor_info", "inventors", "applicant_info", "applicants", "author_info", "authors"}
-    top_sections = {r.get("section", "").lower() for r in reranked[:2] if r.get("section")}
-    matching_special = top_sections.intersection(special_sections)
-    if matching_special:
+    # 9. Universal entity group expansion
+    top_entity_groups = {r.get("entity_group") for r in reranked[:3] if r.get("entity_group") and r.get("entity_group") != "unknown"}
+    if top_entity_groups:
         added_keys = {(r.get("pipeline_id"), r.get("file_id"), r.get("chunk_id")) for r in reranked}
         for cand in candidates_for_rerank:
-            c_sec = cand.get("section", "").lower()
-            if c_sec in matching_special:
+            c_grp = cand.get("entity_group")
+            if c_grp in top_entity_groups:
                 key = (cand.get("pipeline_id"), cand.get("file_id"), cand.get("chunk_id"))
                 if key not in added_keys:
                     reranked.append(cand)
                     added_keys.add(key)
-        logger.info(f"[ENTITY GROUPING] Expanded to {len(reranked)} chunks to include all entities in section: {matching_special}")
+        logger.info(f"[ENTITY GROUPING] Universal expansion to {len(reranked)} chunks for groups: {top_entity_groups}")
 
     # Print debug log for evaluation
     logger.info(
