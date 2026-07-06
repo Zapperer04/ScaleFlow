@@ -949,29 +949,117 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
     if not PYTESSERACT_AVAILABLE or pytesseract is None:
         return None
 
+    def _recursive_xy_cut_layout(words, x_thresh=25, y_thresh=15):
+        if not words:
+            return []
+        # Try horizontal projection cut (rows)
+        words_sorted_y = sorted(words, key=lambda w: w["top"])
+        h_groups = []
+        current_group = [words_sorted_y[0]]
+        for w in words_sorted_y[1:]:
+            prev_bottom = max(x["top"] + x["height"] for x in current_group)
+            if w["top"] - prev_bottom > y_thresh:
+                h_groups.append(current_group)
+                current_group = [w]
+            else:
+                current_group.append(w)
+        h_groups.append(current_group)
+
+        if len(h_groups) > 1:
+            final_groups = []
+            for g in h_groups:
+                final_groups.extend(_recursive_xy_cut_layout(g, x_thresh, y_thresh))
+            return final_groups
+
+        # Vertical projection cut (columns)
+        words_sorted_x = sorted(words, key=lambda w: w["left"])
+        v_groups = []
+        current_group_v = [words_sorted_x[0]]
+        for w in words_sorted_x[1:]:
+            prev_right = max(x["left"] + x["width"] for x in current_group_v)
+            if w["left"] - prev_right > x_thresh:
+                v_groups.append(current_group_v)
+                current_group_v = [w]
+            else:
+                current_group_v.append(w)
+        v_groups.append(current_group_v)
+
+        if len(v_groups) > 1:
+            final_groups = []
+            for g in v_groups:
+                final_groups.extend(_recursive_xy_cut_layout(g, x_thresh, y_thresh))
+            return final_groups
+
+        return [words]
+
+    def _classify_ocr_block(text: str) -> tuple[str, str]:
+        text_clean = text.strip()
+        text_lower = text_clean.lower()
+        if len(text_clean) < 100 and (text_clean.isupper() or any(p in text_lower for p in ["chapter", "section", "abstract", "summary", "introduction", "claims", "description"])):
+            struct_type = "heading"
+        elif "\n" in text_clean and ("|" in text_clean or "  " in text_clean):
+            struct_type = "table"
+        else:
+            struct_type = "paragraph"
+
+        if any(p in text_lower for p in ["filing date", "publication date", "date of"]):
+            sem_cat = "date"
+        elif any(p in text_lower for p in ["application no", "patent no", "invoice no", "no.", "number"]):
+            sem_cat = "identifier"
+        elif any(p in text_lower for p in ["inventor", "applicant", "author", "mr.", "ms.", "dr."]):
+            sem_cat = "person"
+        elif any(p in text_lower for p in ["university", "inc.", "corp.", "ltd.", "association"]):
+            sem_cat = "organization"
+        else:
+            sem_cat = "body_text"
+
+        return struct_type, sem_cat
+
+    def _cluster_ocr_entity_groups(nodes):
+        entity_groups = {}
+        visited = set()
+        group_idx = 1
+
+        for i, n1 in enumerate(nodes):
+            if i in visited:
+                continue
+            group_id = f"entity_group_{group_idx:03d}"
+            entity_groups[group_id] = [n1]
+            visited.add(i)
+
+            b1 = n1["bbox"]
+            for j, n2 in enumerate(nodes):
+                if j in visited:
+                    continue
+                b2 = n2["bbox"]
+                v_gap = abs(b2["y1"] - b1["y2"])
+                h_overlap = not (b2["x2"] < b1["x1"] or b2["x1"] > b1["x2"])
+                if v_gap < 0.05 and h_overlap:
+                    entity_groups[group_id].append(n2)
+                    visited.add(j)
+            group_idx += 1
+
+        for grp_id, grp_nodes in entity_groups.items():
+            for gn in grp_nodes:
+                gn["entity_group"] = grp_id
+
     try:
         pil_image = _ensure_pil_image(image).convert("L")
         width, height = pil_image.size
 
-        # Group words by block and paragraph to form paragraph-level nodes
+        # Extract hOCR character data
         data = pytesseract.image_to_data(pil_image, output_type=Output.DICT, config="--oem 3 --psm 3")
-        groups = {}
+        raw_words = []
         n_boxes = len(data['level'])
         for i in range(n_boxes):
-            if data['level'][i] == 5:  # Word level
+            if data['level'][i] == 5:
                 text = data['text'][i].strip()
                 if not text:
                     continue
                 conf = int(data['conf'][i]) if data['conf'][i] != '-1' else 0
                 if conf < 20:
                     continue
-                
-                block_num = data['block_num'][i]
-                par_num = data['par_num'][i]
-                group_key = (block_num, par_num)
-                if group_key not in groups:
-                    groups[group_key] = []
-                groups[group_key].append({
+                raw_words.append({
                     "text": text,
                     "left": data['left'][i],
                     "top": data['top'][i],
@@ -979,68 +1067,60 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
                     "height": data['height'][i]
                 })
 
+        if not raw_words:
+            return None
+
+        # 1. Apply Recursive XY-Cut layouts
+        word_groups = _recursive_xy_cut_layout(raw_words)
+        
         nodes = []
-        for idx, (group_key, words) in enumerate(groups.items()):
+        for idx, words in enumerate(word_groups):
             if not words:
                 continue
-            # Sort words by top-left coordinate to preserve reading order
+            # Sort words inside group by reading flow
             sorted_words = sorted(words, key=lambda w: (w["top"], w["left"]))
             paragraph_text = " ".join([w["text"] for w in sorted_words])
+            
             x1 = min(w["left"] for w in words)
             y1 = min(w["top"] for w in words)
             x2 = max(w["left"] + w["width"] for w in words)
             y2 = max(w["top"] + w["height"] for w in words)
+            
             bbox = {
                 "x1": x1 / width,
                 "y1": y1 / height,
                 "x2": x2 / width,
-                "y2": y2 / height,
+                "y2": y2 / height
             }
+            
+            struct_type, sem_cat = _classify_ocr_block(paragraph_text)
+            
             nodes.append({
                 "chunk_id": f"p{page_number}_ocr_para_{idx + 1}",
                 "node_id": f"p{page_number}_ocr_para_{idx + 1}",
-                "type": "paragraph",
-                "structural_type": "paragraph",
+                "type": struct_type,
+                "structural_type": struct_type,
                 "text": paragraph_text,
-                "section": "ocr_fallback",
-                "semantic_category": "metadata",
+                "section": sem_cat,
+                "semantic_category": sem_cat,
                 "entity_group": "unknown",
-                "confidence": 0.80,
+                "confidence": 0.85,
                 "reading_order": idx + 1,
-                "bbox": bbox,
+                "bbox": bbox
             })
 
-        if not nodes:
-            # fallback: full page single node
-            full_text = pytesseract.image_to_string(pil_image, config="--oem 3 --psm 3").strip()
-            if not full_text:
-                return None
-            node = {
-                "chunk_id": f"p{page_number}_n1",
-                "node_id": f"p{page_number}_n1",
-                "type": "paragraph",
-                "structural_type": "paragraph",
-                "text": full_text,
-                "section": "ocr_fallback",
-                "semantic_category": "metadata",
-                "entity_group": "unknown",
-                "confidence": 0.50,
-                "reading_order": 1,
-                "bbox": {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0},
-            }
-            nodes = [node]
+        # 2. Cluster entity groups dynamically (DBSCAN behavior)
+        _cluster_ocr_entity_groups(nodes)
 
-        # Sort by reading_order (by index) for sequential edges later
+        # 3. Build graph edges
         nodes.sort(key=lambda n: n["reading_order"])
-        # Build spatial edges for this page
         spatial_edges, is_truncated = _generate_spatial_edges(nodes)
-        # Sequential edges between consecutive nodes
         seq_edges = []
         for idx in range(len(nodes) - 1):
             seq_edges.append({
                 "from": nodes[idx]["chunk_id"],
                 "to": nodes[idx + 1]["chunk_id"],
-                "relation": "NEXT",
+                "relation": "NEXT"
             })
         all_edges = seq_edges + spatial_edges
 

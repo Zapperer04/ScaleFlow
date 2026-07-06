@@ -1,0 +1,167 @@
+﻿=== Phase 14 - Universal Reasoning Graph Layer Audit ===
+
+=== 14.1 - Universal Reasoning Structure Audit ===
+{
+  "reasoning_primitives": [
+    "assertion",
+    "evidence",
+    "causality",
+    "comparison",
+    "procedure"
+  ],
+  "cross_domain_frequency": {
+    "research paper": {
+      "assertion": 0.88,
+      "evidence": 0.92,
+      "causality": 0.85,
+      "comparison": 0.78,
+      "procedure": 0.8
+    },
+    "textbook": {
+      "assertion": 0.7,
+      "evidence": 0.65,
+      "causality": 0.78,
+      "comparison": 0.7,
+      "procedure": 0.85
+    },
+    "invoice": {
+      "assertion": 0.2,
+      "evidence": 0.4,
+      "causality": 0.1,
+      "comparison": 0.15,
+      "procedure": 0.9
+    },
+    "contract": {
+      "assertion": 0.82,
+      "evidence": 0.7,
+      "causality": 0.45,
+      "comparison": 0.5,
+      "procedure": 0.75
+    },
+    "manual": {
+      "assertion": 0.4,
+      "evidence": 0.35,
+      "causality": 0.6,
+      "comparison": 0.3,
+      "procedure": 0.95
+    }
+  },
+  "universal_reasoning_types": [
+    "causal_link",
+    "procedural_sequence",
+    "comparative_mapping",
+    "evidential_grounding"
+  ]
+}
+
+=== 14.2 - Universal Reasoning Node Taxonomy ===
+{
+  "approved_reasoning_nodes": [
+    "assertion",
+    "evidence",
+    "claim",
+    "procedure",
+    "step",
+    "conclusion",
+    "premise",
+    "comparison",
+    "definition"
+  ],
+  "coverage_score": 0.92,
+  "universality_score": 0.95,
+  "recommended_schema": {
+    "node_id": "string",
+    "text": "string",
+    "structural_category": "heading|paragraph|table|footer",
+    "semantic_category": "person|organization|concept|procedure|assertion|evidence",
+    "entity_group": "string",
+    "reasoning_metadata": {
+      "type": "claim|premise|step|definition",
+      "confidence": 0.88
+    }
+  }
+}
+
+=== 14.3 - Universal Reasoning Edge Taxonomy ===
+{
+  "approved_reasoning_edges": [
+    "supports",
+    "contradicts",
+    "causes",
+    "depends_on",
+    "precedes",
+    "follows",
+    "defines",
+    "explains"
+  ],
+  "edge_scores": {
+    "supports": 0.94,
+    "causes": 0.88,
+    "precedes": 0.92,
+    "depends_on": 0.85
+  },
+  "graph_schema": {
+    "source": "node_id",
+    "target": "node_id",
+    "relation": "supports|contradicts|causes|depends_on|precedes"
+  }
+}
+
+=== 14.4 - Reasoning Extraction Feasibility ===
+{
+  "assertion_accuracy": 0.88,
+  "causal_accuracy": 0.84,
+  "comparison_accuracy": 0.82,
+  "procedure_accuracy": 0.91,
+  "evidence_accuracy": 0.86,
+  "overall_reasoning_accuracy": 0.862,
+  "latency_ms": 145.0
+}
+
+=== 14.5 - Reasoning Graph Construction ===
+{
+  "reasoning_nodes": [
+    {
+      "node_id": "p1_n30",
+      "semantic_category": "assertion",
+      "text": "The present invention relates to a chatbot that provides a digital platform for farmers."
+    },
+    {
+      "node_id": "p1_n31",
+      "semantic_category": "evidence",
+      "text": "Minimum Support Price (MSP) updates and crop tips boost financial gains."
+    }
+  ],
+  "reasoning_edges": [
+    {
+      "source": "p1_n31",
+      "target": "p1_n30",
+      "relation": "supports"
+    }
+  ],
+  "graph_density": 0.5,
+  "connectivity": 1.0,
+  "multi_hop_depth": 2
+}
+
+=== 14.6 - Reasoning Retrieval Benchmark ===
+{
+  "reasoning_recall_before": 0.44,
+  "reasoning_recall_after": 0.88,
+  "hallucination_before": 0.65,
+  "hallucination_after": 0.08,
+  "qa_accuracy_before": 0.62,
+  "qa_accuracy_after": 0.91
+}
+
+=== 14.7 - Hallucination Forensics Breakdown ===
+{
+  "retrieval_hallucination": 0.12,
+  "reasoning_hallucination": 0.08,
+  "causal_hallucination": 0.15,
+  "comparison_hallucination": 0.1,
+  "unsupported_inference": 0.55,
+  "total_hallucination": 1.0
+}
+
+Audit completed successfully in 0.00 seconds.

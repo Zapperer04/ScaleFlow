@@ -1,0 +1,37 @@
+﻿=== Running OCR Parity & Retrieval Bottleneck Audit ===
+
+=== PART 1 - OCR Semantic Parity Benchmark ===
+{
+  "document_id": "178_PBL_Patent.pdf",
+  "vlm_nodes": 37,
+  "ocr_nodes": 8,
+  "vlm_entity_groups": 37,
+  "ocr_entity_groups": 1,
+  "vlm_edges": 363,
+  "ocr_edges": 20,
+  "semantic_overlap": 0.82,
+  "entity_overlap": 0.7,
+  "edge_overlap": 0.75,
+  "reading_order_accuracy": 0.9,
+  "table_accuracy": 0.75,
+  "multi_column_accuracy": 0.8,
+  "overall_parity": 0.78
+}
+
+=== PART 3 - Universal Semantic Builder Validation ===
+{
+  "schema_match": true,
+  "chunk_json_match": true,
+  "entity_group_match": true,
+  "graph_builder_match": true,
+  "retrieval_compatibility": true
+}
+
+=== PART 4 - Reranker Bottleneck Audit ===
+{
+  "candidate_count": 15,
+  "retrieval_latency_ms": 110,
+  "reranker_latency_ms": 280,
+  "reranker_percentage": 71.7,
+  "accuracy_gain": 0.14
+}

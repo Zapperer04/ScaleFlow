@@ -42,33 +42,9 @@ def detect_content_type(text: str) -> str:
     return 'paragraph'
 
 
-PATENT_SECTION_HEADERS = {
-    'abstract', 'field of the invention', 'technical field', 
-    'background of the invention', 'background', 'summary of the invention', 'summary',
-    'brief description of the drawings', 'description of the drawings',
-    'detailed description', 'detailed description of the preferred embodiments', 
-    'detailed description of the invention', 'claims', 'what is claimed is', 'description'
-}
+# Removed patent-specific indicator variables and functions to generalize the parser
 
-def _is_patent_text(text: str) -> bool:
-    text_lower = text.lower()
-    patent_indicators = [
-        "united states patent",
-        "patent application publication",
-        "patent no.",
-        "patent number",
-        "application number",
-        "filing date",
-        "ipc classification",
-        "cpc classification",
-        "patent document",
-        "inventor:",
-        "inventors:"
-    ]
-    matches = sum(1 for ind in patent_indicators if ind in text_lower)
-    return matches >= 2
-
-def _match_section_header(line: str, page_number: int = 0, is_patent: bool = False) -> bool:
+def _match_section_header(line: str, page_number: int = 0) -> bool:
     s = line.strip()
     if not s:
         return False
@@ -87,13 +63,6 @@ def _match_section_header(line: str, page_number: int = 0, is_patent: bool = Fal
     # Phase headers should always be headers
     if re.match(r'^Phase\s+\d+', s, re.IGNORECASE) and len(words) <= 10:
         return True
-    
-    if is_patent:
-        # For patents, only allow standard patent sections or standard sections numbered/cleaned
-        cleaned_s = re.sub(r'^(?:\d+[\.\)]|\[\d+\])\s*', '', s_lower).strip()
-        if cleaned_s in PATENT_SECTION_HEADERS:
-            return True
-        return False
 
     # Standard section titles list (exact match or start-match with very few words)
     standard_sections = {
@@ -101,7 +70,7 @@ def _match_section_header(line: str, page_number: int = 0, is_patent: bool = Fal
         'summary', 'objective', 'education', 'experience', 'technical skills', 'skills',
         'projects', 'references', 'motivation', 'problem statement', 'objectives',
         'literature survey', 'system design', 'testing and optimization', 'ml workflow checklist',
-        'workflow checklist'
+        'workflow checklist', 'claims', 'description', 'detailed description', 'background'
     }
 
     # If it is an exact or near-exact match of standard sections
@@ -209,8 +178,7 @@ def chunk_text(text: str, page_number: int = 0, default_section: str = 'unknown'
     MIN_CHARS = getattr(config, 'CHUNK_MIN_CHARS', 50)
     MAX_CHUNKS = getattr(config, 'MAX_CHUNKS', 1500)
 
-    is_patent = _is_patent_text(text)
-    default_sec_name = 'Bibliographic Data' if is_patent else default_section
+    default_sec_name = default_section
 
     lines = text.splitlines()
 
@@ -219,7 +187,7 @@ def chunk_text(text: str, page_number: int = 0, default_section: str = 'unknown'
     current_section = {'name': default_sec_name, 'lines': []}
 
     for line in lines:
-        if _match_section_header(line, page_number, is_patent):
+        if _match_section_header(line, page_number):
             # start new section
             if current_section['lines'] or current_section['name'] != default_sec_name:
                 sections.append(current_section)
@@ -270,38 +238,6 @@ def chunk_text(text: str, page_number: int = 0, default_section: str = 'unknown'
         if not sec_text:
             continue
 
-        # For patents, keep bibliographic data and abstract sections unfragmented
-        is_bib_or_abstract = is_patent and any(kw in sec_name.lower() for kw in ['bibliographic', 'abstract'])
-        if is_bib_or_abstract:
-            # Gather all sentences across all paragraphs of the section
-            paragraphs = [p.strip() for p in re.split(r'\n{2,}', sec_text) if p.strip()]
-            sentences = []
-            for p in paragraphs:
-                p_sentences = _split_sentences(p)
-                sentences.extend(p_sentences)
-            
-            if sentences:
-                merged = _merge_sentences_to_chunks(sentences, MAX_TOKENS, OVERLAP_TOKENS)
-                for m_idx, m in enumerate(merged):
-                    formatted_text = m
-                    if sec_name != 'unknown':
-                        formatted_text = f"[Section: {sec_name}] {formatted_text}"
-                    
-                    segments.append({
-                        'text': formatted_text,
-                        'metadata': {
-                            'section': sec_name,
-                            'content_type': 'paragraph',
-                            'page_number': page_number,
-                            'prev_page_number': page_number - 1 if page_number > 1 else None,
-                            'next_page_number': page_number + 1,
-                            'parent_chunk_id': f"p{page_number}_s{sec_idx}",
-                            'child_chunk_id': f"p{page_number}_s{sec_idx}_c{m_idx}",
-                            'token_count': _token_count(formatted_text),
-                            'char_count': len(formatted_text)
-                        }
-                    })
-                continue
 
         # Split section into paragraphs but preserve list blocks and tables
         raw_paragraphs = re.split(r'\n{2,}', sec_text)
