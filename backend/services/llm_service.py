@@ -7,11 +7,34 @@ def generate_answer(query: str, chunks: list[dict]) -> tuple[str, str, str]:
     Generates a synthesized answer for the given query and chunks.
     Returns: (answer_text, provider_used, response_status)
     """
-    # Build prompt/context window
-    context_text = ""
-    for idx, c in enumerate(chunks):
-        text = c.get("chunk_text") or c.get("text") or ""
-        context_text += f"[Source {idx+1}]: {text}\n\n"
+    # Detect query type dynamically
+    query_lower = query.lower()
+    if any(p in query_lower for p in ["who is", "who are", "inventor", "author", "applicant", "person", "contributor"]):
+        query_type = "ENTITY_LOOKUP"
+    elif any(p in query_lower for p in ["what is the", "number", "date", "id", "filing", "publication", "version", "application"]):
+        query_type = "ATTRIBUTE_LOOKUP"
+    elif any(p in query_lower for p in ["relation", "connect", "link", "between", "associated"]):
+        query_type = "RELATIONSHIP_QUERY"
+    elif any(p in query_lower for p in ["summarize", "summary", "overview", "abstract"]):
+        query_type = "SUMMARY_QUERY"
+    elif any(p in query_lower for p in ["why", "how does", "reason", "explain", "improve"]):
+        query_type = "REASONING_QUERY"
+    elif any(p in query_lower for p in ["list all", "all dates", "all organisations", "aggregate", "dates"]):
+        query_type = "AGGREGATION_QUERY"
+    else:
+        query_type = "ENTITY_LOOKUP"
+
+    # Build context using SemanticContextBuilder
+    from services.semantic_context_builder import SemanticContextBuilder
+    builder = SemanticContextBuilder()
+    context_text = builder.build(query_type, chunks)
+    
+    # Fallback to plain source formatting if semantic context is empty
+    if not context_text.strip():
+        context_text = ""
+        for idx, c in enumerate(chunks):
+            text = c.get("chunk_text") or c.get("text") or ""
+            context_text += f"[Source {idx+1}]: {text}\n\n"
         
     system_prompt = (
         "You are a precise document Q&A assistant. Answer the user's question in 1-3 clear, natural sentences "
