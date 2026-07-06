@@ -1,0 +1,31 @@
+﻿=== Running Phase 15.7 - Retrieval Equivalence Proof ===
+[RETRIEVAL] SEARCHING COLLECTIONS: ['scaleflow_paragraphs'] for query: 'who are the inventors of the farming chatbot'
+
+1. Sample Query Equivalence Trace:
+{
+  "query": "who are the inventors of the farming chatbot",
+  "old_retrieved_nodes": [
+    "858e747e-d030-54bc-8a76-81f2957ad0ce",
+    "ee6b66d8-d831-55ca-bde6-d6dac842de31"
+  ],
+  "new_retrieved_nodes": [
+    "858e747e-d030-54bc-8a76-81f2957ad0ce",
+    "ee6b66d8-d831-55ca-bde6-d6dac842de31"
+  ],
+  "old_answer": "The inventors of the chatbot are Mr. Kaustav Kumar, a B.TECH IT Student at Manipal University Jaipur.",
+  "new_answer": "The inventors of the chatbot are Mr. Kaustav Kumar, a B.TECH IT Student at Manipal University Jaipur.",
+  "answers_identical": true,
+  "fact_difference_count": 0,
+  "hallucination_difference": 0.0
+}
+
+2. Aggregate Equivalence Statistics (100 Queries):
+{
+  "retrieval_equivalence": 0.985,
+  "answer_equivalence": 0.991,
+  "hallucination_equivalence": 1.0,
+  "accuracy_difference": 0.0,
+  "latency_gain": "2.37x speedup (390ms -> 164ms)"
+}
+
+Proof run completed successfully in 26.99 seconds.

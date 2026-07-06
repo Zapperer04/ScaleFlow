@@ -81,39 +81,46 @@ else:
         pool_pre_ping=True
     )
 
-SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
+SessionLocal = sessionmaker(bind=engine)
 logger = logging.getLogger(__name__)
 
+import base64
 
 class GzippedBinary(TypeDecorator):
-    impl = LargeBinary
+    impl = Text
     cache_ok = True
 
     def process_bind_param(self, value, dialect):
         if value is None:
             return None
         if isinstance(value, str):
-            return value.encode("utf-8")
-        return bytes(value)
+            value = value.encode("utf-8")
+        # value is bytes (compressed). Base64 encode to safe text representation.
+        return base64.b64encode(value).decode("utf-8")
 
     def process_result_value(self, value, dialect):
         if value is None:
             return None
 
-        if isinstance(value, bytes):
-            return value
-
-        logger.warning(
-            "[SNAPSHOT] Legacy snapshot format detected (type=%s)",
-            type(value).__name__,
-        )
-
-        if isinstance(value, memoryview):
-            return value.tobytes()
-        if isinstance(value, str):
-            return value.encode("utf-8")
-        return bytes(value)
+        # Value can be base64 encoded string, raw string, or bytes
+        try:
+            if isinstance(value, bytes):
+                value = value.decode("utf-8")
+            # Try decoding base64
+            return base64.b64decode(value.encode("utf-8"))
+        except Exception:
+            logger.warning(
+                "[SNAPSHOT] Legacy snapshot format detected (type=%s)",
+                type(value).__name__,
+            )
+            if isinstance(value, bytes):
+                return value
+            if isinstance(value, memoryview):
+                return value.tobytes()
+            if isinstance(value, str):
+                return value.encode("utf-8")
+            return bytes(value)
 
 class Pipeline(Base):
     __tablename__ = 'pipelines'
