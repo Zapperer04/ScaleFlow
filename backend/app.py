@@ -758,7 +758,7 @@ def update_task_progress(task_id):
         worker_id = data.get('worker_id')
         lease_token = data.get('lease_token')
 
-        if task.status != 'running':
+        if task.status not in ['running', 'paused_rate_limit']:
             return jsonify({'error': f'Cannot update progress. Task is in status {task.status}'}), 409
 
         if task.assigned_worker_id != worker_id or task.lease_token != lease_token:
@@ -819,8 +819,8 @@ def renew_task_lease(task_id):
         lease_token = data.get('lease_token')
         extend_by_seconds = data.get('extend_by_seconds', 30)
 
-        # Validate task status is running
-        if task.status != 'running':
+        # Validate task status is running or paused_rate_limit
+        if task.status not in ['running', 'paused_rate_limit']:
             create_task_log(db, task.id, "task_lease_renewal_rejected", 
                             f"Lease renewal rejected for worker {worker_id}: Task status is {task.status}", 
                             worker_id=worker_id)
@@ -893,7 +893,7 @@ def update_task(task_id):
         
         # Stale update validation for running task completion/failure
         if data.get('status') in ['completed', 'failed']:
-            if task.status != 'running' or not worker_id or not lease_token or task.assigned_worker_id != worker_id or task.lease_token != lease_token:
+            if task.status not in ['running', 'paused_rate_limit'] or not worker_id or not lease_token or task.assigned_worker_id != worker_id or task.lease_token != lease_token:
                 # Log stale_worker_update_rejected
                 create_task_log(
                     db, 
@@ -945,13 +945,20 @@ def update_task(task_id):
                             add_task_to_queue(waiting_task.id, waiting_task.priority, db=db)
                             
             elif data['status'] == 'failed':
-                task.retry_count += 1
                 error_msg = data.get('error_message', 'Unknown error')
                 task.error_message = error_msg
                 
+                # Check for permanent non-retryable errors
+                is_permanent = False
+                if any(x in error_msg for x in ["Governance Limit Exceeded", "FAILED_VALIDATION", "unsupported file", "invalid schema", "PermanentError"]):
+                    is_permanent = True
+                    task.retry_count = task.max_retries
+                else:
+                    task.retry_count += 1
+                
                 create_task_log(db, task.id, "task_failed", f"Failed: {error_msg}", worker_id=worker_id)
                 
-                if task.retry_count < task.max_retries:
+                if not is_permanent and task.retry_count < task.max_retries:
                     task.status = 'blocked'
                     task.blocked_reason = "Retry backoff delay"
                     task.deferred_at = datetime.utcnow()
@@ -960,7 +967,8 @@ def update_task(task_id):
                         from orchestrator.dependency_resolver import update_pipeline_status
                         update_pipeline_status(db, task.pipeline_id)
                 else:
-                    create_task_log(db, task.id, "task_failed", "Max retries reached")
+                    log_msg = "Max retries reached due to permanent validation error" if is_permanent else "Max retries reached"
+                    create_task_log(db, task.id, "task_failed", log_msg)
                     if task.pipeline_id:
                         from orchestrator.dependency_resolver import propagate_failure, update_pipeline_status
                         propagate_failure(db, task)

@@ -149,12 +149,20 @@ def render_pdf_pages(
     target_dpi = int(dpi or getattr(config, "PREPROCESS_TARGET_DPI", 300))
     poppler_path = getattr(config, "PREPROCESS_POPPLER_PATH", "") or os.getenv("PREPROCESS_POPPLER_PATH", "") or None
 
-    # Memory estimate based on actual page dimensions at the target DPI.
-    estimated_mb = _estimate_pdf_render_memory_mb(reader, limit, target_dpi)
+    # Self-healing adaptive DPI scale to fit memory budget
     available_mb = psutil.virtual_memory().available / (1024.0 * 1024.0)
-    if estimated_mb > available_mb * 0.70:
+    for trial_dpi in [target_dpi, 150, 100, 75]:
+        estimated_mb = _estimate_pdf_render_memory_mb(reader, limit, trial_dpi)
+        if estimated_mb <= available_mb * 0.80:
+            target_dpi = trial_dpi
+            break
+    else:
+        target_dpi = 75
+
+    estimated_mb = _estimate_pdf_render_memory_mb(reader, limit, target_dpi)
+    if estimated_mb > available_mb * 0.90:
         raise MemoryError(
-            f"Rendering {limit} pages at {target_dpi} DPI requires ~{estimated_mb:.0f} MB, exceeds safe memory budget"
+            f"Rendering {limit} pages at lowest {target_dpi} DPI requires ~{estimated_mb:.0f} MB, exceeds safe memory budget"
         )
 
     images = convert_from_path(
@@ -316,7 +324,8 @@ def parse_pdf(
     document_type: str = "MULTIMODAL",
     routing_confidence: float = 1.0,
     parse_method_hint: str = "vlm_document_graph",
-    enhanced_pages_path: Optional[str] = None
+    enhanced_pages_path: Optional[str] = None,
+    on_page_completed: Optional[Callable[[int, Dict[str, Any]], None]] = None
 ) -> ParseResult:
     """
     Parse a document into a structured document graph using VLM as primary method.
@@ -414,28 +423,43 @@ def parse_pdf(
     # --------------------------------------------------------------------------
     # 4. Primary: VLM document graph extraction
     # --------------------------------------------------------------------------
+    from services.document_preprocessor import _get_gemini_api_key
+    # Determine if Gemini is locked or available
+    locked_parser = progress_json.get("parser") if isinstance(progress_json, dict) else None
+    
+    # If locked to gemini, or if not locked and gemini is available upfront
+    if locked_parser == "gemini" or (locked_parser is None and VLM_AVAILABLE and _get_gemini_api_key()):
+        parser_choice = "gemini"
+        # If using gemini, we reject switching to OCR
+        skip_ocr = True
+    else:
+        parser_choice = "ocr"
+
     document_graph = None
     vlm_success = False
     ocr_fallback_used = False
 
-    if VLM_AVAILABLE:
+    if parser_choice == "gemini" and VLM_AVAILABLE:
         _trace(trace_fn, "[PARSER] Starting VLM document graph extraction...")
         try:
-            # Note: execute_vlm_document_graph_extraction already handles its own threading,
-            # and returns a full document graph.
             document_graph = execute_vlm_document_graph_extraction(
                 images=images,
                 pipeline_id=task_id,
                 max_workers=2,
                 trace_fn=trace_fn,
+                progress_json=progress_json,
+                on_page_completed=on_page_completed,
             )
             vlm_success = True
             _trace(trace_fn, "[PARSER] VLM extraction succeeded")
         except Exception as e:
             _trace(trace_fn, f"[PARSER] VLM extraction failed: {e}")
+            from services.document_preprocessor import GeminiRateLimitError
+            if isinstance(e, GeminiRateLimitError):
+                raise e
             document_graph = None
     else:
-        _trace(trace_fn, "[PARSER] VLM module not available, proceeding to OCR fallback")
+        _trace(trace_fn, f"[PARSER] Parser {parser_choice} selected or VLM module not available, proceeding to OCR fallback")
 
     # --------------------------------------------------------------------------
     # 5. OCR fallback (if VLM failed or unavailable)
