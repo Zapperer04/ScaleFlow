@@ -19,6 +19,7 @@ import tempfile
 import hashlib
 from urllib.parse import urlparse
 import uuid
+from collections import OrderedDict
 
 # Import the centralized rate manager
 from services.gemini_rate_manager import GeminiRateManager, RateLimitPauseRequired
@@ -51,8 +52,23 @@ try:
 except Exception as e:
     logger.warning(f"Could not create graph storage directory {GRAPH_VERSION_SUBDIR}: {e}")
 
-# In-memory cache for speed (optional, not relied upon for correctness)
-_GRAPH_CACHE = {}  # key: (content_hash, page_range_tuple) -> artifact dict
+# Bounded in-memory cache (LRU) – max size configurable
+GRAPH_CACHE_MAX_SIZE = getattr(config, 'GRAPH_CACHE_MAX_SIZE', 1000)
+_GRAPH_CACHE = OrderedDict()  # key: (content_hash, page_range_tuple) -> artifact dict
+
+def _cache_put(key, artifact):
+    """Put artifact in cache, evict oldest if over size."""
+    _GRAPH_CACHE[key] = artifact
+    _GRAPH_CACHE.move_to_end(key)
+    if len(_GRAPH_CACHE) > GRAPH_CACHE_MAX_SIZE:
+        _GRAPH_CACHE.popitem(last=False)
+
+def _cache_get(key):
+    """Get artifact from cache, moving to end."""
+    if key in _GRAPH_CACHE:
+        _GRAPH_CACHE.move_to_end(key)
+        return _GRAPH_CACHE[key]
+    return None
 
 def _get_content_hash(file_path: str) -> str:
     """
@@ -72,17 +88,188 @@ def _get_graph_storage_path(content_hash: str) -> str:
     """
     return os.path.join(GRAPH_VERSION_SUBDIR, f"{content_hash}.json")
 
+# ------------------------------------------------------------------------------
+# Normalisation and validation helpers for graph pages
+# ------------------------------------------------------------------------------
+
+def _normalize_bbox(bbox: Any) -> Dict[str, float]:
+    """
+    Normalise bounding box to a dict with x1, y1, x2, y2 keys.
+    Supports both {'x1': ..., 'y1': ..., 'x2': ..., 'y2': ...} and [x1, y1, x2, y2].
+    """
+    if not bbox:
+        return {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0}
+    if isinstance(bbox, dict):
+        # Ensure all keys exist
+        return {
+            "x1": float(bbox.get("x1", 0.0)),
+            "y1": float(bbox.get("y1", 0.0)),
+            "x2": float(bbox.get("x2", 1.0)),
+            "y2": float(bbox.get("y2", 1.0)),
+        }
+    if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+        return {
+            "x1": float(bbox[0]),
+            "y1": float(bbox[1]),
+            "x2": float(bbox[2]),
+            "y2": float(bbox[3]),
+        }
+    return {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0}
+
+def _ensure_block_id(block: Dict[str, Any], page_num: int, idx: int) -> str:
+    """Ensure block has an id; generate one if missing."""
+    if "id" in block and block["id"]:
+        return block["id"]
+    # Generate deterministic ID from page and reading_order if available
+    if "reading_order" in block:
+        roi = block["reading_order"]
+        block_id = f"p{page_num}_b{roi}"
+    else:
+        block_id = f"p{page_num}_b{idx}"
+    block["id"] = block_id
+    return block_id
+
+def _ensure_table_id(table: Dict[str, Any], page_num: int, idx: int) -> str:
+    """Ensure table has an id; generate one if missing."""
+    if "id" in table and table["id"]:
+        return table["id"]
+    if "reading_order" in table:
+        roi = table["reading_order"]
+        table_id = f"p{page_num}_t{roi}"
+    else:
+        table_id = f"p{page_num}_t{idx}"
+    table["id"] = table_id
+    return table_id
+
+def _normalize_graph_pages(
+    graph_pages: List[Dict[str, Any]],
+    page_parser_map: Dict[int, str],
+    default_parser: str = "gemini_vlm"
+) -> List[Dict[str, Any]]:
+    """
+    Normalize each page:
+    - Add parser field from map
+    - Ensure blocks have id, bbox normalised, sorted by reading_order
+    - Ensure tables have id, bbox normalised, sorted by reading_order
+    - Preserve all existing fields (unknown fields automatically kept)
+    - Validate no duplicate page numbers; if duplicates, renumber sequentially.
+    - Validate reading_order presence; if missing, assign sequential.
+    """
+    if not graph_pages:
+        return []
+
+    # First pass: collect page numbers, detect duplicates
+    page_nums = [p.get("page") for p in graph_pages if p.get("page") is not None]
+    seen = set()
+    duplicates = []
+    for p in page_nums:
+        if p in seen:
+            duplicates.append(p)
+        else:
+            seen.add(p)
+
+    # If duplicates, we need to renumber pages sequentially
+    if duplicates:
+        logger.warning(f"Duplicate page numbers found: {duplicates}. Renumbering pages sequentially.")
+        # Sort pages by current page number (to keep order)
+        graph_pages.sort(key=lambda p: p.get("page", 0))
+        for idx, page in enumerate(graph_pages, start=1):
+            page["page"] = idx
+
+    # Now process each page
+    normalized = []
+    for idx, page in enumerate(graph_pages, start=1):
+        # Ensure page number is set
+        if "page" not in page or page["page"] is None:
+            page["page"] = idx
+        pnum = page["page"]
+
+        # Add parser from map, fallback to default
+        parser = page_parser_map.get(pnum, default_parser)
+        page["parser"] = parser
+
+        # Blocks
+        blocks = page.get("blocks", [])
+        if blocks:
+            # Ensure each block has id, normalize bbox
+            for b_idx, block in enumerate(blocks):
+                _ensure_block_id(block, pnum, b_idx)
+                if "bbox" in block:
+                    block["bbox"] = _normalize_bbox(block["bbox"])
+                else:
+                    block["bbox"] = {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0}
+                # Ensure reading_order
+                if "reading_order" not in block:
+                    block["reading_order"] = b_idx + 1
+                # Preserve children and parent as is
+            # Sort blocks by reading_order
+            blocks.sort(key=lambda b: b.get("reading_order", 0))
+            page["blocks"] = blocks
+
+        # Tables
+        tables = page.get("tables", [])
+        if tables:
+            for t_idx, table in enumerate(tables):
+                _ensure_table_id(table, pnum, t_idx)
+                if "bbox" in table:
+                    table["bbox"] = _normalize_bbox(table["bbox"])
+                else:
+                    table["bbox"] = {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0}
+                if "reading_order" not in table:
+                    table["reading_order"] = (len(blocks) if blocks else 0) + t_idx + 1
+            tables.sort(key=lambda t: t.get("reading_order", 0))
+            page["tables"] = tables
+
+        # Ensure reading_order list if present is sorted
+        if "reading_order" in page and isinstance(page["reading_order"], list):
+            page["reading_order"].sort()
+
+        normalized.append(page)
+
+    # Final validation: page numbers should be sequential
+    page_nums_after = [p["page"] for p in normalized]
+    if page_nums_after != list(range(1, len(page_nums_after)+1)):
+        # Renumber just in case
+        for i, page in enumerate(normalized, start=1):
+            page["page"] = i
+
+    return normalized
+
+def _validate_artifact_pages(graph_pages: List[Dict[str, Any]]) -> None:
+    """
+    Validate artifact pages: no duplicate page numbers, page numbers sequential.
+    Raises ValueError if validation fails beyond repair.
+    """
+    page_nums = [p.get("page") for p in graph_pages if p.get("page") is not None]
+    if len(set(page_nums)) != len(page_nums):
+        raise ValueError("Duplicate page numbers found in artifact pages.")
+    if sorted(page_nums) != list(range(1, len(page_nums)+1)):
+        raise ValueError("Page numbers are not sequential.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Graph storage functions (enhanced)
+# ─────────────────────────────────────────────────────────────────────────────
+
 def _store_graph(
     file_path: str,
     pages: List[int],
     graph_pages: List[Dict[str, Any]],
     parser: str = "gemini_vlm",
-    version: str = GRAPH_SCHEMA_VERSION
+    version: str = GRAPH_SCHEMA_VERSION,
+    preprocessing_duration: Optional[float] = None,
 ) -> None:
     """
     Persist the rich document graph as a first-class artifact.
     The graph is stored in a versioned subdirectory, keyed by content hash.
-    Also updates the in-memory cache for speed.
+    Also updates the bounded in-memory cache.
+
+    This version adds:
+    - per-page parser metadata
+    - normalized bboxes
+    - stable block IDs
+    - forward compatibility (preserves unknown fields)
+    - enhanced metadata (parser summary, duration, model_used, etc.)
     """
     if not graph_pages:
         return
@@ -90,15 +277,32 @@ def _store_graph(
     content_hash = _get_content_hash(file_path)
     cache_key = (content_hash, tuple(sorted(pages)))
 
+    # Ensure validation before storing
+    try:
+        _validate_artifact_pages(graph_pages)
+    except ValueError as e:
+        # Attempt repair by renumbering pages sequentially
+        logger.warning(f"Artifact validation failed: {e}. Attempting repair by renumbering pages.")
+        for idx, page in enumerate(sorted(graph_pages, key=lambda p: p.get("page", 0)), start=1):
+            page["page"] = idx
+        # Re-validate
+        _validate_artifact_pages(graph_pages)
+
+    # Compute parser summary from page parser fields
+    parser_counts = {}
+    for page in graph_pages:
+        p_parser = page.get("parser", "unknown")
+        parser_counts[p_parser] = parser_counts.get(p_parser, 0) + 1
+
     # Build the complete graph artifact with rich metadata
     artifact = {
         "document": {
             "content_hash": content_hash,
-            "filename": os.path.basename(file_path),      # only filename, not absolute path
+            "filename": os.path.basename(file_path),
             "pages_requested": pages,
             "timestamp": time.time(),
             "version": version,
-            "parser": parser,
+            "parser": parser,  # document-level parser (backward compatibility)
         },
         "pages": graph_pages,
         "metadata": {
@@ -108,26 +312,30 @@ def _store_graph(
             "schema_version": version,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "model_used": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            "preprocessing_duration": preprocessing_duration,
+            "parser_summary": parser_counts,  # per-parser page counts
         }
     }
 
-    # Update in-memory cache
-    _GRAPH_CACHE[cache_key] = artifact
+    # Update cache (bounded LRU)
+    _cache_put(cache_key, artifact)
 
     # Write to persistent storage
     storage_path = _get_graph_storage_path(content_hash)
     try:
         with open(storage_path, 'w', encoding='utf-8') as f:
             json.dump(artifact, f, ensure_ascii=False, indent=2)
-        logger.info(f"Graph artifact persisted to {storage_path}")
+        logger.info(f"Graph artifact persisted to {storage_path} (version {version}, {len(graph_pages)} pages)")
     except Exception as e:
         logger.error(f"Failed to persist graph artifact: {e}")
         raise RuntimeError(f"Graph artifact persistence failed: {e}")
 
 def _get_graph_artifact(content_hash: str) -> Optional[Dict[str, Any]]:
     """
-    Retrieve the full graph artifact by content hash.
+    Retrieve the full graph artifact by content hash, using bounded cache.
     """
+    # Try cache first
+    # We don't have a specific page range, so we'll use a key with empty tuple? Better to load from disk and cache with pages_requested.
     storage_path = _get_graph_storage_path(content_hash)
     if not os.path.exists(storage_path):
         return None
@@ -135,9 +343,11 @@ def _get_graph_artifact(content_hash: str) -> Optional[Dict[str, Any]]:
     try:
         with open(storage_path, 'r', encoding='utf-8') as f:
             artifact = json.load(f)
-        # Update cache
-        cache_key = (content_hash, tuple(sorted(artifact["document"]["pages_requested"])))
-        _GRAPH_CACHE[cache_key] = artifact
+        # Update cache with the actual pages_requested
+        pages_requested = artifact.get("document", {}).get("pages_requested")
+        if pages_requested:
+            cache_key = (content_hash, tuple(sorted(pages_requested)))
+            _cache_put(cache_key, artifact)
         return artifact
     except Exception as e:
         logger.error(f"Failed to load graph artifact: {e}")
@@ -153,13 +363,11 @@ def _get_graph(file_path: str, pages: List[int]) -> Optional[List[Dict[str, Any]
     """
     content_hash = _get_content_hash(file_path)
     cache_key = (content_hash, tuple(sorted(pages)))
-    artifact = None
-    if cache_key in _GRAPH_CACHE:
-        artifact = _GRAPH_CACHE[cache_key]
-    else:
+    artifact = _cache_get(cache_key)
+    if artifact is None:
         artifact = _get_graph_artifact(content_hash)
         if artifact:
-            _GRAPH_CACHE[cache_key] = artifact
+            _cache_put(cache_key, artifact)
 
     if not artifact:
         return None
@@ -170,7 +378,6 @@ def _get_graph(file_path: str, pages: List[int]) -> Optional[List[Dict[str, Any]
     filtered = [p for p in stored_pages if p.get("page") in requested_set]
     # Verify that we have exactly all requested pages
     if len(filtered) != len(requested_set):
-        # Some pages are missing; return None to indicate incomplete graph
         return None
     return filtered if filtered else None
 
@@ -741,7 +948,7 @@ def _execute_adaptive_transcription(
     Raises RateLimitPauseRequired if rate limit encountered.
     All uploaded files are deleted after use to prevent leaks.
     The full graph (blocks, tables, bbox, etc.) is persisted as a first‑class
-    artifact in the shared storage, keyed by content hash.
+    artifact in the shared storage, keyed by content hash, with per-page parser metadata.
     """
     def _t(msg: str):
         if trace_fn:
@@ -763,6 +970,7 @@ def _execute_adaptive_transcription(
     all_graph_pages = []  # accumulate graph data for caching
     # Track which parser was used for each page
     page_parser_map: Dict[int, str] = {}  # page -> parser
+    start_preprocessing = time.time()
 
     # Helper to upload, call, delete, and store graph
     def _process_pdf_file(pdf_path: str, pages_in_chunk: List[int], is_whole: bool, parser_name: str = "gemini_vlm") -> Tuple[Dict[int, str], List[Dict[str, Any]]]:
@@ -791,6 +999,8 @@ def _execute_adaptive_transcription(
                     pnum = pobj["page"]
                     if pnum in pages_in_chunk:
                         local_text[pnum] = pobj["text"]
+                        # Add parser info to the page object (preserve all existing fields)
+                        pobj["parser"] = parser_name
                         local_graph.append(pobj)
                         page_parser_map[pnum] = parser_name
                     else:
@@ -842,6 +1052,7 @@ def _execute_adaptive_transcription(
                             minimal_page = {
                                 "page": p,
                                 "text": page_text,
+                                "parser": "tesseract_ocr",
                                 "blocks": [
                                     {
                                         "type": "paragraph",
@@ -868,6 +1079,7 @@ def _execute_adaptive_transcription(
                         minimal_page = {
                             "page": p,
                             "text": page_text,
+                            "parser": "tesseract_ocr",
                             "blocks": [
                                 {
                                     "type": "paragraph",
@@ -902,6 +1114,7 @@ def _execute_adaptive_transcription(
                     minimal_page = {
                         "page": p,
                         "text": page_text,
+                        "parser": "tesseract_ocr",
                         "blocks": [
                             {
                                 "type": "paragraph",
@@ -929,12 +1142,25 @@ def _execute_adaptive_transcription(
     else:
         parser_used = "mixed"
 
-    # Persist the full graph as a first-class artifact
+    # Normalize graph pages: add parser per page, ensure block IDs, normalise bbox, sort, validate
     if all_graph_pages:
-        _store_graph(file_path, pages_to_transcribe, all_graph_pages, parser=parser_used)
-        _t(f"[ADAPTIVE] Full graph artifact persisted for {len(all_graph_pages)} pages with parser {parser_used}")
-    else:
-        pass
+        try:
+            normalized_pages = _normalize_graph_pages(all_graph_pages, page_parser_map, default_parser=parser_used)
+            # Compute preprocessing duration
+            duration = time.time() - start_preprocessing
+            _store_graph(
+                file_path,
+                pages_to_transcribe,
+                normalized_pages,
+                parser=parser_used,
+                preprocessing_duration=duration
+            )
+            _t(f"[ADAPTIVE] Full graph artifact persisted for {len(normalized_pages)} pages with parser {parser_used}")
+        except Exception as e:
+            _t(f"[ADAPTIVE] Failed to normalize and store graph: {e}")
+            # Continue without storing graph; we still return text result
+            # Log error but don't fail the transcription
+            logger.error(f"Graph storage failed: {e}")
 
     return result
 
