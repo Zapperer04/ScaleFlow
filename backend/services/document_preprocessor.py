@@ -9,8 +9,10 @@ import logging
 import threading
 import concurrent.futures
 import re
+import gc
+import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Set
 
 import numpy as np
 import cv2
@@ -54,11 +56,49 @@ CV2_AVAILABLE = True
 logger = logging.getLogger(__name__)
 
 # ------------------------------------------------------------------------------
-# Timeout configuration (can be overridden by env)
+# Configuration (from environment or config.py)
 # ------------------------------------------------------------------------------
-PAGE_PARSE_TIMEOUT_SECONDS = int(os.getenv("PAGE_PARSE_TIMEOUT_SECONDS", "120"))
-MAX_DOCUMENT_PARSE_SECONDS = int(os.getenv("MAX_DOCUMENT_PARSE_SECONDS", "3600"))
-HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "10"))
+PAGE_PARSE_TIMEOUT_SECONDS = int(os.getenv("PAGE_PARSE_TIMEOUT_SECONDS", getattr(config, "PAGE_PARSE_TIMEOUT_SECONDS", 120)))
+MAX_DOCUMENT_PARSE_SECONDS = int(os.getenv("MAX_DOCUMENT_PARSE_SECONDS", getattr(config, "MAX_DOCUMENT_PARSE_SECONDS", 3600)))
+HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", getattr(config, "HEARTBEAT_INTERVAL_SECONDS", 10)))
+MAX_PAGE_RETRIES = int(os.getenv("MAX_PAGE_RETRIES", getattr(config, "MAX_PAGE_RETRIES", 3)))
+MAX_RETRY_DURATION_SECONDS = int(os.getenv("MAX_RETRY_DURATION_SECONDS", getattr(config, "MAX_RETRY_DURATION_SECONDS", 180)))
+HTTP_CONNECT_TIMEOUT = int(os.getenv("HTTP_CONNECT_TIMEOUT", getattr(config, "HTTP_CONNECT_TIMEOUT", 15)))
+HTTP_READ_TIMEOUT = int(os.getenv("HTTP_READ_TIMEOUT", getattr(config, "HTTP_READ_TIMEOUT", 120)))
+MEMORY_GC_INTERVAL = int(os.getenv("MEMORY_GC_INTERVAL", getattr(config, "MEMORY_GC_INTERVAL", 10)))
+MAX_GRAPH_EDGES = int(os.getenv("MAX_GRAPH_EDGES", getattr(config, "MAX_GRAPH_EDGES", 5000)))
+MAX_ACTIVE_PAGES = int(os.getenv("MAX_ACTIVE_PAGES", getattr(config, "MAX_ACTIVE_PAGES", 2)))
+FAILURE_RATIO_THRESHOLD = float(os.getenv("FAILURE_RATIO_THRESHOLD", getattr(config, "FAILURE_RATIO_THRESHOLD", 0.5)))
+RECOVERABLE_JSON_ERRORS = {"trailing comma", "extra whitespace"}
+
+# Custom exceptions for better error categorization
+class ParserError(Exception):
+    """Base exception for parser errors."""
+    pass
+
+class GeminiTimeoutError(ParserError):
+    """Gemini HTTP request timed out."""
+    pass
+
+class GeminiJsonError(ParserError):
+    """Gemini response JSON was malformed after all recovery attempts."""
+    pass
+
+class GeminiNetworkError(ParserError):
+    """Network-level error communicating with Gemini."""
+    pass
+
+class GeminiPermanentError(ParserError):
+    """Permanent error from Gemini (safety, recitation, etc.)."""
+    pass
+
+class ParserCancelledError(ParserError):
+    """Parser was cancelled via cancellation_check."""
+    pass
+
+class ParserTimeoutError(ParserError):
+    """Parser exceeded global or per-page timeout."""
+    pass
 
 class VlmQuotaExhaustedError(RuntimeError):
     pass
@@ -68,6 +108,10 @@ class GeminiRateLimitError(RuntimeError):
         super().__init__(message)
         self.retry_after = retry_after
 
+
+# ------------------------------------------------------------------------------
+# Helper functions
+# ------------------------------------------------------------------------------
 _vlm_quota_exhausted = False
 _vlm_quota_lock = threading.Lock()
 
@@ -120,10 +164,21 @@ Rules:
 - Do NOT transcribe horizontal dividing lines, borders, or page separators (such as long sequences of dashes, hyphens, underscores, or dots). Omit them entirely from the text.
 """
 
+# Allowed structural types as defined in the prompt
+ALLOWED_STRUCTURAL_TYPES = {
+    "header", "heading", "paragraph", "footer", "table", "table_row", "table_cell",
+    "list", "list_item", "figure", "caption", "metadata", "reference", "quote", "code"
+}
+
+ALLOWED_SEMANTIC_CATEGORIES = {
+    "person", "organization", "identifier", "date", "location", "title", "heading",
+    "summary", "metadata", "body_text", "reference", "citation", "concept", "definition",
+    "procedure", "relationship", "event", "measurement", "table", "figure", "caption",
+    "financial_value", "legal_reference", "scientific_term"
+}
 
 def _clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
     return max(lower, min(upper, value))
-
 
 def _trace(trace_fn: Optional[Callable[[str], None]], message: str) -> None:
     logger.info(message)
@@ -134,18 +189,14 @@ def _trace(trace_fn: Optional[Callable[[str], None]], message: str) -> None:
     except Exception:
         pass
 
-
 def _is_text_file(file_path: str) -> bool:
     return os.path.splitext(file_path)[1].lower() in SUPPORTED_TEXT_EXTENSIONS
-
 
 def _is_image_file(file_path: str) -> bool:
     return os.path.splitext(file_path)[1].lower() in SUPPORTED_IMAGE_EXTENSIONS
 
-
 def _is_pdf_file(file_path: str) -> bool:
     return os.path.splitext(file_path)[1].lower() == ".pdf"
-
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
@@ -158,10 +209,8 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
     except Exception:
         return default
 
-
 def _document_extension(file_path: str) -> str:
     return os.path.splitext(file_path)[1].lower()
-
 
 def _get_gemini_api_key() -> str:
     candidates = [
@@ -175,7 +224,6 @@ def _get_gemini_api_key() -> str:
             return str(candidate).strip()
     return ""
 
-
 def _gemini_throttle() -> None:
     global _gemini_last_call_time
     with _gemini_rate_lock:
@@ -186,7 +234,6 @@ def _gemini_throttle() -> None:
             time.sleep(wait_seconds)
         _gemini_last_call_time = time.monotonic()
 
-
 def _check_memory_before_render(pages_to_render: int, target_dpi: int) -> None:
     pages_to_render = max(1, int(pages_to_render))
     target_dpi = max(72, int(target_dpi))
@@ -196,7 +243,6 @@ def _check_memory_before_render(pages_to_render: int, target_dpi: int) -> None:
         raise MemoryError(
             f"Preprocess render requires approximately {estimated_mb:.0f} MB, which exceeds the safe memory budget"
         )
-
 
 def analyze_image_spatial_quality(image_np: np.ndarray) -> Tuple[float, float, float]:
     if image_np is None or image_np.size == 0:
@@ -212,7 +258,6 @@ def analyze_image_spatial_quality(image_np: np.ndarray) -> Tuple[float, float, f
     edges = cv2.Canny(gray, 50, 150)
     edge_density = float((np.count_nonzero(edges) / float(gray.size)) * 100.0)
     return blur_score, contrast_score, edge_density
-
 
 def _score_text_coherence(text: str) -> float:
     if not text or len(text.strip()) < 20:
@@ -248,7 +293,6 @@ def _score_text_coherence(text: str) -> float:
         replacement_penalty *= 1.0 - min(0.35, (digit_alpha_mixture / len(alpha_tokens)) * 1.2)
 
     return round(max(0.0, min(100.0, base * replacement_penalty)), 1)
-
 
 @dataclass
 class PreprocessingReport:
@@ -286,7 +330,6 @@ class PreprocessingReport:
     is_encrypted: bool = False
     is_corrupted: bool = False
 
-
 def _ensure_pil_image(image: Any) -> Any:
     if PIL_AVAILABLE and isinstance(image, Image.Image):
         return image
@@ -301,7 +344,6 @@ def _ensure_pil_image(image: Any) -> Any:
             return Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     raise TypeError(f"Unsupported image type: {type(image)!r}")
 
-
 def _pil_to_base64(image: Any) -> str:
     pil_image = _ensure_pil_image(image)
     buffer = io.BytesIO()
@@ -310,14 +352,12 @@ def _pil_to_base64(image: Any) -> str:
     pil_image.save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode("ascii")
 
-
 def _clean_json_text(text: str) -> str:
     cleaned = text.strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\s*```$", "", cleaned)
     return cleaned.strip()
-
 
 def _extract_gemini_text(response_json: Dict[str, Any]) -> str:
     candidates = response_json.get("candidates") or []
@@ -334,7 +374,6 @@ def _extract_gemini_text(response_json: Dict[str, Any]) -> str:
     if isinstance(response_json.get("text"), str):
         return response_json["text"]
     return ""
-
 
 def _normalize_bbox(raw_bbox: Any, image_width: int, image_height: int) -> Dict[str, float]:
     if isinstance(raw_bbox, dict):
@@ -360,27 +399,14 @@ def _normalize_bbox(raw_bbox: Any, image_width: int, image_height: int) -> Dict[
     y1, y2 = sorted((_clamp(y1), _clamp(y2)))
     return {"x1": round(x1, 6), "y1": round(y1, 6), "x2": round(x2, 6), "y2": round(y2, 6)}
 
-
 def _normalize_node_type(node_type: Any) -> str:
-    allowed = {
-        "heading",
-        "subheading",
-        "paragraph",
-        "table",
-        "list",
-        "equation",
-        "figure",
-        "caption",
-        "footer",
-        "header",
-        "reference",
-        "code",
-        "quote",
-        "form_field",
-    }
+    # Map any value not in allowed set to "paragraph"
     value = str(node_type or "paragraph").strip().lower()
-    return value if value in allowed else "paragraph"
+    return value if value in ALLOWED_STRUCTURAL_TYPES else "paragraph"
 
+def _normalize_semantic_category(category: Any) -> str:
+    value = str(category or "body_text").strip().lower()
+    return value if value in ALLOWED_SEMANTIC_CATEGORIES else "body_text"
 
 def _estimate_handwritten_confidence(blur_score: float, contrast_score: float, edge_density: float) -> float:
     blur_component = _clamp((200.0 - blur_score) / 200.0)
@@ -388,7 +414,6 @@ def _estimate_handwritten_confidence(blur_score: float, contrast_score: float, e
     edge_component = _clamp(edge_density / 8.0)
     score = (blur_component * 0.25) + (contrast_component * 0.45) + (edge_component * 0.30)
     return round(_clamp(score), 3)
-
 
 def _normalize_quality_scores(
     blur_score: float,
@@ -411,7 +436,6 @@ def _normalize_quality_scores(
         "overall": round(_clamp(overall, 0.0, 100.0), 2),
     }
 
-
 def _enhance_numpy_image(image_np: np.ndarray) -> np.ndarray:
     if image_np.ndim == 2:
         bgr = cv2.cvtColor(image_np, cv2.COLOR_GRAY2BGR)
@@ -429,7 +453,6 @@ def _enhance_numpy_image(image_np: np.ndarray) -> np.ndarray:
 
     return bgr
 
-
 def _page_to_image_metadata(image: Any, page_number: int) -> Dict[str, Any]:
     pil_image = _ensure_pil_image(image)
     width, height = pil_image.size
@@ -439,7 +462,6 @@ def _page_to_image_metadata(image: Any, page_number: int) -> Dict[str, Any]:
         "height": height,
         "mode": pil_image.mode,
     }
-
 
 def _generate_spatial_edges(nodes: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], bool]:
     """
@@ -463,7 +485,7 @@ def _generate_spatial_edges(nodes: List[Dict[str, Any]]) -> Tuple[List[Dict[str,
 
     VERTICAL_THRESHOLD = 0.10
     HORIZONTAL_THRESHOLD = 0.10
-    MAX_GRAPH_EDGES = 5000
+    MAX_GRAPH_EDGES_LOCAL = MAX_GRAPH_EDGES
 
     n = len(node_data)
     for i in range(n):
@@ -505,11 +527,11 @@ def _generate_spatial_edges(nodes: List[Dict[str, Any]]) -> Tuple[List[Dict[str,
                 edges.append({"from": id_j, "to": id_i, "relation": "LEFT_OF"})
 
     # Hard edge cap to prevent memory/performance degradation
-    if len(edges) > MAX_GRAPH_EDGES:
+    if len(edges) > MAX_GRAPH_EDGES_LOCAL:
         logger.warning(
-            f"Graph edge explosion: {len(edges)} edges; truncating to {MAX_GRAPH_EDGES}"
+            f"Graph edge explosion: {len(edges)} edges; truncating to {MAX_GRAPH_EDGES_LOCAL}"
         )
-        edges = edges[:MAX_GRAPH_EDGES]
+        edges = edges[:MAX_GRAPH_EDGES_LOCAL]
         is_truncated = True
 
     return edges, is_truncated
@@ -527,7 +549,6 @@ class DocumentPreprocessor:
             return handle.read()
 
     def _pdf_reader(self) -> pypdf.PdfReader:
-        # Fix: don't open file inside context manager, use file path directly
         return pypdf.PdfReader(self.file_path)
 
     def _pdf_page_count(self) -> int:
@@ -545,7 +566,6 @@ class DocumentPreprocessor:
                 except Exception:
                     decrypt_result = 0
                 if decrypt_result == 0:
-                    # Fix: route encrypted PDF to VLM instead of hard reject
                     report.is_encrypted = True
                     report.warnings.append("Encrypted PDF routed to VLM")
                     return len(reader.pages)
@@ -807,6 +827,9 @@ class DocumentPreprocessor:
         return report
 
 
+# ------------------------------------------------------------------------------
+# Gemini page parser with enhanced retry, timeouts, and cancellation
+# ------------------------------------------------------------------------------
 def _call_gemini_page_parser(
     image: Any,
     page_number: Optional[int] = None,
@@ -814,10 +837,26 @@ def _call_gemini_page_parser(
     timeout_seconds: int = 300,
     retries: int = 4,
     trace_fn: Optional[Callable[[str], None]] = None,
-) -> str:
+    cancellation_check: Optional[Callable[[], bool]] = None,
+    timeout_check: Optional[Callable[[], bool]] = None,
+    page_start_time: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Call Gemini API to parse a page with bounded retries and timeouts.
+    Returns a validated and normalized JSON dict (the page graph data).
+    Raises specific exceptions for different failure modes.
+    """
     api_key = _get_gemini_api_key()
     if not api_key:
         raise RuntimeError("Gemini API key is not configured")
+
+    # Check cancellation before any work
+    if cancellation_check and cancellation_check():
+        raise ParserCancelledError(f"Cancelled before Gemini call for page {page_number}")
+
+    # Per-page timeout check (using page_start_time for total duration)
+    if page_start_time is not None and timeout_check and timeout_check():
+        raise ParserTimeoutError(f"Global timeout exceeded before Gemini call for page {page_number}")
 
     pil_image = _ensure_pil_image(image)
 
@@ -862,14 +901,33 @@ def _call_gemini_page_parser(
     last_exception: Optional[BaseException] = None
     from services.gemini_rate_manager import GeminiRateManager
     rate_mgr = GeminiRateManager()
-    
+
+    # Max total retry duration is bounded by page_start_time and MAX_RETRY_DURATION_SECONDS
+    max_total_retry_duration = min(MAX_RETRY_DURATION_SECONDS, timeout_seconds)
+
     for attempt in range(max(1, retries)):
+        # Check cancellation before each attempt
+        if cancellation_check and cancellation_check():
+            raise ParserCancelledError(f"Cancelled before Gemini attempt {attempt+1} for page {page_number}")
+        if timeout_check and timeout_check():
+            raise ParserTimeoutError(f"Global timeout exceeded during Gemini attempt {attempt+1} for page {page_number}")
+        if page_start_time is not None and (time.time() - page_start_time) > max_total_retry_duration:
+            raise ParserTimeoutError(f"Page retry duration exceeded for page {page_number} after {time.time() - page_start_time:.1f}s")
+
         raw_text = ""
         cleaned = ""
         try:
+            # Throttle per API limits
             rate_mgr.wait_if_needed(trace_fn)
             _gemini_throttle()
-            response = requests.post(url, headers=headers, json=body, timeout=timeout_seconds)
+
+            # Use timeout tuple (connect, read)
+            response = requests.post(
+                url,
+                headers=headers,
+                json=body,
+                timeout=(HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT)
+            )
             if response.status_code == 429:
                 err_text = response.text
                 retry_after_hdr = response.headers.get("Retry-After")
@@ -879,101 +937,291 @@ def _call_gemini_page_parser(
                     raise GeminiRateLimitError(f"Gemini returned HTTP 429 Quota/Resource Exhausted: {err_text[:500]}", retry_after=wait_sec)
                 raise GeminiRateLimitError(f"Gemini returned HTTP 429 Rate Limit: {err_text[:500]}", retry_after=wait_sec)
             if response.status_code >= 500:
-                raise RuntimeError(f"Gemini returned HTTP {response.status_code}: {response.text[:500]}")
+                # Transient server error; retry
+                raise GeminiNetworkError(f"Gemini returned HTTP {response.status_code}: {response.text[:500]}")
             response.raise_for_status()
             rate_mgr.register_success()
             response_json = response.json()
             raw_text = _extract_gemini_text(response_json)
 
-            # =================== DEBUG BLOCK 1: Raw Gemini response ===================
-            logger.error("\n========== RAW GEMINI ==========")
-            logger.error("PAGE=%s", page_number)
-            logger.error("HTTP=%s", response.status_code)
-            logger.error(
-                "RAW RESPONSE:\n%s",
-                json.dumps(response_json, indent=2)[:10000]
-            )
-            logger.error(
-                "RAW TEXT LEN=%s",
-                len(raw_text or "")
-            )
-            logger.error(
-                "RAW TEXT START:\n%s",
-                (raw_text or "")[:1000]
-            )
-            logger.error("========== END GEMINI ==========\n")
-            # ========================================================================
-
-            cleaned = _clean_json_text(raw_text)
-            logger.error(
-                f"JSON_SIZE={len(cleaned) if cleaned else 0} "
-                f"RAW_SIZE={len(raw_text) if raw_text else 0}"
-            )
+            # Check finish reason
             candidates = response_json.get("candidates", [])
-            finish_reason = candidates[0].get("finishReason") if candidates else None
+            if candidates:
+                finish_reason = candidates[0].get("finishReason")
+                if finish_reason is not None:
+                    if finish_reason == "STOP":
+                        # Normal completion
+                        pass
+                    elif finish_reason == "MAX_TOKENS":
+                        # Recoverable: retry with lower output? For now, treat as success but log warning.
+                        logger.warning(f"Gemini finishReason=MAX_TOKENS for page {page_number}; output truncated.")
+                    elif finish_reason in ("SAFETY", "RECITATION", "OTHER"):
+                        raise GeminiPermanentError(f"Gemini blocked: finishReason={finish_reason} for page {page_number}")
+                    else:
+                        # Unknown reason, treat as permanent
+                        raise GeminiPermanentError(f"Gemini finishReason={finish_reason} for page {page_number}")
+                else:
+                    logger.warning(f"Gemini response missing finishReason for page {page_number}")
 
-            usage = response_json.get("usageMetadata", {})
-            prompt_tokens = usage.get("promptTokenCount", 0)
-            candidate_tokens = usage.get("candidatesTokenCount", 0)
-            thoughts_tokens = usage.get("thoughtsTokenCount", 0)
-            total_tokens = usage.get("totalTokenCount", 0)
-
-            logger.error(
-                f"\n========== VLM STATS ==========\n"
-                f"finish_reason={finish_reason}\n"
-                f"prompt_tokens={prompt_tokens}\n"
-                f"candidate_tokens={candidate_tokens}\n"
-                f"thoughts_tokens={thoughts_tokens}\n"
-                f"total_tokens={total_tokens}\n"
-                f"raw_length={len(raw_text) if raw_text else 0}\n"
-                f"===============================\n"
-            )
-
-            if finish_reason and finish_reason != "STOP":
-                raise RuntimeError(f"Gemini generation failed: {finish_reason}")
+            # Clean and parse JSON
+            cleaned = _clean_json_text(raw_text)
+            # Attempt to parse to validate
+            try:
+                json.loads(cleaned)
+            except json.JSONDecodeError as e:
+                # Try to repair common issues: remove trailing commas, extra whitespace, and balance braces
+                repaired = _repair_json(cleaned)
+                if repaired != cleaned:
+                    try:
+                        json.loads(repaired)
+                        cleaned = repaired
+                        logger.info(f"Repaired JSON for page {page_number}")
+                    except json.JSONDecodeError:
+                        # Still invalid; check if it's a recoverable error (like schema violation)
+                        error_msg = str(e).lower()
+                        if any(kw in error_msg for kw in RECOVERABLE_JSON_ERRORS):
+                            # Recoverable, will retry
+                            raise GeminiJsonError(f"JSON decode error after repair (recoverable) for page {page_number}: {e}")
+                        else:
+                            # Permanent schema violation
+                            raise GeminiPermanentError(f"JSON schema violation for page {page_number}: {e}")
+                else:
+                    # Not repairable, check error type
+                    error_msg = str(e).lower()
+                    if any(kw in error_msg for kw in RECOVERABLE_JSON_ERRORS):
+                        raise GeminiJsonError(f"JSON decode error (recoverable) for page {page_number}: {e}")
+                    else:
+                        raise GeminiPermanentError(f"JSON decode error (permanent) for page {page_number}: {e}")
 
             if not cleaned:
-                raise ValueError("Gemini response did not contain JSON text")
-            json.loads(cleaned)
-            return cleaned
-        except Exception as exc:
-            last_exception = exc
+                raise GeminiJsonError(f"Gemini response did not contain JSON text for page {page_number}")
+
+            # Validate and normalize schema in one pass, returning the normalized dict
+            graph_data = _validate_and_normalize_json_schema(cleaned, page_number, image)
+
+            # Free large objects
+            del encoded_image, body, response_json, raw_text
+
+            return graph_data
+
+        except (requests.Timeout, requests.ConnectionError) as e:
+            last_exception = GeminiTimeoutError(f"Network timeout/error for page {page_number}: {e}")
+            # Continue to retry
+        except (GeminiRateLimitError, GeminiNetworkError, GeminiJsonError, GeminiPermanentError) as e:
+            # Specific Gemini errors
+            if isinstance(e, GeminiPermanentError):
+                # Permanent, don't retry
+                raise e
+            last_exception = e
+            # For rate limit and network errors, we retry with backoff
+        except Exception as e:
+            # Unexpected error
+            last_exception = e
+            # We'll retry with backoff if transient
+            if isinstance(e, requests.HTTPError) and e.response.status_code in (400, 403, 404):
+                # Non-retryable client errors
+                raise GeminiPermanentError(f"Gemini HTTP error {e.response.status_code}: {e.response.text[:200]}")
+            # Other exceptions are considered retryable unless we run out of retries.
+        finally:
+            # Clean up large objects
             try:
-                raw_tail = raw_text[-1000:] if isinstance(raw_text, str) and raw_text else ""
+                del encoded_image
             except Exception:
-                raw_tail = ""
+                pass
             try:
-                cleaned_tail = cleaned[-1000:] if isinstance(cleaned, str) and cleaned else ""
+                del body
             except Exception:
-                cleaned_tail = ""
+                pass
+            try:
+                del response
+            except Exception:
+                pass
+            try:
+                del response_json
+            except Exception:
+                pass
+            try:
+                del raw_text
+            except Exception:
+                pass
 
-            _trace(
-                trace_fn,
-                (
-                    f"[VLM] Gemini JSON parse failure on page {page_number or '?'} "
-                    f"(attempt {attempt + 1}/{retries}): {exc}"
-                ),
-            )
-            logger.error(
-                "[VLM] Gemini JSON parse failure details: page=%s attempt=%s/%s raw_len=%s cleaned_len=%s",
-                page_number if page_number is not None else "?",
-                attempt + 1,
-                retries,
-                len(raw_text) if isinstance(raw_text, str) else 0,
-                len(cleaned) if isinstance(cleaned, str) else 0,
-            )
-            if raw_tail:
-                logger.error("[VLM] Gemini raw response tail:\n%s", raw_tail)
-            if cleaned_tail:
-                logger.error("[VLM] Gemini cleaned JSON tail:\n%s", cleaned_tail)
+        _trace(trace_fn, f"[VLM] Gemini page parser error on page {page_number} (attempt {attempt+1}/{retries}): {last_exception}")
+        if attempt >= retries - 1:
+            break
+        # Exponential backoff with jitter
+        backoff_seconds = min(20.0, (2.0 ** attempt) + (0.25 * attempt))
+        time.sleep(backoff_seconds)
 
-            if attempt >= retries - 1:
-                break
-            backoff_seconds = min(20.0, (2.0 ** attempt) + (0.25 * attempt))
-            _trace(trace_fn, f"[VLM] Gemini page parser retry {attempt + 1}/{retries} after error: {exc}")
-            time.sleep(backoff_seconds)
+    # Raise the last specific exception if possible
+    if last_exception:
+        raise last_exception
+    raise RuntimeError(f"Gemini page parser failed after {retries} attempts for page {page_number}")
 
-    raise RuntimeError(f"Gemini page parser failed after {retries} attempts: {last_exception}")
+
+def _validate_and_normalize_json_schema(json_text: str, page_number: int, image: Any) -> Dict[str, Any]:
+    """
+    Validate and normalize the JSON response against the expected schema.
+    Returns the normalized data dict (ready for graph building).
+    """
+    try:
+        data = json.loads(json_text)
+    except json.JSONDecodeError as e:
+        raise GeminiJsonError(f"Invalid JSON during schema validation: {e}")
+
+    if not isinstance(data, dict):
+        raise GeminiPermanentError(f"Response is not a dict for page {page_number}")
+
+    nodes = data.get("nodes")
+    if nodes is None:
+        raise GeminiPermanentError(f"Missing 'nodes' field for page {page_number}")
+    if not isinstance(nodes, list):
+        raise GeminiPermanentError(f"'nodes' is not a list for page {page_number}")
+
+    # Validate each node
+    for idx, node in enumerate(nodes):
+        if not isinstance(node, dict):
+            raise GeminiPermanentError(f"Node {idx} is not a dict for page {page_number}")
+
+        # Check required fields
+        required_fields = ["text", "reading_order", "structural_type", "semantic_category", "entity_group", "confidence", "bbox"]
+        for field in required_fields:
+            if field not in node:
+                raise GeminiPermanentError(f"Node {idx} missing required field '{field}' for page {page_number}")
+
+        # Validate types and normalize values
+        if not isinstance(node["text"], str):
+            raise GeminiPermanentError(f"Node {idx} 'text' is not a string for page {page_number}")
+        try:
+            reading_order = int(node["reading_order"])
+            if reading_order < 1:
+                raise GeminiPermanentError(f"Node {idx} 'reading_order' must be positive")
+        except (ValueError, TypeError):
+            raise GeminiPermanentError(f"Node {idx} 'reading_order' is not an integer for page {page_number}")
+
+        if not isinstance(node["confidence"], (int, float)):
+            raise GeminiPermanentError(f"Node {idx} 'confidence' is not a number for page {page_number}")
+        if not (0.0 <= float(node["confidence"]) <= 1.0):
+            raise GeminiPermanentError(f"Node {idx} 'confidence' out of range for page {page_number}")
+
+        # Normalize structural_type and semantic_category
+        struct_type = str(node.get("structural_type", "paragraph")).strip().lower()
+        node["structural_type"] = struct_type if struct_type in ALLOWED_STRUCTURAL_TYPES else "paragraph"
+        sem_cat = str(node.get("semantic_category", "body_text")).strip().lower()
+        node["semantic_category"] = sem_cat if sem_cat in ALLOWED_SEMANTIC_CATEGORIES else "body_text"
+
+        # Validate bbox (will be normalized later)
+        bbox = node.get("bbox")
+        if not isinstance(bbox, dict):
+            raise GeminiPermanentError(f"Node {idx} 'bbox' is not a dict for page {page_number}")
+        for key in ["x1", "y1", "x2", "y2"]:
+            if key not in bbox:
+                raise GeminiPermanentError(f"Node {idx} 'bbox' missing '{key}' for page {page_number}")
+            try:
+                val = float(bbox[key])
+                if val < 0 or val > 1:
+                    # Warn but allow (normalization will clamp)
+                    logger.warning(f"Node {idx} bbox {key}={val} out of [0,1] for page {page_number}")
+            except (ValueError, TypeError):
+                raise GeminiPermanentError(f"Node {idx} bbox '{key}' is not a number for page {page_number}")
+
+    # Get image dimensions for bbox normalization
+    pil_image = _ensure_pil_image(image)
+    width, height = pil_image.size
+
+    # Now build normalized nodes with bbox adjusted
+    normalized_nodes: List[Dict[str, Any]] = []
+    ordered_nodes: List[Tuple[int, Dict[str, Any]]] = []
+    for idx, node in enumerate(nodes, start=1):
+        raw_reading_order = node.get("reading_order", idx)
+        try:
+            reading_order = int(raw_reading_order)
+        except Exception:
+            reading_order = idx
+        ordered_nodes.append((reading_order, node))
+
+    ordered_nodes.sort(key=lambda item: (item[0],))
+
+    for sequence_index, (_, node) in enumerate(ordered_nodes, start=1):
+        bbox = node.get("bbox")
+        # Normalize bbox
+        norm_bbox = _normalize_bbox(bbox, width, height) if bbox else {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0}
+        normalized_nodes.append(
+            {
+                "chunk_id": f"p{page_number}_n{sequence_index}",
+                "node_id": f"p{page_number}_n{sequence_index}",
+                "type": node["structural_type"],
+                "structural_type": node["structural_type"],
+                "text": str(node.get("text", "") or "").strip(),
+                "section": node["semantic_category"],
+                "semantic_category": node["semantic_category"],
+                "entity_group": str(node.get("entity_group", "unknown")).strip(),
+                "confidence": float(node.get("confidence", 1.0)),
+                "reading_order": sequence_index,
+                "bbox": norm_bbox,
+            }
+        )
+
+    # Generate edges: sequential NEXT and spatial relationships
+    edges: List[Dict[str, Any]] = []
+    for index in range(len(normalized_nodes) - 1):
+        edges.append(
+            {
+                "from": normalized_nodes[index]["chunk_id"],
+                "to": normalized_nodes[index + 1]["chunk_id"],
+                "relation": "NEXT",
+            }
+        )
+    # Add spatial edges
+    spatial_edges, is_truncated = _generate_spatial_edges(normalized_nodes)
+    edges.extend(spatial_edges)
+
+    # Return the normalized page graph data
+    return {
+        "page_number": page_number,
+        "source": "gemini",
+        "width": width,
+        "height": height,
+        "nodes": normalized_nodes,
+        "edges": edges,
+        "status": "success",
+        "metadata": {"graph_truncated": is_truncated},
+    }
+
+
+def _repair_json(text: str) -> str:
+    """
+    Attempt to repair common JSON issues, including:
+    - trailing commas
+    - surrounding garbage
+    - missing closing braces/brackets (truncated JSON)
+    """
+    text = text.strip()
+    # Remove trailing commas before closing braces/brackets
+    text = re.sub(r',\s*}', '}', text)
+    text = re.sub(r',\s*]', ']', text)
+    # Remove leading/trailing garbage
+    start = text.find('{')
+    end = text.rfind('}')
+    if start != -1 and end != -1 and start < end:
+        text = text[start:end+1]
+    else:
+        # If no valid braces found, try to extract JSON-like structure
+        # This is a fallback; we'll just return the cleaned text.
+        pass
+
+    # Attempt to balance braces: if the string appears truncated (e.g., ends with '[' or '{')
+    # we try to add the necessary closing braces.
+    open_braces = text.count('{') - text.count('}')
+    open_brackets = text.count('[') - text.count(']')
+    if open_braces > 0 or open_brackets > 0:
+        # If there are unclosed braces, append missing closing braces.
+        # This is a heuristic and may not always work, but can recover some truncations.
+        if open_braces > 0:
+            text += '}' * open_braces
+        if open_brackets > 0:
+            text += ']' * open_brackets
+
+    return text
 
 
 def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]:
@@ -1047,6 +1295,17 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
         return struct_type, sem_cat
 
     def _cluster_ocr_entity_groups(nodes):
+        # Use a spatial grid to reduce comparisons.
+        # Store (node, index) in grid to avoid O(n) list.index() lookup.
+        cell_size = 0.05
+        grid = {}
+        for idx, node in enumerate(nodes):
+            bbox = node["bbox"]
+            cx = (bbox["x1"] + bbox["x2"]) / 2
+            cy = (bbox["y1"] + bbox["y2"]) / 2
+            cell = (int(cx / cell_size), int(cy / cell_size))
+            grid.setdefault(cell, []).append((idx, node))
+
         entity_groups = {}
         visited = set()
         group_idx = 1
@@ -1059,15 +1318,21 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
             visited.add(i)
 
             b1 = n1["bbox"]
-            for j, n2 in enumerate(nodes):
-                if j in visited:
-                    continue
-                b2 = n2["bbox"]
-                v_gap = abs(b2["y1"] - b1["y2"])
-                h_overlap = not (b2["x2"] < b1["x1"] or b2["x1"] > b1["x2"])
-                if v_gap < 0.05 and h_overlap:
-                    entity_groups[group_id].append(n2)
-                    visited.add(j)
+            cx1 = (b1["x1"] + b1["x2"]) / 2
+            cy1 = (b1["y1"] + b1["y2"]) / 2
+            cell1 = (int(cx1 / cell_size), int(cy1 / cell_size))
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    cell = (cell1[0]+dx, cell1[1]+dy)
+                    for j, n2 in grid.get(cell, []):
+                        if j in visited:
+                            continue
+                        b2 = n2["bbox"]
+                        v_gap = abs(b2["y1"] - b1["y2"])
+                        h_overlap = not (b2["x2"] < b1["x1"] or b2["x1"] > b1["x2"])
+                        if v_gap < 0.05 and h_overlap:
+                            entity_groups[group_id].append(n2)
+                            visited.add(j)
             group_idx += 1
 
         for grp_id, grp_nodes in entity_groups.items():
@@ -1103,7 +1368,7 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
 
         # 1. Apply Recursive XY-Cut layouts
         word_groups = _recursive_xy_cut_layout(raw_words)
-        
+
         nodes = []
         for idx, words in enumerate(word_groups):
             if not words:
@@ -1111,21 +1376,21 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
             # Sort words inside group by reading flow
             sorted_words = sorted(words, key=lambda w: (w["top"], w["left"]))
             paragraph_text = " ".join([w["text"] for w in sorted_words])
-            
+
             x1 = min(w["left"] for w in words)
             y1 = min(w["top"] for w in words)
             x2 = max(w["left"] + w["width"] for w in words)
             y2 = max(w["top"] + w["height"] for w in words)
-            
+
             bbox = {
                 "x1": x1 / width,
                 "y1": y1 / height,
                 "x2": x2 / width,
                 "y2": y2 / height
             }
-            
+
             struct_type, sem_cat = _classify_ocr_block(paragraph_text)
-            
+
             nodes.append({
                 "chunk_id": f"p{page_number}_ocr_para_{idx + 1}",
                 "node_id": f"p{page_number}_ocr_para_{idx + 1}",
@@ -1140,7 +1405,7 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
                 "bbox": bbox
             })
 
-        # 2. Cluster entity groups dynamically (DBSCAN behavior)
+        # 2. Cluster entity groups dynamically (using spatial grid with index)
         _cluster_ocr_entity_groups(nodes)
 
         # 3. Build graph edges
@@ -1171,86 +1436,25 @@ def _ocr_fallback_page(image: Any, page_number: int) -> Optional[Dict[str, Any]]
         return None
 
 
-def _normalize_page_graph(
-    page_number: int,
-    raw_json_text: str,
-    image: Any,
-) -> Dict[str, Any]:
-    payload = json.loads(raw_json_text)
-    if not isinstance(payload, dict):
-        raise ValueError("Gemini response was not a JSON object")
-
-    nodes = payload.get("nodes")
-    if nodes is None:
-        raise ValueError("Gemini response did not include nodes")
-    if not isinstance(nodes, list):
-        raise ValueError("nodes must be a list")
-
-    pil_image = _ensure_pil_image(image)
-    width, height = pil_image.size
-
-    normalized_nodes: List[Dict[str, Any]] = []
-    ordered_nodes: List[Tuple[int, Dict[str, Any]]] = []
-
-    for index, node in enumerate(nodes, start=1):
-        if not isinstance(node, dict):
-            continue
-        raw_reading_order = node.get("reading_order", index)
-        try:
-            reading_order = int(raw_reading_order)
-        except Exception:
-            reading_order = index
-        ordered_nodes.append((reading_order, node))
-
-    ordered_nodes.sort(key=lambda item: (item[0],))
-
-    for sequence_index, (_, node) in enumerate(ordered_nodes, start=1):
-        raw_struct_type = node.get("structural_type") or node.get("type") or "paragraph"
-        raw_sem_cat = node.get("semantic_category") or node.get("section") or "body_text"
-        raw_ent_grp = node.get("entity_group") or "unknown"
-        raw_conf = _safe_float(node.get("confidence"), 1.0)
-
-        normalized_nodes.append(
-            {
-                "chunk_id": f"p{page_number}_n{sequence_index}",
-                "node_id": f"p{page_number}_n{sequence_index}",
-                "type": _normalize_node_type(raw_struct_type),
-                "structural_type": _normalize_node_type(raw_struct_type),
-                "text": str(node.get("text", "") or "").strip(),
-                "section": str(raw_sem_cat).strip(),
-                "semantic_category": str(raw_sem_cat).strip(),
-                "entity_group": str(raw_ent_grp).strip(),
-                "confidence": raw_conf,
-                "reading_order": sequence_index,
-                "bbox": _normalize_bbox(node.get("bbox"), width, height),
-            }
-        )
-
-    # Generate edges: sequential NEXT and spatial relationships
-    edges: List[Dict[str, Any]] = []
-    for index in range(len(normalized_nodes) - 1):
-        edges.append(
-            {
-                "from": normalized_nodes[index]["chunk_id"],
-                "to": normalized_nodes[index + 1]["chunk_id"],
-                "relation": "NEXT",
-            }
-        )
-    # Add spatial edges
-    spatial_edges, is_truncated = _generate_spatial_edges(normalized_nodes)
-    edges.extend(spatial_edges)
-
-    return {
-        "page_number": page_number,
-        "source": "gemini",
-        "width": width,
-        "height": height,
-        "nodes": normalized_nodes,
-        "edges": edges,
-        "status": "success",
-        "metadata": {"graph_truncated": is_truncated},
-    }
-
+# ------------------------------------------------------------------------------
+# Main VLM orchestration with producer-consumer, cancellation, and safety
+# ------------------------------------------------------------------------------
+@dataclass
+class ParserExecutionState:
+    """State container for VLM extraction."""
+    results: Dict[int, Optional[Dict[str, Any]]]
+    running_pages: Set[int]
+    completed_count: int
+    failed_count: int
+    page_timeouts: int
+    global_timeout: bool
+    started_at: float
+    last_heartbeat: float
+    results_lock: threading.Lock
+    running_pages_lock: threading.Lock
+    total_pages: int
+    parser_choice: str
+    memory_peak_mb: float = 0.0
 
 def execute_vlm_document_graph_extraction(
     images: Sequence[Any],
@@ -1259,18 +1463,21 @@ def execute_vlm_document_graph_extraction(
     trace_fn: Optional[Callable[[str], None]] = None,
     progress_json: Optional[Dict[str, Any]] = None,
     on_page_completed: Optional[Callable[[int, Dict[str, Any]], None]] = None,
+    cancellation_check: Optional[Callable[[], bool]] = None,
+    timeout_check: Optional[Callable[[], bool]] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Perform VLM document graph extraction with per‑page and global timeouts,
-    proper as_completed handling, cancellation of stuck tasks (note: cancellation
-    only affects pending futures; already-running HTTP requests continue), shutdown
-    safety, and real heartbeats.
+    cooperative cancellation, bounded concurrency, and heartbeat.
     """
     image_list = list(images or [])
     if not image_list:
         raise ValueError("No images provided for VLM document graph extraction")
 
     max_workers = max(1, int(max_workers or 2))
+    if max_workers > getattr(config, "MAX_VLM_WORKERS", 4):
+        max_workers = getattr(config, "MAX_VLM_WORKERS", 4)
+
     document_id = str(pipeline_id or f"document_{int(time.time() * 1000)}")
     started_at = time.perf_counter()
     last_heartbeat = started_at
@@ -1278,13 +1485,11 @@ def execute_vlm_document_graph_extraction(
 
     # Capture filename early to avoid race
     first_image = image_list[0] if image_list else None
-    # Try to get original filename from the image (PIL may have .filename)
     original_filename = os.path.basename(getattr(first_image, 'filename', str(document_id))) if first_image else str(document_id)
-    # If the filename is still a generated id, fallback to a generic name
     if original_filename.startswith("document_"):
         original_filename = "document.pdf" if _is_pdf_file(str(document_id)) else "document_image"
 
-    # Determine parser choice (gemini or ocr)
+    # Determine parser choice (gemini or ocr) from progress_json or availability
     parser_choice = "gemini" if _get_gemini_api_key() else "ocr"
     if progress_json and progress_json.get("parser"):
         parser_choice = progress_json.get("parser")
@@ -1292,9 +1497,11 @@ def execute_vlm_document_graph_extraction(
     _trace(trace_fn, f"[VLM] Selected parser: {parser_choice}")
 
     # Load previously completed pages from progress checkpoint
-    completed_pages = progress_json.get("completed_pages", []) if progress_json else []
+    completed_pages = set(progress_json.get("completed_pages", []) if progress_json else [])
     completed_pages_data = progress_json.get("completed_pages_data", {}) if progress_json else {}
-    
+
+    # Thread-safe structures
+    results_lock = threading.Lock()
     results: Dict[int, Optional[Dict[str, Any]]] = {}
     for pnum_str, page_graph in completed_pages_data.items():
         try:
@@ -1303,20 +1510,30 @@ def execute_vlm_document_graph_extraction(
         except Exception:
             pass
 
-    # Statistics for timeouts
-    page_timeouts = 0
-    global_timeout = False
-    page_timeout_seconds = PAGE_PARSE_TIMEOUT_SECONDS
-    global_timeout_seconds = MAX_DOCUMENT_PARSE_SECONDS
+    running_pages_lock = threading.Lock()
+    running_pages: Set[int] = set()
 
-    # Thread-safe dict for actual execution start times
-    exec_start_times: Dict[int, float] = {}
-    exec_start_times_lock = threading.Lock()
+    # Create state object
+    state = ParserExecutionState(
+        results=results,
+        running_pages=running_pages,
+        completed_count=0,
+        failed_count=0,
+        page_timeouts=0,
+        global_timeout=False,
+        started_at=started_at,
+        last_heartbeat=last_heartbeat,
+        results_lock=results_lock,
+        running_pages_lock=running_pages_lock,
+        total_pages=len(image_list),
+        parser_choice=parser_choice,
+        memory_peak_mb=_rss_mb(),
+    )
 
     # Helper to clean up image references
     def _cleanup_image(page_index: int):
-        # Free the image reference in both lists to help GC
-        image_list[page_index] = None
+        if page_index < len(image_list):
+            image_list[page_index] = None
         if isinstance(images, list) and page_index < len(images):
             try:
                 images[page_index] = None
@@ -1324,24 +1541,33 @@ def execute_vlm_document_graph_extraction(
                 pass
 
     # Worker function per page
-    def _process_page(page_index: int, image: Any) -> Optional[Dict[str, Any]]:
+    def _process_page(page_index: int, image: Any, page_start_time: float) -> Optional[Dict[str, Any]]:
         page_number = page_index + 1
+        # Check cancellation and timeout before processing
+        if cancellation_check and cancellation_check():
+            raise ParserCancelledError(f"Cancelled before processing page {page_number}")
+        if timeout_check and timeout_check():
+            raise ParserTimeoutError(f"Global timeout exceeded before processing page {page_number}")
+
         if parser_choice == "gemini":
+            # Directly call Gemini parser; it returns validated dict
             try:
-                raw_text = _call_gemini_page_parser(
+                graph_data = _call_gemini_page_parser(
                     image=image,
                     page_number=page_number,
                     pipeline_id=pipeline_id,
-                    timeout_seconds=page_timeout_seconds,
+                    timeout_seconds=PAGE_PARSE_TIMEOUT_SECONDS,
+                    retries=MAX_PAGE_RETRIES,
                     trace_fn=trace_fn,
+                    cancellation_check=cancellation_check,
+                    timeout_check=timeout_check,
+                    page_start_time=page_start_time,
                 )
-                return _normalize_page_graph(page_number=page_number, raw_json_text=raw_text, image=image)
-            except GeminiRateLimitError as exc:
-                _trace(trace_fn, f"[VLM] Gemini rate limit hit on page {page_number}: {exc}")
-                raise exc
-            except Exception as exc:
-                _trace(trace_fn, f"[VLM] Gemini failed on page {page_number}: {exc}")
-                raise exc
+                return graph_data
+            except (GeminiRateLimitError, ParserCancelledError, ParserTimeoutError, GeminiPermanentError) as e:
+                # Re-raise these to stop or propagate
+                raise
+            # Do NOT catch all exceptions here; let unexpected ones propagate.
         else:
             try:
                 fallback_page = _ocr_fallback_page(image, page_number)
@@ -1349,138 +1575,184 @@ def execute_vlm_document_graph_extraction(
                     fallback_page["fallback_reason"] = "Gemini unavailable upfront, utilizing OCR fallback"
                     return fallback_page
                 return None
-            except Exception as exc:
-                _trace(trace_fn, f"[VLM] OCR fallback failed on page {page_number}: {exc}")
-                raise exc
+            except Exception as e:
+                # OCR may raise, but we don't want it to stop the whole extraction
+                _trace(trace_fn, f"[VLM] OCR fallback failed on page {page_number}: {e}")
+                return None
 
-    def _worker_task(page_index: int, image: Any):
+    def _worker_task(page_index: int, image: Any, page_start_time: float):
         page_number = page_index + 1
-        if page_index in results:
-            # Already completed
-            if hasattr(image, "close"):
+        # Check if already completed or running (double-check under lock)
+        with state.results_lock:
+            if page_index in state.results:
+                _cleanup_image(page_index)
+                return state.results[page_index]
+        with state.running_pages_lock:
+            if page_index in state.running_pages:
+                return None
+            state.running_pages.add(page_index)
+
+        try:
+            res = _process_page(page_index, image, page_start_time)
+            with state.results_lock:
+                state.results[page_index] = res
+                if res is not None:
+                    state.completed_count += 1
+                else:
+                    state.failed_count += 1
+
+            # Checkpoint
+            if res is not None and on_page_completed:
                 try:
-                    image.close()
-                except Exception:
-                    pass
+                    on_page_completed(page_number, res)
+                    _trace(trace_fn, f"[VLM] Page {page_number} checkpointed via callback")
+                except Exception as cb_err:
+                    _trace(trace_fn, f"[VLM] Warning: page completion callback failed: {cb_err}")
+
+            return res
+        except (ParserCancelledError, ParserTimeoutError, GeminiRateLimitError) as e:
+            # Propagate these to stop the extraction
+            with state.results_lock:
+                state.results[page_index] = None
+                state.failed_count += 1
+            raise
+        except Exception as e:
+            # Catch-all for truly unexpected errors (should not happen)
+            with state.results_lock:
+                state.results[page_index] = None
+                state.failed_count += 1
+            _trace(trace_fn, f"[VLM] Unhandled error on page {page_number}: {e}")
+            return None
+        finally:
+            with state.running_pages_lock:
+                state.running_pages.discard(page_index)
             _cleanup_image(page_index)
-            return results[page_index]
-
-        # Record actual start time
-        with exec_start_times_lock:
-            exec_start_times[page_index] = time.perf_counter()
-
-        res = _process_page(page_index, image)
-
-        # Duration reading with lock
-        with exec_start_times_lock:
-            start_time = exec_start_times.get(page_index, time.perf_counter())
-        duration = time.perf_counter() - start_time
-        _trace(trace_fn, f"[VLM] Page {page_number} finished in {duration:.2f}s")
-
-        # Cleanup image
-        if hasattr(image, "close"):
-            try:
-                image.close()
-            except Exception:
-                pass
-        _cleanup_image(page_index)
-
-        # Checkpoint
-        if res is not None and on_page_completed:
-            try:
-                on_page_completed(page_number, res)
-                _trace(trace_fn, f"[VLM] Page {page_number} checkpointed via callback")
-            except Exception as cb_err:
-                _trace(trace_fn, f"[VLM] Warning: page completion callback failed: {cb_err}")
-        return res
+            if page_index % MEMORY_GC_INTERVAL == 0:
+                gc.collect()
+                # Update memory peak
+                current_mem = _rss_mb()
+                if current_mem > state.memory_peak_mb:
+                    state.memory_peak_mb = current_mem
 
     # Determine which pages to process
-    to_process = [idx for idx in range(len(image_list)) if idx not in results]
+    to_process = [idx for idx in range(len(image_list)) if idx not in state.results]
     total_pages = len(image_list)
 
+    # Producer-consumer with bounded concurrency
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+    pending_futures: Set[concurrent.futures.Future] = set()
+    future_to_idx: Dict[concurrent.futures.Future, int] = {}
+    idx_iter = iter(to_process)
+
     try:
-        future_to_idx = {}
-        for idx in to_process:
-            future = executor.submit(_worker_task, idx, image_list[idx])
+        # Initial fill
+        while len(pending_futures) < max_workers:
+            try:
+                idx = next(idx_iter)
+            except StopIteration:
+                break
+            # Check if page already completed (should not happen)
+            with state.results_lock:
+                if idx in state.results:
+                    continue
+            page_start_time = time.time()
+            future = executor.submit(_worker_task, idx, image_list[idx], page_start_time)
+            pending_futures.add(future)
             future_to_idx[future] = idx
 
-        pending = set(future_to_idx.keys())
-        while pending:
-            # Heartbeat
+        # Main loop
+        while pending_futures:
+            # Check global timeout and cancellation
             now = time.perf_counter()
-            if now - last_heartbeat >= heartbeat_interval:
-                last_heartbeat = now
-                running_info = []
-                with exec_start_times_lock:
-                    for idx in list(exec_start_times.keys()):
-                        elapsed = now - exec_start_times[idx]
-                        running_info.append(f"{idx+1} ({elapsed:.0f}s)")
-                _trace(trace_fn, f"[VLM] Heartbeat: processed {len(results)} pages, pending {len(pending)}, elapsed {now - started_at:.1f}s, running: {', '.join(running_info) if running_info else 'none'}")
-
-            # Check global timeout
-            if now - started_at > global_timeout_seconds:
-                _trace(trace_fn, f"[VLM] Global document timeout exceeded after {now - started_at:.1f}s")
-                global_timeout = True
-                for f in pending:
+            if timeout_check and timeout_check():
+                _trace(trace_fn, f"[VLM] Global timeout exceeded after {now - state.started_at:.1f}s")
+                state.global_timeout = True
+                for f in pending_futures:
                     f.cancel()
                 break
-
-            # Check per-page timeouts based on actual execution start time
-            for f in list(pending):
-                idx = future_to_idx[f]
-                with exec_start_times_lock:
-                    start_time = exec_start_times.get(idx)
-                if start_time is not None and now - start_time > page_timeout_seconds:
-                    _trace(trace_fn, f"[VLM] Page {idx+1} timed out after {page_timeout_seconds}s (execution time)")
-                    page_timeouts += 1
+            if cancellation_check and cancellation_check():
+                _trace(trace_fn, "[VLM] Cancellation requested")
+                for f in pending_futures:
                     f.cancel()
-                    pending.remove(f)
-                    results[idx] = None
-                    del future_to_idx[f]
-                    with exec_start_times_lock:
-                        if idx in exec_start_times:
-                            del exec_start_times[idx]
+                raise ParserCancelledError("Cancellation requested during VLM extraction")
+
+            # Heartbeat
+            if now - state.last_heartbeat >= heartbeat_interval:
+                state.last_heartbeat = now
+                with state.results_lock:
+                    completed = state.completed_count
+                    failed = state.failed_count
+                with state.running_pages_lock:
+                    running_info = [f"{idx+1} (running)" for idx in state.running_pages]
+                # Compute ETA based on recent completion rate
+                elapsed = now - state.started_at
+                eta = "unknown"
+                if completed > 0 and elapsed > 0:
+                    rate = completed / elapsed
+                    remaining = total_pages - completed - failed
+                    if rate > 0:
+                        eta_sec = remaining / rate
+                        if eta_sec < 60:
+                            eta = f"{eta_sec:.0f}s"
+                        elif eta_sec < 3600:
+                            eta = f"{eta_sec/60:.1f}m"
+                        else:
+                            eta = f"{eta_sec/3600:.1f}h"
+                _trace(trace_fn, f"[VLM] Heartbeat: completed {completed}/{total_pages}, "
+                        f"failed {failed}, running {len(running_info)}, pending {len(pending_futures)}, "
+                        f"elapsed {elapsed:.1f}s, memory {state.memory_peak_mb:.1f}MB, "
+                        f"workers={max_workers}, retries={MAX_PAGE_RETRIES}, ETA={eta}")
 
             # Wait for any future to complete with a short timeout
-            if pending:
-                done, _ = concurrent.futures.wait(pending, timeout=1.0, return_when=concurrent.futures.FIRST_COMPLETED)
-                for future in done:
-                    idx = future_to_idx[future]
+            done, _ = concurrent.futures.wait(pending_futures, timeout=1.0, return_when=concurrent.futures.FIRST_COMPLETED)
+            for future in done:
+                idx = future_to_idx.pop(future, None)
+                if idx is not None:
+                    pending_futures.remove(future)
+                    # If future had an exception, we may need to handle it
                     try:
-                        result = future.result()
-                        results[idx] = result
-                    except Exception as exc:
-                        if isinstance(exc, GeminiRateLimitError):
-                            # Cancel remaining and re-raise
-                            for f in pending:
+                        future.result()  # Raises if exception occurred
+                    except Exception as e:
+                        if isinstance(e, (ParserCancelledError, ParserTimeoutError, GeminiRateLimitError)):
+                            # Critical error, stop extraction
+                            for f in pending_futures:
                                 f.cancel()
-                            pending.clear()
                             raise
-                        _trace(trace_fn, f"[VLM] Page {idx+1} failed: {exc}")
-                        results[idx] = None
-                    finally:
-                        pending.remove(future)
-                        del future_to_idx[future]
-                        with exec_start_times_lock:
-                            if idx in exec_start_times:
-                                del exec_start_times[idx]
+                        # Otherwise, page already marked failed (swallowed in worker_task)
+                        pass
+                    # Submit next page if any
+                    try:
+                        next_idx = next(idx_iter)
+                    except StopIteration:
+                        continue
+                    with state.results_lock:
+                        if next_idx in state.results:
+                            continue
+                    if cancellation_check and cancellation_check():
+                        raise ParserCancelledError("Cancellation requested before submitting next page")
+                    if timeout_check and timeout_check():
+                        state.global_timeout = True
+                        break
+                    page_start_time = time.time()
+                    future_new = executor.submit(_worker_task, next_idx, image_list[next_idx], page_start_time)
+                    pending_futures.add(future_new)
+                    future_to_idx[future_new] = next_idx
 
-            if global_timeout:
+            if state.global_timeout:
                 break
 
     finally:
-        # Shutdown without waiting for running tasks (they will continue but we ignore)
-        executor.shutdown(wait=False)
+        # Shutdown executor: wait for all running tasks to finish (they have bounded timeouts)
+        executor.shutdown(wait=True)
 
-    # After executor, handle any pages not processed due to global timeout
-    remaining_indices = [idx for idx in to_process if idx not in results]
-    if global_timeout and remaining_indices:
-        for idx in remaining_indices:
-            results[idx] = None
-            _trace(trace_fn, f"[VLM] Page {idx+1} skipped due to global timeout")
+    # After loop, any pages not processed due to timeout are marked as failed
+    if state.global_timeout:
+        with state.results_lock:
+            for idx in to_process:
+                if idx not in state.results:
+                    state.results[idx] = None
 
-    # Build final graph
+    # Build final graph (recompute statistics from graph, not trusting incremental counters)
     pages: List[Dict[str, Any]] = []
     total_failed = 0
     total_vlm_success = 0
@@ -1490,8 +1762,11 @@ def execute_vlm_document_graph_extraction(
     document_edges: List[Dict[str, Any]] = []
     previous_last_node_id: Optional[str] = None
 
+    # Track seen edges to avoid duplicates
+    seen_edges: Set[Tuple[str, str]] = set()
+
     for page_index in range(len(image_list)):
-        page_graph = results.get(page_index)
+        page_graph = state.results.get(page_index)
         if page_graph is None:
             total_failed += 1
             continue
@@ -1509,17 +1784,20 @@ def execute_vlm_document_graph_extraction(
         if page_nodes:
             first_node_id = page_nodes[0].get("chunk_id")
             if previous_last_node_id and first_node_id:
-                document_edges.append(
-                    {
-                        "from": previous_last_node_id,
-                        "to": first_node_id,
-                        "relation": "PAGE_NEXT",
-                    }
-                )
+                edge_key = (previous_last_node_id, first_node_id)
+                if edge_key not in seen_edges:
+                    document_edges.append(
+                        {
+                            "from": previous_last_node_id,
+                            "to": first_node_id,
+                            "relation": "PAGE_NEXT",
+                        }
+                    )
+                    seen_edges.add(edge_key)
             previous_last_node_id = page_nodes[-1].get("chunk_id") or previous_last_node_id
 
     failure_ratio = total_failed / max(len(image_list), 1)
-    if failure_ratio > 0.50:
+    if failure_ratio > FAILURE_RATIO_THRESHOLD:
         _trace(trace_fn, f"[VLM] Warning: high failure ratio {failure_ratio:.0%} for {total_failed}/{len(image_list)} pages")
 
     # Determine file type based on original filename if available, else fallback
@@ -1531,12 +1809,15 @@ def execute_vlm_document_graph_extraction(
         elif ext in SUPPORTED_IMAGE_EXTENSIONS:
             file_type = "image"
     else:
-        # Fallback: try to infer from document_id or pipeline_id (unreliable)
         if pipeline_id and isinstance(pipeline_id, str):
             if pipeline_id.endswith(".pdf"):
                 file_type = "pdf"
             elif any(pipeline_id.endswith(ext) for ext in SUPPORTED_IMAGE_EXTENSIONS):
                 file_type = "image"
+
+    # Recompute node and edge counts from graph to avoid incremental errors
+    final_node_count = sum(len(pg.get("nodes", [])) for pg in pages)
+    final_edge_count = sum(len(pg.get("edges", [])) for pg in pages) + len(document_edges)
 
     graph = {
         "document_id": document_id,
@@ -1549,14 +1830,14 @@ def execute_vlm_document_graph_extraction(
         "edges": document_edges,
         "statistics": {
             "page_count": len(image_list),
-            "node_count": total_nodes,
-            "edge_count": total_edges + len(document_edges),
+            "node_count": final_node_count,
+            "edge_count": final_edge_count,
             "vlm_success_pages": total_vlm_success,
             "ocr_fallback_pages": total_ocr_success,
             "failed_pages": total_failed,
-            "timeout_pages": page_timeouts,
-            "global_timeout_triggered": global_timeout,
-            "duration_seconds": round(time.perf_counter() - started_at, 3),
+            "timeout_pages": state.page_timeouts,
+            "global_timeout_triggered": state.global_timeout,
+            "duration_seconds": round(time.perf_counter() - state.started_at, 3),
         },
         "document_metadata": {
             "filename": original_filename,
@@ -1574,7 +1855,7 @@ def execute_vlm_document_graph_extraction(
         f"\nVLM pages={total_vlm_success}"
         f"\nOCR pages={total_ocr_success}"
         f"\nFailed pages={total_failed}"
-        f"\nTotal nodes={total_nodes}"
+        f"\nTotal nodes={final_node_count}"
         f"\nFirst page nodes={len(pages[0]['nodes']) if pages else 0}"
         "\n================================="
     )
@@ -1582,6 +1863,17 @@ def execute_vlm_document_graph_extraction(
     return graph
 
 
+# Helper to get RSS memory
+def _rss_mb() -> float:
+    try:
+        return psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+    except Exception:
+        return 0.0
+
+
+# ------------------------------------------------------------------------------
+# Legacy wrapper and public APIs (unchanged, but we pass through new params)
+# ------------------------------------------------------------------------------
 def run_enhancement_pipeline(
     filepath: str,
     report: Optional[PreprocessingReport] = None,
@@ -1638,11 +1930,17 @@ def execute_vlm_extraction_step(
     trace_fn: Optional[Callable[[str], None]] = None,
     **kwargs: Any,
 ) -> Optional[Dict[str, Any]]:
+    # Pass through new parameters if provided
+    cancellation_check = kwargs.get("cancellation_check")
+    timeout_check = kwargs.get("timeout_check")
     return execute_vlm_document_graph_extraction(
         images=images,
         pipeline_id=pipeline_id,
         max_workers=max_workers,
         trace_fn=trace_fn,
+        cancellation_check=cancellation_check,
+        timeout_check=timeout_check,
+        **{k: v for k, v in kwargs.items() if k not in ("cancellation_check", "timeout_check")}
     )
 
 
@@ -1665,11 +1963,16 @@ def parse_document_vlm(
         preprocessor = DocumentPreprocessor(str(file_path))
         images = preprocessor.render_document(trace_fn=trace_fn)
 
+    cancellation_check = kwargs.get("cancellation_check")
+    timeout_check = kwargs.get("timeout_check")
     return execute_vlm_document_graph_extraction(
         images=images,
         pipeline_id=pipeline_id,
         max_workers=max_workers,
         trace_fn=trace_fn,
+        cancellation_check=cancellation_check,
+        timeout_check=timeout_check,
+        **{k: v for k, v in kwargs.items() if k not in ("cancellation_check", "timeout_check")}
     )
 
 
