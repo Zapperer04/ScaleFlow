@@ -15,6 +15,7 @@ import json
 import time
 import logging
 import threading
+import gc
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -53,6 +54,7 @@ try:
     from services.document_preprocessor import (
         execute_vlm_document_graph_extraction,
         _ocr_fallback_page,
+        GeminiRateLimitError,
     )
     VLM_AVAILABLE = True
 except ImportError:
@@ -193,7 +195,6 @@ def render_pdf_pages(
     return all_rendered
 
 
-
 def load_image_file(filepath: str) -> List[Any]:
     """Load a single image or multi-frame image as a list of PIL images."""
     if not PIL_AVAILABLE:
@@ -325,7 +326,7 @@ class ParseResult:
 
 
 # ------------------------------------------------------------------------------
-# Main VLM-first parse pipeline
+# Main VLM-first parse pipeline (updated with cleanup and validation)
 # ------------------------------------------------------------------------------
 def parse_pdf(
     filepath: str,
@@ -344,23 +345,9 @@ def parse_pdf(
 ) -> ParseResult:
     """
     Parse a document into a structured document graph using VLM as primary method.
-
-    Args:
-        filepath: Path to document (PDF or image).
-        task_id: ScaleFlow task identifier.
-        lease_token: Worker lease token for progress updates.
-        progress_json: Previous progress state (checkpoint).
-        trace_fn: Callback for trace events.
-        api_url: ScaleFlow API URL for progress PATCH.
-        api_headers: Headers for API requests.
-        skip_ocr: If True, do not fallback to OCR on VLM failure.
-        document_type: (compatibility) Expected document type.
-        routing_confidence: (compatibility) Routing confidence.
-        parse_method_hint: (compatibility) Hint for parsing method.
-        enhanced_pages_path: Path to pre-enhanced pages directory.
-
-    Returns:
-        ParseResult with document_graph, stats, and page metadata.
+    Timeouts and rate limiting are expected to be handled inside
+    execute_vlm_document_graph_extraction (document_preprocessor.py).
+    This function provides memory cleanup and validation.
     """
     # --------------------------------------------------------------------------
     # 1. Validation & governance
@@ -412,6 +399,8 @@ def parse_pdf(
     # Apply optional image size limit for VLM (avoid huge payloads)
     MAX_DIM = 1800
     for idx, img in enumerate(images):
+        if img is None:
+            continue
         w, h = img.size
         if max(w, h) > MAX_DIM:
             scale = MAX_DIM / max(w, h)
@@ -424,19 +413,37 @@ def parse_pdf(
     # --------------------------------------------------------------------------
     page_metadata = []
     for idx, img in enumerate(images):
-        meta = {
-            "page_number": idx + 1,
-            "table_detected": detect_table(img),
-            "contains_signature": detect_signature(img),
-            "contains_handwriting": compute_handwriting_score(img) > 0.4,
-            "extraction_method": "vlm",  # default, may change after fallback
-            "parser_used": "gemini_vlm",
-            "node_count": 0,
-        }
-        page_metadata.append(meta)
+        if img is None:
+            _trace(trace_fn, f"[PARSER] Page {idx+1} image is None, skipping")
+            page_metadata.append({
+                "page_number": idx+1,
+                "extraction_method": "skipped",
+                "parser_used": "none",
+                "node_count": 0,
+            })
+            continue
+        try:
+            meta = {
+                "page_number": idx + 1,
+                "table_detected": detect_table(img),
+                "contains_signature": detect_signature(img),
+                "contains_handwriting": compute_handwriting_score(img) > 0.4,
+                "extraction_method": "vlm",  # default, may change after fallback
+                "parser_used": "gemini_vlm",
+                "node_count": 0,
+            }
+            page_metadata.append(meta)
+        except Exception as e:
+            _trace(trace_fn, f"[PARSER] Metadata extraction failed for page {idx+1}: {e}")
+            page_metadata.append({
+                "page_number": idx+1,
+                "extraction_method": "metadata_error",
+                "parser_used": "none",
+                "node_count": 0,
+            })
 
     # --------------------------------------------------------------------------
-    # 4. Primary: VLM document graph extraction
+    # 4. Primary: VLM document graph extraction (no timeout wrapper)
     # --------------------------------------------------------------------------
     from services.document_preprocessor import _get_gemini_api_key
     # Determine if Gemini is locked or available
@@ -453,10 +460,14 @@ def parse_pdf(
     document_graph = None
     vlm_success = False
     ocr_fallback_used = False
+    vlm_extraction_duration = 0.0
+    ocr_fallback_duration = 0.0
+    rendering_duration = time.time() - start_time  # approximate
 
     if parser_choice == "gemini" and VLM_AVAILABLE:
         _trace(trace_fn, "[PARSER] Starting VLM document graph extraction...")
         try:
+            vlm_start = time.time()
             document_graph = execute_vlm_document_graph_extraction(
                 images=images,
                 pipeline_id=task_id,
@@ -465,31 +476,50 @@ def parse_pdf(
                 progress_json=progress_json,
                 on_page_completed=on_page_completed,
             )
+            vlm_extraction_duration = time.time() - vlm_start
             vlm_success = True
             _trace(trace_fn, "[PARSER] VLM extraction succeeded")
+        except GeminiRateLimitError as e:
+            # Re-raise rate limit errors so they can be handled by worker
+            raise e
         except Exception as e:
             _trace(trace_fn, f"[PARSER] VLM extraction failed: {e}")
-            from services.document_preprocessor import GeminiRateLimitError
-            if isinstance(e, GeminiRateLimitError):
-                raise e
+            logger.exception("VLM extraction error")
             document_graph = None
+            vlm_success = False
+
+        # Free images immediately after VLM to reduce memory pressure
+        try:
+            del images
+        except UnboundLocalError:
+            pass
+        gc.collect()
     else:
         _trace(trace_fn, f"[PARSER] Parser {parser_choice} selected or VLM module not available, proceeding to OCR fallback")
 
     # --------------------------------------------------------------------------
     # 5. OCR fallback (if VLM failed or unavailable)
     # --------------------------------------------------------------------------
+    # Note: if VLM succeeded, images is already deleted, so we skip OCR.
+    # If VLM failed but we have images and not skip_ocr, we fallback.
     if (not vlm_success or document_graph is None) and not skip_ocr:
         _trace(trace_fn, "[PARSER] Falling back to OCR-based document graph")
         ocr_fallback_used = True
         pages_graph = []
-        failed_pages = 0
         total_nodes = 0
         total_edges = 0
+        failed_pages = 0
+        ocr_start = time.time()
 
+        # images should still exist because VLM didn't succeed or we didn't delete them
         for idx, img in enumerate(images):
+            if img is None:
+                _trace(trace_fn, f"[PARSER] Page {idx+1} image is None, skipping")
+                failed_pages += 1
+                continue
             page_number = idx + 1
             try:
+                # Attempt OCR
                 pg = _ocr_fallback_page(img, page_number)
                 if pg:
                     pages_graph.append(pg)
@@ -504,8 +534,15 @@ def parse_pdf(
                     failed_pages += 1
                     _trace(trace_fn, f"[PARSER] OCR fallback failed for page {page_number}")
             except Exception as e:
-                _trace(trace_fn, f"[PARSER] OCR exception on page {page_number}: {e}")
+                logger.exception(f"OCR exception on page {page_number}")
                 failed_pages += 1
+                _trace(trace_fn, f"[PARSER] OCR exception on page {page_number}: {e}")
+            finally:
+                # Free the image from memory to reduce peak usage
+                images[idx] = None
+                gc.collect()
+
+        ocr_fallback_duration = time.time() - ocr_start
 
         # Build a document graph structure similar to VLM output
         document_graph = {
@@ -538,6 +575,13 @@ def parse_pdf(
                     "relation": "PAGE_NEXT",
                 })
 
+        # Clean up the rest of images list after OCR
+        try:
+            del images
+        except UnboundLocalError:
+            pass
+        gc.collect()
+
     elif not vlm_success and skip_ocr:
         # OCR not allowed, return empty graph with failure note
         document_graph = {
@@ -547,7 +591,7 @@ def parse_pdf(
             "document_type": "MULTIMODAL",
             "pages": [],
             "edges": [],
-            "statistics": {"failed_pages": len(images)},
+            "statistics": {"failed_pages": len(images) if 'images' in locals() else 0},
         }
 
     # --------------------------------------------------------------------------
@@ -566,7 +610,10 @@ def parse_pdf(
     duration = round(time.time() - start_time, 2)
     vlm_pages = document_graph.get("statistics", {}).get("vlm_success_pages", 0) if (document_graph and vlm_success) else 0
     ocr_pages = document_graph.get("statistics", {}).get("ocr_fallback_pages", 0) if (document_graph and (ocr_fallback_used or vlm_success)) else 0
-    failed_pages = document_graph.get("statistics", {}).get("failed_pages", 0)
+    failed_pages_final = document_graph.get("statistics", {}).get("failed_pages", 0)
+
+    # Compute processed pages as pages that are actually in the graph
+    processed_pages = len(document_graph.get("pages", []))
     node_count = document_graph.get("statistics", {}).get("node_count", sum(m["node_count"] for m in page_metadata))
     edge_count = document_graph.get("statistics", {}).get("edge_count", 0)
 
@@ -582,27 +629,63 @@ def parse_pdf(
     stats = {
         "parser": parser_name,
         "total_pages": total_pages,
-        "processed_pages": len(images),
+        "processed_pages": processed_pages,
         "vlm_pages": vlm_pages,
         "ocr_pages": ocr_pages,
-        "failed_pages": failed_pages,
+        "failed_pages": failed_pages_final,
         "node_count": node_count,
         "edge_count": edge_count,
         "duration_seconds": duration,
         "memory_peak_mb": _rss_mb(),
         "page_failures": [],
         "timings": {
-            "rendering_duration": 0.0,  # could be measured but simple
-            "vlm_extraction_duration": 0.0,
-            "ocr_fallback_duration": 0.0,
+            "rendering_duration": rendering_duration,
+            "vlm_extraction_duration": vlm_extraction_duration,
+            "ocr_fallback_duration": ocr_fallback_duration,
+            "total_duration": duration,
         },
     }
 
     _trace(trace_fn, f"[PARSER] Extraction complete: {stats}")
 
     # --------------------------------------------------------------------------
-    # 8. Return structured result
+    # 8. Validate graph before return
     # --------------------------------------------------------------------------
+    if document_graph is None:
+        raise RuntimeError("Document graph is None after parsing")
+
+    if not isinstance(document_graph, dict):
+        raise RuntimeError("Document graph is not a dict")
+
+    if "pages" not in document_graph:
+        raise RuntimeError("Document graph missing 'pages' field")
+
+    if not isinstance(document_graph["pages"], list):
+        raise RuntimeError("Document graph 'pages' is not a list")
+
+    # Validate page_count matches (only warn if both VLM and OCR produced something)
+    expected_pages = len(page_metadata)
+    actual_pages = len(document_graph.get("pages", []))
+    # Only warn if VLM succeeded and pages mismatch, or if OCR succeeded and mismatch
+    if actual_pages != expected_pages and not (vlm_success and actual_pages == 0) and not (ocr_fallback_used and actual_pages == 0):
+        _trace(trace_fn, f"[PARSER] Warning: expected {expected_pages} pages, got {actual_pages} in graph")
+
+    # Validate node and edge counts if present
+    if "statistics" in document_graph:
+        stats_node_count = document_graph["statistics"].get("node_count", 0)
+        stats_edge_count = document_graph["statistics"].get("edge_count", 0)
+        # If mismatch, update stats with actual counts
+        if stats_node_count != node_count:
+            document_graph["statistics"]["node_count"] = node_count
+        if stats_edge_count != edge_count:
+            document_graph["statistics"]["edge_count"] = edge_count
+
+    # --------------------------------------------------------------------------
+    # 9. Final cleanup
+    # --------------------------------------------------------------------------
+    gc.collect()
+
+    # Return structured result
     return ParseResult(
         document_graph=document_graph,
         stats=stats,
