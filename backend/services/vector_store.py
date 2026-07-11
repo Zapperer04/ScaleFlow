@@ -69,6 +69,60 @@ COLLECTIONS = {
     "tables": config.QDRANT_TABLE_COLLECTION,
 }
 
+def _create_payload_indexes(client, collection_name):
+    """Helper to create all payload indexes on a collection."""
+    _index_specs = [
+        ("pipeline_id", qmodels.PayloadSchemaType.INTEGER),
+        ("file_id", qmodels.PayloadSchemaType.INTEGER),
+        ("section", qmodels.PayloadSchemaType.KEYWORD),
+        ("content_type", qmodels.PayloadSchemaType.KEYWORD),
+        ("chunk_id", qmodels.PayloadSchemaType.KEYWORD),
+        ("section_path", qmodels.PayloadSchemaType.KEYWORD),
+        ("graph_depth", qmodels.PayloadSchemaType.FLOAT),
+        ("importance_score", qmodels.PayloadSchemaType.FLOAT),
+        ("entities", qmodels.PayloadSchemaType.KEYWORD),
+        ("keywords", qmodels.PayloadSchemaType.KEYWORD),
+        ("semantic_parent", qmodels.PayloadSchemaType.KEYWORD),
+        ("semantic_children", qmodels.PayloadSchemaType.KEYWORD),
+        ("neighbors", qmodels.PayloadSchemaType.KEYWORD),
+        ("collection_source", qmodels.PayloadSchemaType.KEYWORD),
+        ("page_start", qmodels.PayloadSchemaType.INTEGER),
+        ("page_end", qmodels.PayloadSchemaType.INTEGER),
+        ("parser_version", qmodels.PayloadSchemaType.KEYWORD),
+    ]
+    for field_name, field_schema in _index_specs:
+        try:
+            client.create_payload_index(
+                collection_name=collection_name,
+                field_name=field_name,
+                field_schema=field_schema,
+            )
+            logger.info(f"Created payload index '{field_name}' on '{collection_name}'")
+        except Exception:
+            pass  # index already exists
+
+    # Ensure text index for chunk_text
+    try:
+        client.create_payload_index(
+            collection_name=collection_name,
+            field_name="chunk_text",
+            field_schema=qmodels.TextIndexParams(
+                type=qmodels.TextIndexType.TEXT,
+                tokenizer=qmodels.TokenizerType.WORD,
+                lowercase=True,
+            )
+        )
+        logger.info(f"Created text payload index on '{collection_name}'")
+    except Exception:
+        try:
+            client.create_payload_index(
+                collection_name=collection_name,
+                field_name="chunk_text",
+                field_schema="text"
+            )
+        except Exception:
+            pass
+
 def ensure_collections_exist():
     try:
         client = get_client()
@@ -83,58 +137,7 @@ def ensure_collections_exist():
                         distance=qmodels.Distance.COSINE
                     )
                 )
-
-            # Always ensure payload indexes exist (idempotent)
-            _index_specs = [
-                ("pipeline_id", qmodels.PayloadSchemaType.INTEGER),
-                ("file_id", qmodels.PayloadSchemaType.INTEGER),
-                ("section", qmodels.PayloadSchemaType.KEYWORD),
-                ("content_type", qmodels.PayloadSchemaType.KEYWORD),
-                # Graph-native chunk indexes
-                ("chunk_id", qmodels.PayloadSchemaType.KEYWORD),
-                ("section_path", qmodels.PayloadSchemaType.KEYWORD),
-                ("graph_depth", qmodels.PayloadSchemaType.FLOAT),
-                ("importance_score", qmodels.PayloadSchemaType.FLOAT),
-                ("entities", qmodels.PayloadSchemaType.KEYWORD),
-                ("keywords", qmodels.PayloadSchemaType.KEYWORD),
-                # Additional indexes for GraphRAG expansion
-                ("semantic_parent", qmodels.PayloadSchemaType.KEYWORD),
-                ("semantic_children", qmodels.PayloadSchemaType.KEYWORD),
-                ("neighbors", qmodels.PayloadSchemaType.KEYWORD),
-                ("collection_source", qmodels.PayloadSchemaType.KEYWORD),
-            ]
-            for field_name, field_schema in _index_specs:
-                try:
-                    client.create_payload_index(
-                        collection_name=name,
-                        field_name=field_name,
-                        field_schema=field_schema,
-                    )
-                    logger.info(f"Created payload index '{field_name}' on '{name}'")
-                except Exception:
-                    pass  # index already exists
-
-            # Ensure text index for chunk_text
-            try:
-                client.create_payload_index(
-                    collection_name=name,
-                    field_name="chunk_text",
-                    field_schema=qmodels.TextIndexParams(
-                        type=qmodels.TextIndexType.TEXT,
-                        tokenizer=qmodels.TokenizerType.WORD,
-                        lowercase=True,
-                    )
-                )
-                logger.info(f"Created text payload index on '{name}'")
-            except Exception:
-                try:
-                    client.create_payload_index(
-                        collection_name=name,
-                        field_name="chunk_text",
-                        field_schema="text"
-                    )
-                except Exception:
-                    pass
+            _create_payload_indexes(client, name)
     except Exception as e:
         logger.error(f"Failed to ensure collections exist: {e}")
 
@@ -161,56 +164,7 @@ def ensure_collection(collection_name="scaleflow_chunks", vector_size=None):
                     distance=qmodels.Distance.COSINE
                 )
             )
-            # Create payload indexes on the newly created collection
-            _index_specs = [
-                ("pipeline_id", qmodels.PayloadSchemaType.INTEGER),
-                ("file_id", qmodels.PayloadSchemaType.INTEGER),
-                ("section", qmodels.PayloadSchemaType.KEYWORD),
-                ("content_type", qmodels.PayloadSchemaType.KEYWORD),
-                # Graph-native chunk indexes
-                ("chunk_id", qmodels.PayloadSchemaType.KEYWORD),
-                ("section_path", qmodels.PayloadSchemaType.KEYWORD),
-                ("graph_depth", qmodels.PayloadSchemaType.FLOAT),
-                ("importance_score", qmodels.PayloadSchemaType.FLOAT),
-                ("entities", qmodels.PayloadSchemaType.KEYWORD),
-                ("keywords", qmodels.PayloadSchemaType.KEYWORD),
-                # Additional indexes for GraphRAG expansion
-                ("semantic_parent", qmodels.PayloadSchemaType.KEYWORD),
-                ("semantic_children", qmodels.PayloadSchemaType.KEYWORD),
-                ("neighbors", qmodels.PayloadSchemaType.KEYWORD),
-                ("collection_source", qmodels.PayloadSchemaType.KEYWORD),
-            ]
-            for field_name, field_schema in _index_specs:
-                try:
-                    client.create_payload_index(
-                        collection_name=collection_name,
-                        field_name=field_name,
-                        field_schema=field_schema,
-                    )
-                    logger.info(f"Created payload index '{field_name}' on '{collection_name}'")
-                except Exception:
-                    pass
-
-            # Create text index
-            try:
-                client.create_payload_index(
-                    collection_name=collection_name,
-                    field_name="chunk_text",
-                    field_schema=qmodels.TextIndexParams(
-                        type=qmodels.TextIndexType.TEXT,
-                        tokenizer=qmodels.TokenizerType.WORD,
-                        lowercase=True,
-                    )
-                )
-            except Exception:
-                try:
-                    client.create_payload_index(
-                        collection_name=collection_name,
-                        field_name="chunk_text",
-                        field_schema="text"
-                    )
-                except Exception:
-                    pass
+        _create_payload_indexes(client, collection_name)
         _ensured_collections.add(collection_name)
         return True
     except Exception as e:
@@ -243,24 +197,8 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
         logger.error("Could not ensure collection exists in Qdrant. Aborting upsert.")
         return False, lookup_duration, 0.0
 
-    if pipeline_id is not None:
-        try:
-            pid_int = int(pipeline_id)
-            client.delete(
-                collection_name=collection_name,
-                points_selector=qmodels.Filter(
-                    must=[
-                        qmodels.FieldCondition(
-                            key="pipeline_id",
-                            match=qmodels.MatchValue(value=pid_int)
-                        )
-                    ]
-                )
-            )
-            logger.info(f"Cleared old Qdrant points for pipeline_id={pid_int}")
-        except Exception as ed:
-            logger.warning(f"Failed to delete old points for pipeline {pipeline_id}: {ed}")
-        
+    # Remove delete-before-upsert – upsert with deterministic IDs will overwrite old entries
+
     global_meta = {}
     chunk_meta_list = None
 
@@ -275,29 +213,54 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
 
     points = []
     for i, (chunk_data, vector) in enumerate(zip(chunks, vectors)):
-        pt_index = chunk_indices[i] if chunk_indices is not None else i
-        # Deterministic unique point id using pipeline_id, file_id, and chunk_index
-        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{pipeline_id}_{file_id}_{pt_index}"))
-        
-        # ── Determine whether chunk_data is a graph-native dict or legacy string ──
-        if isinstance(chunk_data, dict):
-            # Graph-native chunk
-            chunk_text = chunk_data.get("text", "")
-            embedding_text = chunk_data.get("embedding_text", chunk_text)
-            bm25_text = chunk_data.get("bm25_text", chunk_text)
-            chunk_meta = chunk_data.get("metadata", {}) or {}
-            chunk_id = chunk_data.get("chunk_id") or chunk_meta.get("chunk_id")
-            section = chunk_data.get("section") or chunk_meta.get("section") or "unknown"
-            content_type = chunk_data.get("content_type") or chunk_meta.get("content_type") or "paragraph"
-            section_path = chunk_data.get("section_path") or chunk_meta.get("section_path") or ""
+        # Check if vector is all zero (with epsilon)
+        if isinstance(vector, (list, tuple)) and len(vector) > 0:
+            if all(abs(v) < 1e-12 for v in vector):
+                logger.warning(f"Skipping chunk index {i} because vector is essentially zero (embed=False or empty text).")
+                continue
 
-            # Normalize list-based fields to strings to ensure compatibility
+        # Determine if chunk should be skipped based on embed flag
+        if isinstance(chunk_data, dict) and chunk_data.get("embed") is False:
+            logger.warning(f"Skipping chunk index {i} because embed=False flag is set.")
+            continue
+
+        pt_index = chunk_indices[i] if chunk_indices is not None else i
+
+        # Extract metadata from chunk_data, normalising via 'metadata' key
+        if isinstance(chunk_data, dict):
+            meta = chunk_data.get("metadata", chunk_data)
+        else:
+            meta = {}
+
+        # Determine chunk_id: use graph-native chunk_id if available, else fallback to deterministic UUID
+        chunk_id = chunk_data.get("chunk_id") if isinstance(chunk_data, dict) else None
+        if not chunk_id:
+            chunk_id = meta.get("chunk_id")
+        if not chunk_id:
+            # Fallback: deterministic UUID from pipeline_id, file_id, and index
+            chunk_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{pipeline_id}_{file_id}_{pt_index}"))
+
+        # Use chunk_id as the Qdrant point ID (deterministic, stable)
+        point_id = chunk_id
+
+        # Extract fields from meta (with fallback to chunk_data)
+        if isinstance(chunk_data, dict):
+            chunk_text = chunk_data.get("text", "")
+            bm25_text = chunk_data.get("bm25_text", chunk_text)
+            # Remove duplicated fields: we keep chunk_text and bm25_text only if different,
+            # but we can store both; we'll drop 'text' and 'embedding_text' to reduce bloat.
+            # We'll store chunk_text as the main text and bm25_text separately.
+            # If bm25_text is identical to chunk_text, we can omit it (store only chunk_text)
+            if bm25_text == chunk_text:
+                bm25_text = None  # will not store
+            section = meta.get("section") or chunk_data.get("section", "unknown")
+            content_type = meta.get("content_type") or chunk_data.get("content_type", "paragraph")
+            section_path = meta.get("section_path") or chunk_data.get("section_path", "")
+            # Normalize list-based fields
             raw_neighbors = chunk_data.get("neighbors", [])
             neighbors = [str(x) for x in raw_neighbors if x is not None]
-
             raw_semantic_children = chunk_data.get("semantic_children", [])
             semantic_children = [str(x) for x in raw_semantic_children if x is not None]
-
             raw_entities = chunk_data.get("entities", [])
             entities = []
             for e in raw_entities:
@@ -305,10 +268,8 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
                     entities.append(str(e.get("value", e)))
                 else:
                     entities.append(str(e))
-
             raw_keywords = chunk_data.get("keywords", [])
             keywords = [str(k) for k in raw_keywords if k is not None]
-
             node_ids = chunk_data.get("node_ids", [])
             cross_refs = chunk_data.get("cross_refs", {})
             semantic_parent = chunk_data.get("semantic_parent")
@@ -318,14 +279,13 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             pages = chunk_data.get("pages", [])
             token_count = chunk_data.get("token_count", 0)
             char_count = chunk_data.get("char_count", 0)
-            # Future: chunk graph edges (not stored yet)
-            # graph_edges = chunk_data.get("graph_edges", [])
+            page_start = meta.get("page_start") or chunk_data.get("page_start")
+            page_end = meta.get("page_end") or chunk_data.get("page_end")
+            parser_version = meta.get("parser_version") or chunk_data.get("parser_version")
         else:
-            # Legacy string chunk
+            # Legacy string
             chunk_text = str(chunk_data) if chunk_data else ""
-            embedding_text = chunk_text
-            bm25_text = chunk_text
-            chunk_id = None
+            bm25_text = None
             section = "unknown"
             content_type = "paragraph"
             section_path = ""
@@ -342,6 +302,9 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             pages = []
             token_count = 0
             char_count = 0
+            page_start = None
+            page_end = None
+            parser_version = None
 
         # Build payload
         stored_pipeline_id = pipeline_id
@@ -358,9 +321,6 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             except (ValueError, TypeError):
                 pass
 
-        # The final chunk_id value: use the graph-native chunk_id if available, otherwise UUID-based point_id
-        final_chunk_id = chunk_id if chunk_id else str(point_id)
-
         payload = {
             "pipeline_id": stored_pipeline_id,
             "file_id": stored_file_id,
@@ -371,21 +331,13 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             "original_filename": global_meta.get("original_filename") if global_meta else None,
             "created_at": datetime.utcnow().isoformat(),
             
-            # Compatibility keys
+            # Compatibility keys (remove 'text' and 'embedding_text' to reduce duplication)
             "document_id": stored_file_id,
             "filename": global_meta.get("original_filename") if global_meta else None,
-            "chunk_id": final_chunk_id,
-            "text": chunk_text,
+            "chunk_id": chunk_id,
             
-            # Default metadata fields (overwritten if graph-native)
-            "section": section,
-            "content_type": content_type,
-            "token_count": token_count,
-            "page_number": 0,
-            
-            # Graph-native fields (normalized)
-            "embedding_text": embedding_text,
-            "bm25_text": bm25_text,
+            # Graph-native fields
+            "bm25_text": bm25_text,  # may be None if identical to chunk_text
             "node_ids": node_ids,
             "neighbors": neighbors,
             "cross_refs": cross_refs,
@@ -393,13 +345,21 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             "semantic_children": semantic_children,
             "entities": entities,
             "keywords": keywords,
+            "section": section,
+            "content_type": content_type,
             "section_path": section_path,
             "graph_depth": graph_depth,
             "importance_score": importance_score,
             "bbox": bbox,
             "pages": pages,
-            # "graph_edges": graph_edges,   # reserved for future chunk graph edges
+            "token_count": token_count,
+            "char_count": char_count,
+            "page_start": page_start,
+            "page_end": page_end,
+            "parser_version": parser_version,
         }
+        # Remove None values to save space
+        payload = {k: v for k, v in payload.items() if v is not None}
         
         # Merge chunk-specific metadata from external metadata list (if any)
         if chunk_meta_list and i < len(chunk_meta_list):
@@ -407,13 +367,12 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             if isinstance(c_meta, dict):
                 if "metadata" in c_meta and isinstance(c_meta["metadata"], dict):
                     c_meta = c_meta["metadata"]
-                # Do not overwrite graph-native fields, only fill missing
+                # Merge only missing keys or override if explicitly provided
                 for k, v in c_meta.items():
-                    if k in payload and payload[k] not in (None, "", [], {}) and not isinstance(payload[k], (list, dict)):
-                        continue  # preserve existing non-empty values
-                    payload[k] = v
+                    if k not in payload or payload.get(k) is None:
+                        payload[k] = v
         
-        # Add collection_source to chunk metadata
+        # Add collection_source
         if collection_name == config.QDRANT_TABLE_COLLECTION:
             payload["collection_source"] = "tables"
         elif collection_name == config.QDRANT_PARAGRAPH_COLLECTION:
@@ -444,10 +403,14 @@ def upsert_document_chunks(pipeline_id, file_id, task_id, chunks, vectors, metad
             print(f"... and {len(points) - 5} more points.", flush=True)
         print("=" * 80, flush=True)
 
+    if not points:
+        logger.warning("No points to upsert (all skipped due to zero vectors or embed=False).")
+        return True, lookup_duration, 0.0
+
     t_insert_start = time.perf_counter()
     try:
-        # Use larger batch size for better performance
-        batch_size = 256
+        # Use configurable batch size
+        batch_size = getattr(config, 'UPSERT_BATCH_SIZE', 256)
         for offset in range(0, len(points), batch_size):
             batch_points = points[offset:offset + batch_size]
             client.upsert(
@@ -503,8 +466,8 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
             payload = hit.payload
             results.append({
                 "score": round(hit.score, 4),
+                "text": payload.get("chunk_text"),  # backward compatibility
                 "chunk_text": payload.get("chunk_text"),
-                "text": payload.get("text") or payload.get("chunk_text"),
                 "section": payload.get("section", "unknown"),
                 "pipeline_id": payload.get("pipeline_id"),
                 "file_id": payload.get("file_id"),
@@ -521,9 +484,8 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
                 "contains_signature": payload.get("contains_signature"),
                 "contains_handwriting": payload.get("contains_handwriting"),
                 "chunk_quality_score": payload.get("chunk_quality_score"),
-                # New graph-native fields
+                # Graph-native fields
                 "chunk_id": payload.get("chunk_id"),
-                "embedding_text": payload.get("embedding_text"),
                 "bm25_text": payload.get("bm25_text"),
                 "node_ids": payload.get("node_ids", []),
                 "neighbors": payload.get("neighbors", []),
@@ -539,6 +501,9 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
                 "pages": payload.get("pages", []),
                 "token_count": payload.get("token_count", 0),
                 "char_count": payload.get("char_count", 0),
+                "page_start": payload.get("page_start"),
+                "page_end": payload.get("page_end"),
+                "parser_version": payload.get("parser_version"),
                 # Retrieval metadata
                 "retrieval_type": "dense",
                 "retrieval_backend": "qdrant",
@@ -593,8 +558,8 @@ def search_keyword(collection_name, query_text, top_k=5, filters=None):
             payload = point.payload
             results.append({
                 "score": 1.0,  # nominal score before reranking
+                "text": payload.get("chunk_text"),  # backward compatibility
                 "chunk_text": payload.get("chunk_text"),
-                "text": payload.get("text") or payload.get("chunk_text"),
                 "section": payload.get("section", "unknown"),
                 "pipeline_id": payload.get("pipeline_id"),
                 "file_id": payload.get("file_id"),
@@ -611,9 +576,8 @@ def search_keyword(collection_name, query_text, top_k=5, filters=None):
                 "contains_signature": payload.get("contains_signature"),
                 "contains_handwriting": payload.get("contains_handwriting"),
                 "chunk_quality_score": payload.get("chunk_quality_score"),
-                # New graph-native fields
+                # Graph-native fields
                 "chunk_id": payload.get("chunk_id"),
-                "embedding_text": payload.get("embedding_text"),
                 "bm25_text": payload.get("bm25_text"),
                 "node_ids": payload.get("node_ids", []),
                 "neighbors": payload.get("neighbors", []),
@@ -629,6 +593,9 @@ def search_keyword(collection_name, query_text, top_k=5, filters=None):
                 "pages": payload.get("pages", []),
                 "token_count": payload.get("token_count", 0),
                 "char_count": payload.get("char_count", 0),
+                "page_start": payload.get("page_start"),
+                "page_end": payload.get("page_end"),
+                "parser_version": payload.get("parser_version"),
                 # Retrieval metadata
                 "retrieval_type": "keyword",
                 "retrieval_backend": "qdrant_text",
