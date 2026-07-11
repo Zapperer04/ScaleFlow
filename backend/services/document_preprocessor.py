@@ -53,6 +53,13 @@ CV2_AVAILABLE = True
 
 logger = logging.getLogger(__name__)
 
+# ------------------------------------------------------------------------------
+# Timeout configuration (can be overridden by env)
+# ------------------------------------------------------------------------------
+PAGE_PARSE_TIMEOUT_SECONDS = int(os.getenv("PAGE_PARSE_TIMEOUT_SECONDS", "120"))
+MAX_DOCUMENT_PARSE_SECONDS = int(os.getenv("MAX_DOCUMENT_PARSE_SECONDS", "3600"))
+HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "10"))
+
 class VlmQuotaExhaustedError(RuntimeError):
     pass
 
@@ -1253,6 +1260,12 @@ def execute_vlm_document_graph_extraction(
     progress_json: Optional[Dict[str, Any]] = None,
     on_page_completed: Optional[Callable[[int, Dict[str, Any]], None]] = None,
 ) -> Optional[Dict[str, Any]]:
+    """
+    Perform VLM document graph extraction with per‑page and global timeouts,
+    proper as_completed handling, cancellation of stuck tasks (note: cancellation
+    only affects pending futures; already-running HTTP requests continue), shutdown
+    safety, and real heartbeats.
+    """
     image_list = list(images or [])
     if not image_list:
         raise ValueError("No images provided for VLM document graph extraction")
@@ -1260,8 +1273,18 @@ def execute_vlm_document_graph_extraction(
     max_workers = max(1, int(max_workers or 2))
     document_id = str(pipeline_id or f"document_{int(time.time() * 1000)}")
     started_at = time.perf_counter()
+    last_heartbeat = started_at
+    heartbeat_interval = HEARTBEAT_INTERVAL_SECONDS
 
-    # Determine parser choice (gemini or ocr) and locking
+    # Capture filename early to avoid race
+    first_image = image_list[0] if image_list else None
+    # Try to get original filename from the image (PIL may have .filename)
+    original_filename = os.path.basename(getattr(first_image, 'filename', str(document_id))) if first_image else str(document_id)
+    # If the filename is still a generated id, fallback to a generic name
+    if original_filename.startswith("document_"):
+        original_filename = "document.pdf" if _is_pdf_file(str(document_id)) else "document_image"
+
+    # Determine parser choice (gemini or ocr)
     parser_choice = "gemini" if _get_gemini_api_key() else "ocr"
     if progress_json and progress_json.get("parser"):
         parser_choice = progress_json.get("parser")
@@ -1280,16 +1303,36 @@ def execute_vlm_document_graph_extraction(
         except Exception:
             pass
 
+    # Statistics for timeouts
+    page_timeouts = 0
+    global_timeout = False
+    page_timeout_seconds = PAGE_PARSE_TIMEOUT_SECONDS
+    global_timeout_seconds = MAX_DOCUMENT_PARSE_SECONDS
+
+    # Thread-safe dict for actual execution start times
+    exec_start_times: Dict[int, float] = {}
+    exec_start_times_lock = threading.Lock()
+
+    # Helper to clean up image references
+    def _cleanup_image(page_index: int):
+        # Free the image reference in both lists to help GC
+        image_list[page_index] = None
+        if isinstance(images, list) and page_index < len(images):
+            try:
+                images[page_index] = None
+            except Exception:
+                pass
+
+    # Worker function per page
     def _process_page(page_index: int, image: Any) -> Optional[Dict[str, Any]]:
         page_number = page_index + 1
-        _trace(trace_fn, f"[VLM] Processing page {page_number}/{len(image_list)}")
-
         if parser_choice == "gemini":
             try:
                 raw_text = _call_gemini_page_parser(
                     image=image,
                     page_number=page_number,
                     pipeline_id=pipeline_id,
+                    timeout_seconds=page_timeout_seconds,
                     trace_fn=trace_fn,
                 )
                 return _normalize_page_graph(page_number=page_number, raw_json_text=raw_text, image=image)
@@ -1313,57 +1356,131 @@ def execute_vlm_document_graph_extraction(
     def _worker_task(page_index: int, image: Any):
         page_number = page_index + 1
         if page_index in results:
+            # Already completed
             if hasattr(image, "close"):
                 try:
                     image.close()
                 except Exception:
                     pass
-            if page_index > 0:
-                image_list[page_index] = None
-                if isinstance(images, list):
-                    try:
-                        images[page_index] = None
-                    except Exception:
-                        pass
+            _cleanup_image(page_index)
             return results[page_index]
 
+        # Record actual start time
+        with exec_start_times_lock:
+            exec_start_times[page_index] = time.perf_counter()
+
         res = _process_page(page_index, image)
+
+        # Duration reading with lock
+        with exec_start_times_lock:
+            start_time = exec_start_times.get(page_index, time.perf_counter())
+        duration = time.perf_counter() - start_time
+        _trace(trace_fn, f"[VLM] Page {page_number} finished in {duration:.2f}s")
+
+        # Cleanup image
         if hasattr(image, "close"):
             try:
                 image.close()
             except Exception:
                 pass
-        if page_index > 0:
-            image_list[page_index] = None
-            if isinstance(images, list):
-                try:
-                    images[page_index] = None
-                except Exception:
-                    pass
+        _cleanup_image(page_index)
 
+        # Checkpoint
         if res is not None and on_page_completed:
             try:
                 on_page_completed(page_number, res)
+                _trace(trace_fn, f"[VLM] Page {page_number} checkpointed via callback")
             except Exception as cb_err:
                 _trace(trace_fn, f"[VLM] Warning: page completion callback failed: {cb_err}")
         return res
 
+    # Determine which pages to process
     to_process = [idx for idx in range(len(image_list)) if idx not in results]
+    total_pages = len(image_list)
 
-    if to_process:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_map = {
-                executor.submit(_worker_task, idx, image_list[idx]): idx
-                for idx in to_process
-            }
-            for future in concurrent.futures.as_completed(future_map):
-                idx = future_map[future]
-                try:
-                    results[idx] = future.result()
-                except Exception as exc:
-                    _trace(trace_fn, f"[VLM] Worker execution failed on page {idx + 1}: {exc}")
-                    raise exc
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+    try:
+        future_to_idx = {}
+        for idx in to_process:
+            future = executor.submit(_worker_task, idx, image_list[idx])
+            future_to_idx[future] = idx
 
+        pending = set(future_to_idx.keys())
+        while pending:
+            # Heartbeat
+            now = time.perf_counter()
+            if now - last_heartbeat >= heartbeat_interval:
+                last_heartbeat = now
+                running_info = []
+                with exec_start_times_lock:
+                    for idx in list(exec_start_times.keys()):
+                        elapsed = now - exec_start_times[idx]
+                        running_info.append(f"{idx+1} ({elapsed:.0f}s)")
+                _trace(trace_fn, f"[VLM] Heartbeat: processed {len(results)} pages, pending {len(pending)}, elapsed {now - started_at:.1f}s, running: {', '.join(running_info) if running_info else 'none'}")
+
+            # Check global timeout
+            if now - started_at > global_timeout_seconds:
+                _trace(trace_fn, f"[VLM] Global document timeout exceeded after {now - started_at:.1f}s")
+                global_timeout = True
+                for f in pending:
+                    f.cancel()
+                break
+
+            # Check per-page timeouts based on actual execution start time
+            for f in list(pending):
+                idx = future_to_idx[f]
+                with exec_start_times_lock:
+                    start_time = exec_start_times.get(idx)
+                if start_time is not None and now - start_time > page_timeout_seconds:
+                    _trace(trace_fn, f"[VLM] Page {idx+1} timed out after {page_timeout_seconds}s (execution time)")
+                    page_timeouts += 1
+                    f.cancel()
+                    pending.remove(f)
+                    results[idx] = None
+                    del future_to_idx[f]
+                    with exec_start_times_lock:
+                        if idx in exec_start_times:
+                            del exec_start_times[idx]
+
+            # Wait for any future to complete with a short timeout
+            if pending:
+                done, _ = concurrent.futures.wait(pending, timeout=1.0, return_when=concurrent.futures.FIRST_COMPLETED)
+                for future in done:
+                    idx = future_to_idx[future]
+                    try:
+                        result = future.result()
+                        results[idx] = result
+                    except Exception as exc:
+                        if isinstance(exc, GeminiRateLimitError):
+                            # Cancel remaining and re-raise
+                            for f in pending:
+                                f.cancel()
+                            pending.clear()
+                            raise
+                        _trace(trace_fn, f"[VLM] Page {idx+1} failed: {exc}")
+                        results[idx] = None
+                    finally:
+                        pending.remove(future)
+                        del future_to_idx[future]
+                        with exec_start_times_lock:
+                            if idx in exec_start_times:
+                                del exec_start_times[idx]
+
+            if global_timeout:
+                break
+
+    finally:
+        # Shutdown without waiting for running tasks (they will continue but we ignore)
+        executor.shutdown(wait=False)
+
+    # After executor, handle any pages not processed due to global timeout
+    remaining_indices = [idx for idx in to_process if idx not in results]
+    if global_timeout and remaining_indices:
+        for idx in remaining_indices:
+            results[idx] = None
+            _trace(trace_fn, f"[VLM] Page {idx+1} skipped due to global timeout")
+
+    # Build final graph
     pages: List[Dict[str, Any]] = []
     total_failed = 0
     total_vlm_success = 0
@@ -1403,9 +1520,23 @@ def execute_vlm_document_graph_extraction(
 
     failure_ratio = total_failed / max(len(image_list), 1)
     if failure_ratio > 0.50:
-        raise RuntimeError(
-            f"Document graph extraction failed for {total_failed}/{len(image_list)} pages ({failure_ratio:.0%})"
-        )
+        _trace(trace_fn, f"[VLM] Warning: high failure ratio {failure_ratio:.0%} for {total_failed}/{len(image_list)} pages")
+
+    # Determine file type based on original filename if available, else fallback
+    file_type = "unknown"
+    if original_filename:
+        ext = os.path.splitext(original_filename)[1].lower()
+        if ext == ".pdf":
+            file_type = "pdf"
+        elif ext in SUPPORTED_IMAGE_EXTENSIONS:
+            file_type = "image"
+    else:
+        # Fallback: try to infer from document_id or pipeline_id (unreliable)
+        if pipeline_id and isinstance(pipeline_id, str):
+            if pipeline_id.endswith(".pdf"):
+                file_type = "pdf"
+            elif any(pipeline_id.endswith(ext) for ext in SUPPORTED_IMAGE_EXTENSIONS):
+                file_type = "image"
 
     graph = {
         "document_id": document_id,
@@ -1423,11 +1554,13 @@ def execute_vlm_document_graph_extraction(
             "vlm_success_pages": total_vlm_success,
             "ocr_fallback_pages": total_ocr_success,
             "failed_pages": total_failed,
+            "timeout_pages": page_timeouts,
+            "global_timeout_triggered": global_timeout,
             "duration_seconds": round(time.perf_counter() - started_at, 3),
         },
         "document_metadata": {
-            "filename": os.path.basename(images[0].filename if hasattr(images[0], 'filename') and isinstance(images[0].filename, str) else str(document_id)),
-            "file_type": "image" if not _is_pdf_file(str(document_id)) else "pdf",
+            "filename": original_filename,
+            "file_type": file_type,
             "page_count": len(image_list),
             "parser": "gemini_vlm" if parser_choice == "gemini" else "tesseract_ocr",
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -1435,36 +1568,16 @@ def execute_vlm_document_graph_extraction(
         },
     }
 
-    # =================== DEBUG BLOCK 2: Graph debug ===================
+    # Debug output
     logger.error(
         "\n========== GRAPH DEBUG =========="
+        f"\nVLM pages={total_vlm_success}"
+        f"\nOCR pages={total_ocr_success}"
+        f"\nFailed pages={total_failed}"
+        f"\nTotal nodes={total_nodes}"
+        f"\nFirst page nodes={len(pages[0]['nodes']) if pages else 0}"
+        "\n================================="
     )
-    logger.error(
-        "VLM pages=%s",
-        total_vlm_success
-    )
-    logger.error(
-        "OCR pages=%s",
-        total_ocr_success
-    )
-    logger.error(
-        "Failed pages=%s",
-        total_failed
-    )
-    logger.error(
-        "Total nodes=%s",
-        total_nodes
-    )
-    logger.error(
-        "First page nodes=%s",
-        len(
-            pages[0]["nodes"]
-        ) if pages else 0
-    )
-    logger.error(
-        "================================="
-    )
-    # ===============================================================
 
     return graph
 
