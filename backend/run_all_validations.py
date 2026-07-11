@@ -82,6 +82,16 @@ def run_integration_test():
     import services.vector_store as vs
     original_upsert = vs.upsert_document_chunks
     vs.upsert_document_chunks = lambda *args, **kwargs: (True, 0.001, 0.002)
+
+    # Mock embedding model to avoid loading torch/sentence-transformers
+    import services.embedding_service as es
+    class MockEmbeddingModel:
+        def encode(self, texts, batch_size=32, show_progress_bar=False, convert_to_numpy=True):
+            import numpy as np
+            if isinstance(texts, str):
+                return np.zeros(768, dtype=np.float32)
+            return np.zeros((len(texts), 768), dtype=np.float32)
+    es.get_embedding_model = lambda: MockEmbeddingModel()
     
     # Mock get_pipeline_file_info
     worker.get_pipeline_file_info = lambda pid: ("test-file-id", "category_A_simple.pdf", "test-art-id")

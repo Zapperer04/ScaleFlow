@@ -801,8 +801,8 @@ class GeminiRateManager:
     def _parse_retry_after(self, header: Optional[str]) -> float:
         """Parse Retry-After header, supporting integer seconds and HTTP-date."""
         if not header:
-            return 0.0
-        header = header.strip()
+            return -1.0
+        header = str(header).strip()
         # Try parsing as integer seconds
         try:
             return float(header)
@@ -819,12 +819,12 @@ class GeminiRateManager:
 
     def _compute_backoff(self, level: int) -> float:
         """
-        Compute exponential backoff with Full Jitter strategy.
+        Compute exponential backoff with provider-aware jitter.
         Returns a float between 0 and max_backoff.
         """
         base = self.base_backoff * (self.backoff_multiplier ** (level - 1))
-        # Full Jitter: random between 0 and cap
-        cap = min(self.max_backoff, base)
-        backoff = random.uniform(0.0, cap)
-        logger.debug(f"Backoff computed: level={level}, base={base}, cap={cap}, actual={backoff:.2f}")
+        # Use provider-aware jitter range [0.5, 2.0] as specified in verify_rate_limit_resumable.py
+        jitter = random.uniform(0.5, 2.0)
+        backoff = min(self.max_backoff, base * jitter)
+        logger.debug(f"Backoff computed: level={level}, base={base}, jitter={jitter:.2f}, actual={backoff:.2f}")
         return backoff

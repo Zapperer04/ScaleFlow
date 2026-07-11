@@ -98,28 +98,32 @@ class HACoordinator:
                     db.add(inst)
 
                 # 2. Redis Heartbeat update
-                redis_client.set(
-                    f"scaleflow:orchestrator:{self.instance_id}:heartbeat",
-                    "alive",
-                    ex=int(self.lease_duration)
-                )
+                try:
+                    redis_client.set(
+                        f"scaleflow:orchestrator:{self.instance_id}:heartbeat",
+                        "alive",
+                        ex=int(self.lease_duration)
+                    )
 
-                # 3. Leader Election try (SET NX EX)
-                acquired = redis_client.set(
-                    self.leader_lock_key,
-                    self.instance_id,
-                    nx=True,
-                    ex=int(self.lease_duration)
-                )
-                if acquired:
-                    is_leader_instance = True
-                else:
-                    current_leader = redis_client.get(self.leader_lock_key)
-                    if current_leader == self.instance_id:
-                        redis_client.expire(self.leader_lock_key, int(self.lease_duration))
+                    # 3. Leader Election try (SET NX EX)
+                    acquired = redis_client.set(
+                        self.leader_lock_key,
+                        self.instance_id,
+                        nx=True,
+                        ex=int(self.lease_duration)
+                    )
+                    if acquired:
                         is_leader_instance = True
                     else:
-                        is_leader_instance = False
+                        current_leader = redis_client.get(self.leader_lock_key)
+                        if current_leader == self.instance_id:
+                            redis_client.expire(self.leader_lock_key, int(self.lease_duration))
+                            is_leader_instance = True
+                        else:
+                            is_leader_instance = False
+                except Exception as redis_err:
+                    # If Redis is unavailable, fall back to leader status to orchestrate pipelines locally
+                    is_leader_instance = True
 
                 # Update DB Leader status
                 if inst:

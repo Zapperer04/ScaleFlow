@@ -233,8 +233,23 @@ EVENT_SCHEMAS = {
             lambda p: p.get("ownership_version", 0) >= 0 or "ownership_version must be non-negative"
         ],
         "replay_semantics": "Change pipeline orchestrator owner instance and increment fencing token version."
+    },
+    "TASK_TRACE": {
+        "required": {},
+        "optional": {"message": str, "worker_id": str, "step": str},
+        "validation_rules": [],
+        "replay_semantics": "Telemetry-only trace log; no state replay needed."
+    },
+    "WORKER_HEARTBEAT": {
+        "required": {},
+        "optional": {"worker_id": str, "status": str},
+        "validation_rules": [],
+        "replay_semantics": "Telemetry-only; no state replay needed."
     }
 }
+
+# Telemetry event categories that pass validation without full schema checks
+EVENT_CATEGORIES = {"TASK_TRACE", "WORKER_HEARTBEAT"}
 
 # Event versioning constants
 CURRENT_EVENT_VERSION = 1

@@ -9,6 +9,8 @@ import time
 import hashlib
 from functools import wraps
 import sys
+import threading
+import traceback
 from typing import Any
 from models import SessionLocal, Task, TaskDependency, TaskLog, Pipeline, Artifact, FileRecord, load_env, ACTIVE_DB_MODE, ACTIVE_DATABASE_URL, engine
 from task_registry import TASK_REGISTRY, validate_task_payload
@@ -251,16 +253,19 @@ def create_task_log(db, task_id, event_type, message, worker_id=None, payload=No
                     "lease_token": (task.lease_token if task else None) or "unknown"
                 }
                 
-        publish_event(
-            db=db,
-            event_type=canonical_type,
-            pipeline_id=pipeline_id,
-            task_id=task_id,
-            message=message,
-            worker_id=worker_id,
-            lease_token=task.lease_token if task else None,
-            payload=payload
-        )
+        try:
+            publish_event(
+                db=db,
+                event_type=canonical_type,
+                pipeline_id=pipeline_id,
+                task_id=task_id,
+                message=message,
+                worker_id=worker_id,
+                lease_token=task.lease_token if task else None,
+                payload=payload
+            )
+        except Exception as publish_err:
+            print(f"EVENT SOURCING PUBLISH ERROR: {publish_err}", flush=True)
     except Exception as e:
         print(f"EVENT SOURCING ERROR in create_task_log: {e}", flush=True)
         
@@ -357,9 +362,16 @@ def add_task_to_queue(task_id, priority='medium', db=None):
     from task_registry import get_queue_name
     queue_name = get_queue_name(task_type, priority, is_test)
 
-    redis_client.lpush(queue_name, task_id)
-    if db:
-        create_task_log(db, task_id, "task_queued", f"Pushed to {priority} priority queue (queue: {queue_name})")
+    try:
+        redis_client.lpush(queue_name, task_id)
+        if db:
+            create_task_log(db, task_id, "task_queued", f"Pushed to {priority} priority queue (queue: {queue_name})")
+    except Exception as redis_err:
+        print(f"Redis is unavailable; queuing task {task_id} locally in DB fallback: {redis_err}", flush=True)
+        # SQLite / Postgres acts as the source of truth anyway, orchestrator/workers
+        # scan for pending tasks in the database if Redis fails or fallback is needed.
+        if db:
+            create_task_log(db, task_id, "task_queued", f"Queued locally via DB fallback. Redis error: {redis_err}")
 
 @app.route('/task-types', methods=['GET'])
 def get_task_types():
@@ -449,6 +461,65 @@ def create_task():
                 db.commit()
         
         return jsonify(task.to_dict()), 201
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/tasks/poll', methods=['POST'])
+@require_api_key
+def poll_task_from_db():
+    db = SessionLocal()
+    try:
+        data = request.json or {}
+        worker_id = data.get("worker_id", "unknown_polling_worker")
+        capabilities = data.get("capabilities", [])
+        
+        # Query database for the highest-priority pending task that matches worker capabilities
+        # and has no incomplete dependencies.
+        # capabilities are tags like ["cpu_heavy", "embedding_gpu"] — map them to task type names
+        from task_registry import CAPABILITY_MAPPINGS
+        # Build the set of task types this worker can handle
+        if capabilities:
+            eligible_task_types = [
+                task_type for task_type, cap in CAPABILITY_MAPPINGS.items()
+                if cap in capabilities
+            ]
+            # Always include tasks mapped to "default" capability if "default" not in list
+            if not eligible_task_types:
+                eligible_task_types = list(CAPABILITY_MAPPINGS.keys())
+        else:
+            eligible_task_types = list(CAPABILITY_MAPPINGS.keys())
+        
+        priorities = ["high", "medium", "low"]
+        for p in priorities:
+            pending_tasks = db.query(Task).filter(
+                Task.status == "pending",
+                Task.priority == p,
+                Task.type.in_(eligible_task_types)
+            ).order_by(Task.id.asc()).all()
+            
+            for task in pending_tasks:
+                # Double-check dependencies are satisfied in DB
+                if check_dependencies_met(task.id, db):
+                    # Attempt atomic claim on the task row
+                    task.status = "running"
+                    task.assigned_worker_id = worker_id
+                    task.lease_token = str(uuid.uuid4())
+                    task.lease_expires_at = datetime.utcnow() + timedelta(seconds=LEASE_DURATIONS.get(task.type, 30))
+                    task.started_at = datetime.utcnow()
+                    db.commit()
+                    
+                    create_task_log(
+                        db,
+                        task.id,
+                        "task_claimed",
+                        f"Task claimed via DB poll fallback by worker {worker_id}",
+                        worker_id=worker_id
+                    )
+                    return jsonify(task.to_dict()), 200
+        return jsonify({"status": "no_tasks"}), 204
     except Exception as e:
         db.rollback()
         return jsonify({"error": str(e)}), 500
@@ -681,10 +752,12 @@ def cancel_task(task_id):
                 
         from task_registry import get_queue_name
         q_name = get_queue_name(task.type, task.priority, is_test)
-        redis_client.lrem(q_name, 0, str(task.id))
-        
-        for pq_name in PRIORITY_QUEUES.values():
-            redis_client.lrem(pq_name, 0, str(task.id))
+        try:
+            redis_client.lrem(q_name, 0, str(task.id))
+            for pq_name in PRIORITY_QUEUES.values():
+                redis_client.lrem(pq_name, 0, str(task.id))
+        except Exception:
+            pass
             
         db.commit()
         db.refresh(task)
@@ -1067,7 +1140,10 @@ def register_worker_api():
         'capabilities': capabilities,
         'resource_limits': resource_limits
     }
-    redis_client.setex(worker_key, WORKER_HEARTBEAT_EXPIRY, json.dumps(worker_data))
+    try:
+        redis_client.setex(worker_key, WORKER_HEARTBEAT_EXPIRY, json.dumps(worker_data))
+    except Exception as redis_err:
+        print(f"Redis is unavailable; skipped saving worker registry key in Redis: {redis_err}", flush=True)
     return jsonify({'status': 'registered', 'worker': w_dict}), 200
 
 @app.route('/workers/heartbeat', methods=['POST'])
@@ -1119,7 +1195,10 @@ def worker_heartbeat():
         'capabilities': capabilities,
         'resource_limits': resource_limits
     }
-    redis_client.setex(worker_key, WORKER_HEARTBEAT_EXPIRY, json.dumps(worker_data))
+    try:
+        redis_client.setex(worker_key, WORKER_HEARTBEAT_EXPIRY, json.dumps(worker_data))
+    except Exception as redis_err:
+        pass
     
     # Event sourcing validation and publishing (optional transient heartbeat)
     try:
@@ -1381,13 +1460,17 @@ def scan_and_fix_missing_queue_tasks(db):
                 if input_artifact_ids:
                     task.input_artifact_ids = json.dumps(input_artifact_ids)
 
-            queue_items = redis_client.lrange(queue_name, 0, -1)
-            task_id_str = str(task.id)
-            if task_id_str not in [item.decode() if isinstance(item, bytes) else str(item) for item in queue_items]:
-                redis_client.lpush(queue_name, task.id)
-                create_task_log(db, task.id, "task_queued", f"[Queue Heal] Re-enqueued missing pending task to {queue_name}")
-                requeued += 1
-                print(f"[Queue Heal] Task #{task.id} ({task.type}) was missing from Redis queue '{queue_name}'. Re-enqueued.", flush=True)
+            try:
+                queue_items = redis_client.lrange(queue_name, 0, -1)
+                task_id_str = str(task.id)
+                if task_id_str not in [item.decode() if isinstance(item, bytes) else str(item) for item in queue_items]:
+                    redis_client.lpush(queue_name, task.id)
+                    create_task_log(db, task.id, "task_queued", f"[Queue Heal] Re-enqueued missing pending task to {queue_name}")
+                    requeued += 1
+                    print(f"[Queue Heal] Task #{task.id} ({task.type}) was missing from Redis queue '{queue_name}'. Re-enqueued.", flush=True)
+            except Exception as redis_err:
+                # If Redis is unavailable, skip queue realignments as DB-polling acts as fallback
+                pass
         
         if requeued > 0:
             db.commit()
@@ -1425,9 +1508,14 @@ def scan_and_unblock_deferred_tasks(db):
     """
     try:
         from services.metrics_service import get_rolling_metrics, get_system_health, BACKPRESSURE_CONFIG
-        metrics = get_rolling_metrics(db)
-        health_state, _ = get_system_health(db, metrics)
-        backlog_size = metrics["backlog_size"]
+        try:
+            metrics = get_rolling_metrics(db)
+            health_state, _ = get_system_health(db, metrics)
+            backlog_size = metrics["backlog_size"]
+        except Exception as redis_err:
+            print(f"[Unblock Scanner] Redis metrics unavailable; assuming healthy system status: {redis_err}", flush=True)
+            health_state = "healthy"
+            backlog_size = 0
     except Exception as e:
         print(f"[Unblock Scanner] Error calculating system metrics: {e}", flush=True)
         return
@@ -2209,23 +2297,26 @@ def upload_file():
         # 6. Create DAG tasks
         try:
             dag_definition = get_dag_template(pipeline_type, {})
-            # ALWAYS inject preprocess_document as a static task at the start of the DAG
-            preprocess_node = {
-                "id": "preprocess_document",
-                "task_type": "preprocess_document",
-                "display_name": "Preprocess Document",
-                "depends_on": [],
-                "priority": "high",
-                "expected_input_artifacts": ["uploaded_file"],
-                "output_artifact_type": "preprocessing_report",
-                "payload": {}
-            }
-            dag_definition["nodes"].insert(0, preprocess_node)
+            # Only inject preprocess_document if the template doesn't already have it
+            existing_ids = {n["id"] for n in dag_definition["nodes"]}
+            if "preprocess_document" not in existing_ids:
+                preprocess_node = {
+                    "id": "preprocess_document",
+                    "task_type": "preprocess_document",
+                    "display_name": "Preprocess Document",
+                    "depends_on": [],
+                    "priority": "high",
+                    "expected_input_artifacts": ["uploaded_file"],
+                    "output_artifact_type": "preprocessing_report",
+                    "payload": {}
+                }
+                dag_definition["nodes"].insert(0, preprocess_node)
             
-            # ALWAYS update parse_document to depend on preprocess_document
+            # Ensure parse_document depends on preprocess_document
             for node in dag_definition["nodes"]:
                 if node["id"] == "parse_document":
-                    node["depends_on"] = ["preprocess_document"]
+                    if "preprocess_document" not in node.get("depends_on", []):
+                        node["depends_on"] = ["preprocess_document"] + [d for d in node.get("depends_on", []) if d != "preprocess_document"]
                     if "preprocessing_report" not in node.setdefault("expected_input_artifacts", []):
                         node["expected_input_artifacts"].append("preprocessing_report")
         except ValueError as ve:
@@ -2307,6 +2398,8 @@ def upload_file():
         }), 201
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         db.rollback()
         # Clean up files on error to prevent leakages
         if temp_path and os.path.exists(temp_path):
@@ -4160,7 +4253,7 @@ def test_recovery_flow():
         # Claim
         res = client.post(f'/tasks/{fail_task_id}/claim', json={"worker_id": "worker-fail-1"}, headers=headers)
         if res.status_code != 200:
-            return jsonify({"status": "failed", "step": "claim_fail_task", "error": res.json}), 400
+            return jsonify({"status": "failed", "step": "claim_fail_task", "error": res_claim.json}), 400
         log_test("Max retry task claimed by worker-fail-1.")
         
         # 1st Expiry -> recovery
@@ -4751,11 +4844,14 @@ def reconcile_active_orchestrations(db):
                     from task_registry import get_queue_name
                     queue_name = get_queue_name(task.type, task.priority, is_test)
                     
-                    queue_items = redis_client.lrange(queue_name, 0, -1)
-                    if str(task.id) not in queue_items:
-                        print(f"[Resilience] Task #{task.id} (pending) was missing from Redis queue '{queue_name}'. Re-enqueueing.", flush=True)
-                        redis_client.lpush(queue_name, task.id)
-                        create_task_log(db, task.id, "task_queued", f"[Resilience] Re-enqueued missing task to {queue_name}")
+                    try:
+                        queue_items = redis_client.lrange(queue_name, 0, -1)
+                        if str(task.id) not in queue_items:
+                            print(f"[Resilience] Task #{task.id} (pending) was missing from Redis queue '{queue_name}'. Re-enqueueing.", flush=True)
+                            redis_client.lpush(queue_name, task.id)
+                            create_task_log(db, task.id, "task_queued", f"[Resilience] Re-enqueued missing task to {queue_name}")
+                    except Exception as redis_err:
+                        pass
                 
                 # B. Orphan / Dead Worker Detection
                 elif task.status == 'running':
@@ -4766,7 +4862,11 @@ def reconcile_active_orchestrations(db):
                         
                     worker_alive = False
                     if worker_id:
-                        worker_alive = redis_client.exists(f"worker:{worker_id}")
+                        try:
+                            worker_alive = redis_client.exists(f"worker:{worker_id}")
+                        except Exception:
+                            # Default to True under offline mode to let the lease timer naturally expire
+                            worker_alive = True
                         
                     if lease_expired:
                         print(f"[Resilience] Task #{task.id} lease expired during downtime. Recovering task.", flush=True)

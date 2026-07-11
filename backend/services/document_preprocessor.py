@@ -1993,7 +1993,26 @@ def evaluate_document(
     return DocumentPreprocessor(file_path).generate_routing_report(trace_fn=trace_fn)
 
 
-def structural_guard(*args: Any, **kwargs: Any) -> None:
+def structural_guard(file_path: str, *args: Any, **kwargs: Any) -> None:
+    # Perform fast/light structural check (fast pass count & decryption check)
+    # to guarantee we return under 5 seconds during synchronous upload guard.
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+    if file_path.lower().endswith(".pdf"):
+        import pypdf
+        try:
+            reader = pypdf.PdfReader(file_path)
+            if reader.is_encrypted:
+                # Decrypt attempt
+                try:
+                    if reader.decrypt("") == 0:
+                        raise ValueError("PDF is encrypted with password")
+                except:
+                    raise ValueError("PDF is encrypted")
+            if len(reader.pages) <= 0:
+                raise ValueError("PDF contains no pages")
+        except Exception as e:
+            raise ValueError(f"Invalid PDF structure: {e}")
     return None
 
 

@@ -12,6 +12,13 @@ import psutil
 import time
 import threading
 import concurrent.futures
+import re
+import math
+import io
+import tempfile
+import hashlib
+from urllib.parse import urlparse
+import uuid
 
 # Import the centralized rate manager
 from services.gemini_rate_manager import GeminiRateManager, RateLimitPauseRequired
@@ -22,7 +29,6 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
-# pdf2image import moved to top for reuse
 from pdf2image import convert_from_path
 
 
@@ -288,7 +294,546 @@ def run_enhancement_pipeline(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# VLM Page Transcription (Stateless, uses GeminiRateManager)
+# Gemini Files API integration (correct resumable upload)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _get_gemini_api_key_and_model() -> Tuple[str, str]:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY environment variable missing.")
+    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    return api_key, model
+
+def _upload_pdf_to_gemini_resumable(file_path: str, trace_fn: Optional[Callable] = None) -> Tuple[str, str]:
+    """
+    Upload a PDF file to Gemini Files API using the resumable upload protocol.
+    Returns (file_uri, file_name).
+    """
+    def _t(msg: str):
+        if trace_fn:
+            try:
+                trace_fn(msg)
+            except Exception:
+                pass
+
+    api_key, _ = _get_gemini_api_key_and_model()
+    upload_url = f"https://generativelanguage.googleapis.com/upload/v1beta/files?key={api_key}"
+    headers = {
+        "X-Goog-Upload-Protocol": "resumable",
+        "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-Header-Content-Length": str(os.path.getsize(file_path)),
+        "Content-Type": "application/json",
+    }
+    metadata = {
+        "file": {
+            "display_name": os.path.basename(file_path),
+            "mime_type": "application/pdf",
+        }
+    }
+    _t("[GEMINI] Initiating resumable upload...")
+    resp = requests.post(upload_url, headers=headers, json=metadata, timeout=30)
+    if resp.status_code != 200:
+        _t(f"[GEMINI] Upload init failed: {resp.status_code} {resp.text[:200]}")
+        raise RuntimeError(f"Gemini upload init failed: {resp.text}")
+    upload_session_url = resp.headers.get("X-Goog-Upload-URL")
+    if not upload_session_url:
+        if "uploadUrl" in resp.json():
+            upload_session_url = resp.json()["uploadUrl"]
+        else:
+            raise RuntimeError("No upload session URL returned")
+    _t(f"[GEMINI] Upload session URL: {upload_session_url}")
+
+    with open(file_path, "rb") as f:
+        file_content = f.read()
+    headers = {
+        "Content-Length": str(len(file_content)),
+        "X-Goog-Upload-Command": "upload, finalize",
+        "X-Goog-Upload-Offset": "0",
+    }
+    resp2 = requests.post(upload_session_url, headers=headers, data=file_content, timeout=120)
+    if resp2.status_code != 200:
+        _t(f"[GEMINI] Upload content failed: {resp2.status_code} {resp2.text[:200]}")
+        raise RuntimeError(f"Gemini upload content failed: {resp2.text}")
+    result = resp2.json()
+    file_uri = result.get("file", {}).get("uri")
+    file_name = result.get("file", {}).get("name")
+    if not file_uri or not file_name:
+        raise RuntimeError("Gemini upload response missing uri/name")
+    _t(f"[GEMINI] Uploaded file: {file_name} -> {file_uri}")
+    return file_uri, file_name
+
+
+def _delete_gemini_file(file_name: str, trace_fn: Optional[Callable] = None) -> None:
+    """Delete a file from Gemini Files API."""
+    def _t(msg: str):
+        if trace_fn:
+            try:
+                trace_fn(msg)
+            except Exception:
+                pass
+    api_key, _ = _get_gemini_api_key_and_model()
+    url = f"https://generativelanguage.googleapis.com/v1beta/files/{file_name}?key={api_key}"
+    try:
+        resp = requests.delete(url, timeout=30)
+        if resp.status_code not in (200, 204):
+            _t(f"[GEMINI] Delete file {file_name} failed: {resp.status_code}")
+        else:
+            _t(f"[GEMINI] Deleted file {file_name}")
+    except Exception as e:
+        _t(f"[GEMINI] Error deleting file {file_name}: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Gemini generateContent with PDF URI and JSON response
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _call_gemini_with_pdf(
+    file_uri: str,
+    prompt: str,
+    gemini_model: str,
+    api_key: str,
+    trace_fn: Optional[Callable] = None,
+    max_retries: int = 3,
+) -> Dict[str, Any]:
+    """
+    Send a request to Gemini with a file URI and a text prompt.
+    Returns parsed JSON response (dict). The response must contain a "pages" key.
+    Raises RateLimitPauseRequired or Exception.
+    """
+    def _t(msg: str):
+        if trace_fn:
+            try:
+                trace_fn(msg)
+            except Exception:
+                pass
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": prompt},
+                {"fileData": {"mimeType": "application/pdf", "fileUri": file_uri}}
+            ]
+        }],
+        "generationConfig": {
+            "temperature": 0.0,
+            "responseMimeType": "application/json"
+        }
+    }
+
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(url, headers={"Content-Type": "application/json"}, json=payload, timeout=120)
+            if resp.status_code == 200:
+                data = resp.json()
+                candidates = data.get("candidates", [])
+                if not candidates:
+                    raise ValueError("No candidates in response")
+                finish_reason = candidates[0].get("finishReason")
+                if finish_reason != "STOP":
+                    _t(f"[GEMINI] finishReason={finish_reason} (not STOP)")
+                    if finish_reason in ("SAFETY", "RECITATION"):
+                        raise ValueError(f"Gemini safety/recitation block: {finish_reason}")
+                    if finish_reason == "MAX_TOKENS":
+                        raise ValueError("finishReason=MAX_TOKENS (chunk too large)")
+                    if attempt < max_retries - 1:
+                        time.sleep(2 ** attempt)
+                        continue
+                    else:
+                        raise ValueError(f"finishReason={finish_reason}")
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if not parts:
+                    raise ValueError("No parts in content")
+                text = parts[0].get("text", "")
+                try:
+                    parsed = json.loads(text)
+                except json.JSONDecodeError as e:
+                    _t(f"[GEMINI] JSON parse error: {e}. Raw text: {text[:500]}")
+                    cleaned = re.sub(r"^```json\s*", "", text)
+                    cleaned = re.sub(r"\s*```$", "", cleaned)
+                    try:
+                        parsed = json.loads(cleaned)
+                    except:
+                        raise ValueError(f"Invalid JSON response: {e}")
+                if not isinstance(parsed, dict):
+                    raise ValueError("Response is not a JSON object")
+                if "pages" not in parsed:
+                    if isinstance(parsed, list):
+                        parsed = {"pages": parsed}
+                    else:
+                        raise ValueError("Response JSON missing 'pages' key")
+                if not isinstance(parsed["pages"], list):
+                    raise ValueError("'pages' is not a list")
+                for p in parsed["pages"]:
+                    if "page" not in p or "text" not in p:
+                        raise ValueError("Page object missing 'page' or 'text'")
+                return parsed
+            elif resp.status_code in (429, 503) or "quota" in resp.text.lower() or "rate limit" in resp.text.lower():
+                retry_after = 60.0
+                try:
+                    retry_after = float(resp.headers.get("Retry-After", 60.0))
+                except:
+                    pass
+                raise RateLimitPauseRequired(resume_at=time.time() + retry_after, reason="rate_limit", retry_after=retry_after)
+            else:
+                if resp.status_code in (500, 502, 504):
+                    sleep_time = 2 ** attempt
+                    _t(f"[GEMINI] HTTP {resp.status_code}. Retrying in {sleep_time}s...")
+                    time.sleep(sleep_time)
+                    continue
+                else:
+                    _t(f"[GEMINI] HTTP error: {resp.status_code} {resp.text[:200]}")
+                    raise RuntimeError(f"Gemini API error: {resp.status_code}")
+        except RateLimitPauseRequired:
+            raise
+        except Exception as e:
+            last_error = e
+            _t(f"[GEMINI] Call failed: {e}. Retry attempt {attempt+1}/{max_retries}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+            else:
+                raise
+    raise RuntimeError(f"Gemini call failed after {max_retries} attempts: {last_error}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Internal Graph Store (preserves the rich document graph)
+# ─────────────────────────────────────────────────────────────────────────────
+_GRAPH_CACHE = {}  # key: (file_path_hash, page_range) -> graph dict
+
+def _store_graph(file_path: str, pages: List[int], graph_pages: List[Dict[str, Any]]) -> None:
+    """Store the full page graphs for later use."""
+    key = (hashlib.sha256(file_path.encode()).hexdigest(), tuple(sorted(pages)))
+    _GRAPH_CACHE[key] = {"pages": graph_pages}
+
+def _get_graph(file_path: str, pages: List[int]) -> Optional[List[Dict[str, Any]]]:
+    key = (hashlib.sha256(file_path.encode()).hexdigest(), tuple(sorted(pages)))
+    entry = _GRAPH_CACHE.get(key)
+    return entry["pages"] if entry else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Adaptive Planning (improved)
+# ─────────────────────────────────────────────────────────────────────────────
+
+MAX_PAGES_WHOLE = 30
+MAX_FILE_SIZE_WHOLE = 20 * 1024 * 1024
+MAX_PAGES_PER_BATCH = 15
+
+def _estimate_tokens_from_pdf(file_path: str, pages: List[int]) -> int:
+    size = os.path.getsize(file_path)
+    tokens = int(size / 20)  # rough
+    tokens += len(pages) * 200
+    return tokens
+
+def _adaptive_plan(
+    file_path: str,
+    pages_to_transcribe: List[int],
+    report: Optional[PreprocessingReport] = None,
+) -> Dict[str, Any]:
+    num_pages = len(pages_to_transcribe)
+    file_size = os.path.getsize(file_path)
+    is_scanned = report and report.document_type == "SCANNED"
+
+    if num_pages <= MAX_PAGES_WHOLE and file_size <= MAX_FILE_SIZE_WHOLE and not is_scanned:
+        estimated_tokens = _estimate_tokens_from_pdf(file_path, pages_to_transcribe)
+        if estimated_tokens < 700000:
+            return {"strategy": "whole", "page_list": pages_to_transcribe}
+
+    batch_size = MAX_PAGES_PER_BATCH
+    if is_scanned:
+        batch_size = min(batch_size, 8)
+
+    pages_sorted = sorted(pages_to_transcribe)
+    segments = []
+    start = pages_sorted[0]
+    end = start
+    for p in pages_sorted[1:]:
+        if p == end + 1:
+            end = p
+        else:
+            segments.append((start, end))
+            start = p
+            end = p
+    segments.append((start, end))
+
+    batches = []
+    for seg_start, seg_end in segments:
+        for i in range(seg_start, seg_end + 1, batch_size):
+            chunk_end = min(i + batch_size - 1, seg_end)
+            batches.append(list(range(i, chunk_end + 1)))
+
+    return {"strategy": "batch", "batches": batches}
+
+
+def _split_pdf_to_temp_chunk(file_path: str, start_page: int, end_page: int) -> str:
+    with open(file_path, "rb") as f:
+        reader = pypdf.PdfReader(f)
+        writer = pypdf.PdfWriter()
+        for p in range(start_page-1, end_page):
+            writer.add_page(reader.pages[p])
+        fd, out_path = tempfile.mkstemp(suffix=".pdf", prefix="chunk_")
+        os.close(fd)
+        with open(out_path, "wb") as fw:
+            writer.write(fw)
+    return out_path
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Core Adaptive Transcription Engine (using Files API, no caching)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _execute_adaptive_transcription(
+    file_path: str,
+    pages_to_transcribe: List[int],
+    trace_fn: Optional[Callable] = None,
+    report: Optional[PreprocessingReport] = None,
+) -> Dict[int, str]:
+    """
+    Transcribe pages using adaptive strategy with Gemini Files API.
+    Returns dict mapping page_num to text.
+    Raises RateLimitPauseRequired if rate limit encountered.
+    All uploaded files are deleted after use to prevent leaks.
+    The full graph (blocks, tables, bbox, etc.) is stored in an internal cache
+    for future use by graph‑native components.
+    """
+    def _t(msg: str):
+        if trace_fn:
+            try:
+                trace_fn(msg)
+            except Exception:
+                pass
+
+    if not pages_to_transcribe:
+        return {}
+
+    api_key, model = _get_gemini_api_key_and_model()
+    plan = _adaptive_plan(file_path, pages_to_transcribe, report)
+    strategy = plan["strategy"]
+    _t(f"[ADAPTIVE] Strategy: {strategy} for {len(pages_to_transcribe)} pages")
+
+    rate_mgr = GeminiRateManager()
+    result: Dict[int, str] = {}
+    all_graph_pages = []  # accumulate graph data for caching
+
+    # Helper to upload, call, delete, and store graph
+    def _process_pdf_file(pdf_path: str, pages_in_chunk: List[int], is_whole: bool) -> Tuple[Dict[int, str], List[Dict[str, Any]]]:
+        local_text = {}
+        local_graph = []
+        file_uri = None
+        file_name = None
+        try:
+            # Upload – this is a Gemini API call, so we use a rate slot.
+            slot = rate_mgr.acquire_request_slot()
+            if slot is None:
+                raise RateLimitPauseRequired(resume_at=time.time() + 30, reason="no_slot_available")
+            try:
+                file_uri, file_name = _upload_pdf_to_gemini_resumable(pdf_path, trace_fn)
+            finally:
+                if slot:
+                    rate_mgr.release_request_slot(slot)
+
+            # Build prompt
+            prompt = _build_graph_extraction_prompt(pages_in_chunk, is_whole)
+
+            # Inference – also uses a slot
+            slot2 = rate_mgr.acquire_request_slot()
+            if slot2 is None:
+                raise RateLimitPauseRequired(resume_at=time.time() + 30, reason="no_slot_available")
+            try:
+                parsed = _call_gemini_with_pdf(file_uri, prompt, model, api_key, trace_fn)
+                # Extract text and also keep the full page objects
+                for pobj in parsed["pages"]:
+                    pnum = pobj["page"]
+                    if pnum in pages_in_chunk:
+                        local_text[pnum] = pobj["text"]
+                        local_graph.append(pobj)  # store the full object (blocks, tables, etc.)
+                    else:
+                        _t(f"[ADAPTIVE] Received page {pnum} not in requested list; ignoring")
+            finally:
+                if slot2:
+                    rate_mgr.release_request_slot(slot2)
+        except RateLimitPauseRequired:
+            raise
+        except Exception as e:
+            _t(f"[ADAPTIVE] PDF processing failed: {e}")
+            raise
+        finally:
+            if file_name:
+                _delete_gemini_file(file_name, trace_fn)
+        return local_text, local_graph
+
+    if strategy == "whole":
+        try:
+            text_dict, graph_list = _process_pdf_file(file_path, pages_to_transcribe, is_whole=True)
+            result.update(text_dict)
+            all_graph_pages.extend(graph_list)
+            _t(f"[ADAPTIVE] Whole document parsed, got {len(result)} pages")
+        except Exception as e:
+            _t(f"[ADAPTIVE] Whole document failed: {e}. Falling back to batch mode.")
+            plan = {"strategy": "batch", "batches": [sorted(pages_to_transcribe)]}
+
+    if strategy == "batch" or (strategy == "whole" and not result):
+        batches = plan.get("batches", [])
+        if not batches:
+            batches = [sorted(pages_to_transcribe)]
+        _t(f"[ADAPTIVE] Batch mode: {len(batches)} batches")
+        for batch in batches:
+            chunk_path = None
+            try:
+                if batch == list(range(batch[0], batch[-1]+1)):
+                    chunk_path = _split_pdf_to_temp_chunk(file_path, batch[0], batch[-1])
+                    text_dict, graph_list = _process_pdf_file(chunk_path, batch, is_whole=False)
+                    result.update(text_dict)
+                    all_graph_pages.extend(graph_list)
+                else:
+                    # Non-contiguous: fallback to page mode
+                    _t(f"[ADAPTIVE] Batch {batch} not contiguous; processing page by page")
+                    for p in batch:
+                        page_text = _transcribe_single_page_fallback(file_path, p, trace_fn, rate_mgr)
+                        if page_text:
+                            result[p] = page_text
+                            # For fallback, we don't have a graph; we'll create a minimal one later.
+            except RateLimitPauseRequired:
+                raise
+            except Exception as e:
+                _t(f"[ADAPTIVE] Batch {batch} failed: {e}. Falling back to page mode.")
+                for p in batch:
+                    page_text = _transcribe_single_page_fallback(file_path, p, trace_fn, rate_mgr)
+                    if page_text:
+                        result[p] = page_text
+            finally:
+                if chunk_path and os.path.exists(chunk_path):
+                    try:
+                        os.remove(chunk_path)
+                    except:
+                        pass
+
+    # Fallback for any missing pages (if still missing)
+    missing = set(pages_to_transcribe) - set(result.keys())
+    if missing:
+        _t(f"[ADAPTIVE] Missing pages: {missing}; falling back to page mode")
+        for p in sorted(missing):
+            try:
+                page_text = _transcribe_single_page_fallback(file_path, p, trace_fn, rate_mgr)
+                if page_text:
+                    result[p] = page_text
+            except Exception as e:
+                _t(f"[ADAPTIVE] Page {p} fallback error: {e}")
+
+    # Store the graph in the internal cache (if we have any)
+    if all_graph_pages:
+        # We might have duplicates if multiple batches; we'll merge by page number
+        # For simplicity, we'll just store the list; later we can merge.
+        _store_graph(file_path, pages_to_transcribe, all_graph_pages)
+
+    return result
+
+
+def _build_graph_extraction_prompt(pages: List[int], is_whole: bool) -> str:
+    """Build a prompt that requests structured document graph."""
+    page_list = sorted(pages)
+    prompt = (
+        "You are a document understanding engine. You will receive a PDF document.\n"
+        "Extract the full document graph: all text, structure, layout, and reading order.\n"
+        "For each requested page, output a JSON object with the following structure:\n"
+        "{\n"
+        "  \"pages\": [\n"
+        "    {\n"
+        "      \"page\": <integer, 1-indexed page number>,\n"
+        "      \"text\": \"<full raw text of the page>\",\n"
+        "      \"blocks\": [\n"
+        "        {\n"
+        "          \"type\": \"heading|paragraph|list_item|table|equation|figure\",\n"
+        "          \"text\": \"<text content>\",\n"
+        "          \"bbox\": [x1, y1, x2, y2],\n"
+        "          \"reading_order\": <integer>,\n"
+        "          \"confidence\": <float 0-1>,\n"
+        "          \"children\": []\n"
+        "        }\n"
+        "      ],\n"
+        "      \"tables\": [\n"
+        "        {\n"
+        "          \"caption\": \"...\",\n"
+        "          \"headers\": [\"col1\", \"col2\"],\n"
+        "          \"rows\": [[\"cell1\", \"cell2\"], ...],\n"
+        "          \"bbox\": [x1, y1, x2, y2]\n"
+        "        }\n"
+        "      ],\n"
+        "      \"reading_order\": [<list of block indices in order>]\n"
+        "    }\n"
+        "  ]\n"
+        "}\n"
+        "If a page contains tables, extract them into the 'tables' array with headers and rows.\n"
+        "Preserve all text exactly as it appears, including equations (use LaTeX where appropriate).\n"
+        "Do not summarize or skip any content.\n"
+        "The response must be valid JSON only, no other text.\n"
+    )
+    if not is_whole:
+        prompt += f"Only include pages: {page_list}. Return their original page numbers as they appear in the document.\n"
+    else:
+        prompt += f"The document has pages 1..{max(page_list)}. Return all requested pages.\n"
+    prompt += "Ensure page numbers are the original document page numbers, not the chunk page numbers."
+    return prompt
+
+
+def _transcribe_single_page_fallback(
+    file_path: str,
+    page_num: int,
+    trace_fn: Optional[Callable] = None,
+    rate_mgr: Optional[GeminiRateManager] = None,
+) -> Optional[str]:
+    """Fallback to old image-based single page transcription."""
+    def _t(msg: str):
+        if trace_fn:
+            try:
+                trace_fn(msg)
+            except Exception:
+                pass
+
+    if rate_mgr is None:
+        rate_mgr = GeminiRateManager()
+
+    api_key, model = _get_gemini_api_key_and_model()
+    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+
+    try:
+        images = convert_from_path(file_path, first_page=page_num, last_page=page_num, dpi=150)
+        if not images:
+            _t(f"[FALLBACK] Page {page_num} could not be rendered")
+            return None
+        img = np.array(images[0])
+        decision = rate_mgr.get_decision()
+        if not decision.allowed:
+            raise RateLimitPauseRequired(
+                resume_at=decision.resume_at,
+                reason=decision.reason,
+                retry_after=decision.retry_after
+            )
+        slot = rate_mgr.acquire_request_slot()
+        if slot is None:
+            raise RateLimitPauseRequired(resume_at=time.time() + 30, reason="no_slot_available")
+        try:
+            _, text = _transcribe_single_page(
+                page_idx=page_num-1,
+                image=img,
+                gemini_endpoint=endpoint,
+                rate_mgr=rate_mgr,
+                trace_fn=trace_fn,
+                max_retries=3
+            )
+            return text
+        finally:
+            if slot:
+                rate_mgr.release_request_slot(slot)
+    except Exception as e:
+        _t(f"[FALLBACK] Page {page_num} error: {e}")
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VLM Page Transcription (Stateless, uses GeminiRateManager) - kept for fallback
 # ─────────────────────────────────────────────────────────────────────────────
 def _transcribe_single_page(
     page_idx: int,          # 0-indexed
@@ -299,8 +844,7 @@ def _transcribe_single_page(
     max_retries: int = 3,
 ) -> Tuple[int, Optional[str]]:
     """
-    Transcribe a single page using Gemini. Assumes the rate manager has already
-    been checked (get_decision called) and a slot acquired.
+    Transcribe a single page using Gemini (image-based). Assumes a slot is already acquired.
     Returns (page_idx, text) or (page_idx, None) on failure.
     """
     def _t(msg: str):
@@ -313,185 +857,109 @@ def _transcribe_single_page(
     last_error = None
     for attempt in range(max_retries):
         try:
-            # Encode image
             _, buffer = cv2.imencode(".png", cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR))
             base64_image = base64.b64encode(buffer).decode("utf-8")
+            prompt = (
+                "You are a document understanding engine. Extract the full document graph from this page.\n"
+                "Output JSON with blocks (type, text, bbox, reading_order, confidence).\n"
+                "Include tables if present.\n"
+                "Response must be valid JSON: {\"page\": <number>, \"blocks\": [...], \"tables\": [...]}"
+            )
             payload = {
                 "contents": [{
                     "parts": [
-                        {
-                            "text": (
-                                "You are a document transcription engine. "
-                                "Extract ALL text from this page exactly as it appears. "
-                                "Preserve structure, headings, tables, lists, and equations. "
-                                "Output clean markdown. Do not summarize or skip any content."
-                            )
-                        },
-                        {
-                            "inlineData": {
-                                "mimeType": "image/png",
-                                "data": base64_image
-                            }
-                        }
+                        {"text": prompt},
+                        {"inlineData": {"mimeType": "image/png", "data": base64_image}}
                     ]
-                }]
+                }],
+                "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
             }
 
-            # Make the request
-            res = requests.post(
-                gemini_endpoint,
-                headers={"Content-Type": "application/json"},
-                json=payload,
-                timeout=60
-            )
-
+            res = requests.post(gemini_endpoint, headers={"Content-Type": "application/json"}, json=payload, timeout=60)
             if res.status_code == 200:
-                page_text = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+                data = res.json()
+                candidates = data.get("candidates", [])
+                if not candidates:
+                    _t(f"[VLM] No candidates for page {page_idx+1}")
+                    return page_idx, None
+                finish_reason = candidates[0].get("finishReason")
+                if finish_reason != "STOP":
+                    _t(f"[VLM] Page {page_idx+1} finishReason={finish_reason}")
+                    if finish_reason in ("SAFETY", "RECITATION"):
+                        return page_idx, None
+                    if attempt < max_retries - 1:
+                        time.sleep(2 ** attempt)
+                        continue
+                    else:
+                        return page_idx, None
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if not parts:
+                    return page_idx, None
+                page_text = parts[0].get("text", "")
+                # Try to parse JSON to extract text, and also store graph
+                try:
+                    parsed = json.loads(page_text)
+                    if "blocks" in parsed:
+                        text_parts = [b.get("text", "") for b in parsed["blocks"]]
+                        page_text = "\n".join(text_parts)
+                        # Store graph for this page if possible (for future use)
+                        # We don't have a global store here; we'll just return text.
+                    elif "text" in parsed:
+                        page_text = parsed["text"]
+                except:
+                    pass
                 _t(f"[VLM] Page {page_idx+1} transcribed ({len(page_text)} chars)")
                 rate_mgr.register_success()
                 return page_idx, page_text
             elif res.status_code in (429, 503) or "quota" in res.text.lower() or "rate limit" in res.text.lower():
-                # Rate limit – register 429 and raise pause exception
                 retry_after = 60.0
                 try:
                     retry_after = float(res.headers.get("Retry-After", 60.0))
                 except:
                     pass
                 rate_mgr.register_429(retry_after_header=res.headers.get("Retry-After"))
-                raise RateLimitPauseRequired(
-                    resume_at=time.time() + retry_after,
-                    reason="rate_limit",
-                    retry_after=retry_after
-                )
+                raise RateLimitPauseRequired(resume_at=time.time() + retry_after, reason="rate_limit", retry_after=retry_after)
             else:
-                # Other HTTP error – retry if transient
                 if res.status_code in (500, 502, 504):
-                    # Server error – retry
                     sleep_time = 2 ** attempt
-                    _t(f"[VLM] Page {page_idx+1} got HTTP {res.status_code}. Retrying in {sleep_time}s... (Attempt {attempt+1}/{max_retries})")
+                    _t(f"[VLM] Page {page_idx+1} got HTTP {res.status_code}. Retrying in {sleep_time}s...")
                     time.sleep(sleep_time)
                     continue
                 else:
                     _t(f"[VLM] Page {page_idx+1} failed: HTTP {res.status_code} — {res.text[:200]}")
                     return page_idx, None
-
         except RateLimitPauseRequired:
-            raise  # re-raise to outer handler
+            raise
         except requests.exceptions.Timeout:
             last_error = "timeout"
             sleep_time = 2 ** attempt
-            _t(f"[VLM] Page {page_idx+1} timeout. Retrying in {sleep_time}s... (Attempt {attempt+1}/{max_retries})")
+            _t(f"[VLM] Page {page_idx+1} timeout. Retrying in {sleep_time}s...")
             time.sleep(sleep_time)
             continue
         except requests.exceptions.ConnectionError:
             last_error = "connection_error"
             sleep_time = 2 ** attempt
-            _t(f"[VLM] Page {page_idx+1} connection error. Retrying in {sleep_time}s... (Attempt {attempt+1}/{max_retries})")
+            _t(f"[VLM] Page {page_idx+1} connection error. Retrying in {sleep_time}s...")
             time.sleep(sleep_time)
             continue
         except Exception as e:
             _t(f"[VLM] Page {page_idx+1} error: {e}")
             return page_idx, None
-
     _t(f"[VLM] Page {page_idx+1} failed after {max_retries} attempts: {last_error}")
     return page_idx, None
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Public API: transcribe_pages (kept for backward compatibility)
+# ─────────────────────────────────────────────────────────────────────────────
 def transcribe_pages(
     file_path: str,
-    page_numbers: List[int],   # 1-indexed page numbers to transcribe
+    page_numbers: List[int],
     trace_fn: Optional[Callable] = None,
 ) -> Dict[int, str]:
-    """
-    Transcribe the specified pages of a PDF using Gemini.
-    Returns a dict mapping 1-indexed page number to transcribed text.
-    Pages that fail are omitted from the dict.
-    Raises RateLimitPauseRequired if a transient rate limit is encountered.
-    This is the core stateless transcription function.
-    """
     if not page_numbers:
         return {}
-
-    def _t(msg: str):
-        if trace_fn:
-            try:
-                trace_fn(msg)
-            except Exception:
-                pass
-
-    # Validate Gemini config
-    gemini_api_key = os.getenv("GEMINI_API_KEY")
-    if not gemini_api_key:
-        raise ValueError("GEMINI_API_KEY environment variable missing.")
-    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    gemini_endpoint = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{gemini_model}:generateContent?key={gemini_api_key}"
-    )
-
-    # Ensure sorted unique pages
-    pages_to_transcribe = sorted(set(page_numbers))
-    if not pages_to_transcribe:
-        return {}
-
-    rate_mgr = GeminiRateManager()
-    result: Dict[int, str] = {}
-
-    # Process pages one by one to keep memory low.
-    for page_num in pages_to_transcribe:
-        # Check rate decision and acquire slot
-        decision = rate_mgr.get_decision()
-        if not decision.allowed:
-            raise RateLimitPauseRequired(
-                resume_at=decision.resume_at,
-                reason=decision.reason,
-                retry_after=decision.retry_after
-            )
-
-        slot = rate_mgr.acquire_request_slot()
-        if slot is None:
-            # No slot available – pause
-            raise RateLimitPauseRequired(
-                resume_at=time.time() + 30,
-                reason="no_slot_available"
-            )
-
-        try:
-            # Render just this page
-            images = convert_from_path(
-                file_path,
-                first_page=page_num,
-                last_page=page_num,
-                dpi=150
-            )
-            if not images:
-                _t(f"[VLM] Page {page_num} could not be rendered")
-                continue
-            img = images[0]
-
-            # Transcribe the page
-            _, text = _transcribe_single_page(
-                page_idx=page_num-1,
-                image=img,
-                gemini_endpoint=gemini_endpoint,
-                rate_mgr=rate_mgr,
-                trace_fn=trace_fn,
-                max_retries=3
-            )
-            if text is not None:
-                result[page_num] = text
-            else:
-                _t(f"[VLM] Page {page_num} transcription failed")
-        except RateLimitPauseRequired:
-            raise
-        except Exception as e:
-            _t(f"[VLM] Error processing page {page_num}: {e}")
-            # Don't raise; skip this page, allow continuation
-        finally:
-            if slot is not None:
-                rate_mgr.release_request_slot(slot)
-
-    return result
+    return _execute_adaptive_transcription(file_path, page_numbers, trace_fn, report=None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -504,16 +972,6 @@ def execute_vlm_extraction_step(
     progress_json: Optional[Dict[str, Any]] = None,
     on_page_completed: Optional[Callable[[int, Dict[str, Any]], None]] = None,
 ) -> str:
-    """
-    Legacy wrapper for backward compatibility. It transcribes all pages that are
-    not yet marked as completed in progress_json (if provided) and returns a
-    concatenated string of ONLY the newly transcribed pages (no placeholders).
-    Pages that were already completed or failed are omitted entirely.
-    The worker is responsible for updating progress_json and persisting the
-    full document.
-
-    This function is deprecated; new code should use transcribe_pages() directly.
-    """
     def _t(msg: str):
         if trace_fn:
             try:
@@ -521,7 +979,6 @@ def execute_vlm_extraction_step(
             except Exception:
                 pass
 
-    # Determine total pages and completed pages
     try:
         with open(file_path, "rb") as f:
             reader = pypdf.PdfReader(f)
@@ -530,31 +987,55 @@ def execute_vlm_extraction_step(
         raise RuntimeError(f"Failed to read PDF: {e}")
 
     completed_pages = set(progress_json.get("completed_pages", []) if progress_json else [])
-    # Filter out invalid page numbers
     completed_pages = {p for p in completed_pages if 1 <= p <= total_pages}
-
-    # Determine which pages to transcribe
     remaining_pages = [p for p in range(1, total_pages + 1) if p not in completed_pages]
 
     _t(f"[VLM] Legacy wrapper: total={total_pages}, completed={len(completed_pages)}, remaining={len(remaining_pages)}")
 
-    # Transcribe only the remaining pages
     new_transcriptions = {}
     if remaining_pages:
-        new_transcriptions = transcribe_pages(file_path, remaining_pages, trace_fn)
+        try:
+            report = DocumentPreprocessor(file_path).generate_routing_report(trace_fn)
+            new_transcriptions = _execute_adaptive_transcription(file_path, remaining_pages, trace_fn, report=report)
+        except RateLimitPauseRequired:
+            raise
+        except Exception as e:
+            _t(f"[VLM] Adaptive transcription failed: {e}. Falling back to page-by-page.")
+            api_key, model = _get_gemini_api_key_and_model()
+            endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            rate_mgr = GeminiRateManager()
+            for p in sorted(remaining_pages):
+                try:
+                    decision = rate_mgr.get_decision()
+                    if not decision.allowed:
+                        raise RateLimitPauseRequired(resume_at=decision.resume_at, reason=decision.reason, retry_after=decision.retry_after)
+                    slot = rate_mgr.acquire_request_slot()
+                    if slot is None:
+                        raise RateLimitPauseRequired(resume_at=time.time() + 30, reason="no_slot_available")
+                    try:
+                        images = convert_from_path(file_path, first_page=p, last_page=p, dpi=150)
+                        if images:
+                            _, text = _transcribe_single_page(
+                                p-1, np.array(images[0]), endpoint, rate_mgr, trace_fn, 3
+                            )
+                            if text is not None:
+                                new_transcriptions[p] = text
+                                if on_page_completed:
+                                    on_page_completed(p, {"text": text, "source": "gemini"})
+                    finally:
+                        if slot:
+                            rate_mgr.release_request_slot(slot)
+                except RateLimitPauseRequired:
+                    raise
+                except Exception as e2:
+                    _t(f"[VLM] Fallback page {p} error: {e2}")
 
-    # Call the callback for each newly transcribed page
     if on_page_completed:
         for page_num, text in new_transcriptions.items():
             on_page_completed(page_num, {"text": text, "source": "gemini"})
 
-    # Build a string of only the newly transcribed pages, with page breaks.
-    # No placeholders for already completed or failed pages.
     page_texts = [text for page_num, text in sorted(new_transcriptions.items())]
     if page_texts:
-        result = "\n\n<--- PAGE_BREAK --->\n\n".join(page_texts)
-        _t(f"[VLM] Legacy wrapper returning {len(page_texts)} new pages")
-        return result
+        return "\n\n<--- PAGE_BREAK --->\n\n".join(page_texts)
     else:
-        _t("[VLM] Legacy wrapper: no new pages transcribed")
         return ""

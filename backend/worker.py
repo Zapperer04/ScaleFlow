@@ -36,7 +36,7 @@ API_URL = os.getenv("API_URL", "http://127.0.0.1:5000")
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 WORKER_ID = os.getenv("WORKER_ID", "worker-1")
-API_KEY = os.getenv("API_KEY", "dev_secret_api_key")
+API_KEY = os.getenv("API_KEY", "local_only_secret_key")
 
 HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
@@ -743,19 +743,19 @@ def handle_validate_parse_quality(payload, input_artifacts):
         raise ve
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Graph‑native Semantic Chunker
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Graph-native Semantic Chunker
+# -----------------------------------------------------------------------------
 def handle_chunk_text(payload, input_artifacts):
     """
-    Graph‑native chunking: uses document graph if available, else falls back to text chunking.
+    Graph-native chunking: uses document graph if available, else falls back to text chunking.
     """
     task_id = payload.get('_task_id')
     raw_input = input_artifacts.get("parsed_text", {})
     document_graph = raw_input.get("document_graph") if isinstance(raw_input, dict) else None
 
     if document_graph:
-        _trace_msg = "[CHUNKER] Graph‑native chunking started"
+        _trace_msg = "[CHUNKER] Graph-native chunking started"
         emit_task_trace(task_id, _trace_msg)
         print(f"[{WORKER_ID}] {_trace_msg}", flush=True)
         from services.chunking_service import chunk_document_graph
@@ -1641,7 +1641,15 @@ def execute_task(task: Any):
     if handler:
         if task_type in OUTPUT_ARTIFACT_TYPES:
             input_artifacts = {}
-            for art_id in task.get('input_artifact_ids', []):
+            raw_input_ids = task.get('input_artifact_ids', [])
+            if isinstance(raw_input_ids, str):
+                try:
+                    input_ids = json.loads(raw_input_ids)
+                except Exception:
+                    input_ids = []
+            else:
+                input_ids = raw_input_ids or []
+            for art_id in input_ids:
                 try:
                     resp = _api_request(
                         "GET",
@@ -1808,12 +1816,30 @@ def get_next_task():
             result = redis_client.brpop(active_queues, timeout=5)
             if result:
                 return result
-    except RedisConnectionError as ce:
-        print(f"[{WORKER_ID}] Redis connection error during task pop: {ce}. Will retry shortly.", flush=True)
+    except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as ce:
+        print(f"[{WORKER_ID}] Redis connection error during task pop: {ce}. Falling back to API polling...", flush=True)
+        try:
+            # Call API to claim or poll next task directly from database
+            resp = _api_request(
+                "POST",
+                f"{API_URL}/tasks/poll",
+                json_data={
+                    "worker_id": WORKER_ID,
+                    "capabilities": WORKER_CAPABILITIES
+                },
+                timeout=10,
+                retries=1,
+                expected_status=None
+            )
+            if resp and resp.status_code == 200:
+                task_data = resp.json()
+                # /tasks/poll already claimed the task (status=running)
+                # Return a special sentinel so worker_loop skips the /claim step
+                return ("task_queue_fallback", task_data)
+        except Exception as api_err:
+            print(f"[{WORKER_ID}] API polling fallback error: {api_err}", flush=True)
         time.sleep(3)
         return None
-    except RedisTimeoutError:
-        pass
     except Exception as e:
         print(f"[{WORKER_ID}] Error in get_next_task: {e}", flush=True)
         traceback.print_exc()
@@ -1823,19 +1849,19 @@ def worker_loop():
     global current_renewer, shutdown_requested
     worker_state['last_action'] = 'Registering worker'
     print(f"[{WORKER_ID}] Worker started! Verifying Redis connection...", flush=True)
-    max_redis_retries = 12
+    max_redis_retries = 3
     for attempt in range(1, max_redis_retries + 1):
         try:
             redis_client.ping()
             print(f"[{WORKER_ID}] Connected to Redis successfully!", flush=True)
             break
         except Exception as e:
-            wait = min(2 ** attempt, 30)
+            wait = 1
             if attempt < max_redis_retries:
                 print(f"[{WORKER_ID}] Redis not ready (attempt {attempt}/{max_redis_retries}): {e}. Retrying in {wait}s...", flush=True)
                 time.sleep(wait)
             else:
-                print(f"[{WORKER_ID}] CRITICAL: Could not reach Redis after {max_redis_retries} attempts: {e}. Worker will attempt to continue anyway.", flush=True)
+                print(f"[{WORKER_ID}] WARNING: Redis unreachable on startup: {e}. Falling back to DB-polling mode.", flush=True)
     
     register_worker()
     print(f"[{WORKER_ID}] Listening on capability queues: {ALL_WORKER_QUEUES}", flush=True)
@@ -1851,47 +1877,58 @@ def worker_loop():
             result = get_next_task()
             
             if result:
-                queue_name, task_id = result
-                task_id = task_id.decode() if isinstance(task_id, bytes) else str(task_id)
-                worker_state['last_action'] = f"Received task #{task_id}"
-                print(f"[{WORKER_ID}] Received task_id {task_id} from queue {queue_name}", flush=True)
+                queue_name, task_id_or_task = result
                 
-                worker_state['last_action'] = f"Claiming task #{task_id}"
-                print(f"[{WORKER_ID}] Claiming task #{task_id} from API...", flush=True)
-                
-                max_attempts = 5
-                response = None
-                for attempt in range(max_attempts):
-                    try:
-                        response = _api_request(
-                            "POST",
-                            f"{API_URL}/tasks/{task_id}/claim",
-                            json_data={'worker_id': WORKER_ID},
-                            timeout=15,
-                            retries=1,
-                            expected_status=200
-                        )
-                        if response and response.status_code == 200:
-                            break
-                        elif response and response.status_code == 400:
-                            time.sleep(0.2)
-                            continue
-                        else:
-                            break
-                    except Exception as e:
-                        print(f"[{WORKER_ID}] Claim attempt {attempt+1} error: {e}", flush=True)
-                        time.sleep(0.5)
-                
-                if not response or response.status_code != 200:
-                    worker_state['last_action'] = f"Failed to claim task #{task_id}"
-                    status_code = response.status_code if response else "No Response"
-                    text = response.text if response else ""
-                    print(f"[{WORKER_ID}] Claim failed: {status_code} - {text}", flush=True)
-                    continue
+                # When the poll fallback already claimed the task, task_id_or_task is
+                # the full task dict (not just an ID). Skip the separate /claim call.
+                if queue_name == "task_queue_fallback" and isinstance(task_id_or_task, dict):
+                    task = task_id_or_task
+                    task_id = str(task.get("id"))
+                    lease_token = task.get("lease_token")
+                    task_type = task.get("type")
+                    worker_state['last_action'] = f"Received pre-claimed task #{task_id} via DB poll"
+                    print(f"[{WORKER_ID}] Received pre-claimed task #{task_id} ({task_type}) via DB poll fallback", flush=True)
+                else:
+                    task_id = task_id_or_task.decode() if isinstance(task_id_or_task, bytes) else str(task_id_or_task)
+                    worker_state['last_action'] = f"Received task #{task_id}"
+                    print(f"[{WORKER_ID}] Received task_id {task_id} from queue {queue_name}", flush=True)
                     
-                task = response.json()
-                lease_token = task.get('lease_token')
-                task_type = task.get('type')
+                    worker_state['last_action'] = f"Claiming task #{task_id}"
+                    print(f"[{WORKER_ID}] Claiming task #{task_id} from API...", flush=True)
+                    
+                    max_attempts = 5
+                    response = None
+                    for attempt in range(max_attempts):
+                        try:
+                            response = _api_request(
+                                "POST",
+                                f"{API_URL}/tasks/{task_id}/claim",
+                                json_data={'worker_id': WORKER_ID},
+                                timeout=15,
+                                retries=1,
+                                expected_status=200
+                            )
+                            if response and response.status_code == 200:
+                                break
+                            elif response and response.status_code == 400:
+                                time.sleep(0.2)
+                                continue
+                            else:
+                                break
+                        except Exception as e:
+                            print(f"[{WORKER_ID}] Claim attempt {attempt+1} error: {e}", flush=True)
+                            time.sleep(0.5)
+                    
+                    if not response or response.status_code != 200:
+                        worker_state['last_action'] = f"Failed to claim task #{task_id}"
+                        status_code = response.status_code if response else "No Response"
+                        text = response.text if response else ""
+                        print(f"[{WORKER_ID}] Claim failed: {status_code} - {text}", flush=True)
+                        continue
+                        
+                    task = response.json()
+                    lease_token = task.get('lease_token')
+                    task_type = task.get('type')
                 
                 worker_state['last_action'] = f"Executing task #{task_id}"
                 print(f"[{WORKER_ID}] Starting task {task_id} ({task_type})...", flush=True)

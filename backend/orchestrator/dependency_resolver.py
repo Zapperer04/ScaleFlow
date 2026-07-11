@@ -167,8 +167,12 @@ def enqueue_task(db, task):
     from task_registry import get_queue_name
     queue_name = get_queue_name(task.type, task.priority, is_test)
         
-    redis_client.lpush(queue_name, task.id)
-    log_event(db, task.id, "task_queued", f"Pushed to {task.priority} priority queue (queue: {queue_name})")
+    try:
+        redis_client.lpush(queue_name, task.id)
+        log_event(db, task.id, "task_queued", f"Pushed to {task.priority} priority queue (queue: {queue_name})")
+    except Exception as e:
+        print(f"Redis is unavailable; queuing task {task.id} locally in DB fallback: {e}", flush=True)
+        log_event(db, task.id, "task_queued", f"Queued locally via DB fallback due to offline Redis (target queue: {queue_name})")
 
 def resolve_dependencies(db, completed_task):
     """
@@ -261,7 +265,10 @@ def resolve_dependencies(db, completed_task):
                 q_len = 0
                 for prio in ['high', 'medium', 'low']:
                     q_name = f"task_queue_test_{cap}_{prio}" if is_test else f"task_queue_{cap}_{prio}"
-                    q_len += redis_client.llen(q_name) or 0
+                    try:
+                        q_len += redis_client.llen(q_name) or 0
+                    except Exception:
+                        pass
                 
                 if q_len > 10:
                     is_congested = True
