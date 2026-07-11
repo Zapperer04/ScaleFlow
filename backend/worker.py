@@ -2,7 +2,7 @@ import time
 import requests
 import redis
 from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Union
 import json
 import os
 import random
@@ -10,6 +10,9 @@ import threading
 import traceback
 import re
 from datetime import datetime
+import signal
+import sys
+from functools import wraps
 
 def load_env():
     for path in ['.env', 'backend/.env', '../backend/.env', '../../.env']:
@@ -85,6 +88,68 @@ worker_state: dict[str, Any] = {
     'last_action': 'Initializing worker'
 }
 
+# ------------------------------------------------------------------------------
+# Robust API request helper with retries, timeout, and logging
+# ------------------------------------------------------------------------------
+def _api_request(
+    method: str,
+    url: str,
+    json_data: Optional[Dict] = None,
+    params: Optional[Dict] = None,
+    headers: Optional[Dict] = None,
+    timeout: int = 30,
+    retries: int = 3,
+    backoff: float = 1.0,
+    expected_status: Optional[int] = 200,
+) -> Optional[requests.Response]:
+    """
+    Make an HTTP request with exponential backoff retries and timeout.
+    Returns the response if status matches expected_status (or if expected_status is None).
+    Logs failures and returns None on final failure.
+    """
+    headers = headers or HEADERS
+    attempt = 0
+    while attempt < retries:
+        try:
+            if method.upper() == "GET":
+                resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+            elif method.upper() == "POST":
+                resp = requests.post(url, headers=headers, json=json_data, params=params, timeout=timeout)
+            elif method.upper() == "PATCH":
+                resp = requests.patch(url, headers=headers, json=json_data, params=params, timeout=timeout)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
+
+            if expected_status is None or resp.status_code == expected_status:
+                return resp
+            else:
+                print(f"[{WORKER_ID}] Request to {url} returned {resp.status_code} (attempt {attempt+1}/{retries})", flush=True)
+                if resp.status_code >= 500:
+                    # Server error, retry
+                    pass
+                else:
+                    # Client error, don't retry
+                    return resp
+        except (requests.Timeout, requests.ConnectionError) as e:
+            print(f"[{WORKER_ID}] Request to {url} failed: {e} (attempt {attempt+1}/{retries})", flush=True)
+        except Exception as e:
+            print(f"[{WORKER_ID}] Unexpected error in request to {url}: {e} (attempt {attempt+1}/{retries})", flush=True)
+
+        attempt += 1
+        if attempt < retries:
+            sleep_time = backoff * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+            time.sleep(sleep_time)
+
+    return None
+
+# Custom exception for task pause due to rate limit or other transient conditions
+class TaskPauseException(Exception):
+    def __init__(self, resume_at: float, reason: str = "rate_limit", progress: Dict[str, Any] = None):
+        self.resume_at = resume_at
+        self.reason = reason
+        self.progress = progress or {}
+        super().__init__(f"Task paused: {reason} until {resume_at}")
+
 def send_heartbeat():
     while True:
         try:
@@ -96,10 +161,16 @@ def send_heartbeat():
                 'tasks_failed': worker_state['tasks_failed'],
                 'last_action': worker_state['last_action']
             }
-            res = requests.post(f"{API_URL}/workers/heartbeat", 
-                        json=payload, headers=HEADERS, timeout=5)
-            if res.status_code != 200:
-                print(f"[{WORKER_ID}] Heartbeat status error: {res.status_code} - {res.text}", flush=True)
+            resp = _api_request(
+                "POST",
+                f"{API_URL}/workers/heartbeat",
+                json_data=payload,
+                timeout=5,
+                retries=2,
+                expected_status=200
+            )
+            if not resp or resp.status_code != 200:
+                print(f"[{WORKER_ID}] Heartbeat status error: {resp.status_code if resp else 'no response'} - {resp.text if resp else ''}", flush=True)
         except Exception as e:
             print(f"[{WORKER_ID}] Heartbeat connection failed: {e}", flush=True)
         time.sleep(10)
@@ -113,7 +184,14 @@ def emit_task_trace(task_id, message):
             "event_type": "task_trace",
             "message": message
         }
-        requests.post(f"{API_URL}/tasks/{task_id}/log", json=payload, headers=HEADERS, timeout=5)
+        _api_request(
+            "POST",
+            f"{API_URL}/tasks/{task_id}/log",
+            json_data=payload,
+            timeout=5,
+            retries=2,
+            expected_status=200
+        )
     except Exception as e:
         print(f"[{WORKER_ID}] Failed to emit task trace: {e}", flush=True)
 
@@ -173,9 +251,15 @@ def handle_webhook_trigger(payload):
 
 def get_uploaded_file_path(pipeline_id):
     try:
-        res = requests.get(f"{API_URL}/pipelines/{pipeline_id}", headers=HEADERS, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
+        resp = _api_request(
+            "GET",
+            f"{API_URL}/pipelines/{pipeline_id}",
+            timeout=5,
+            retries=2,
+            expected_status=200
+        )
+        if resp and resp.status_code == 200:
+            data = resp.json()
             for art in data.get("artifacts", []):
                 if art.get("artifact_type") == "uploaded_file":
                     storage_uri = art.get("storage_uri")
@@ -190,6 +274,28 @@ def get_uploaded_file_path(pipeline_id):
     except Exception as e:
         print(f"[{WORKER_ID}] Error fetching uploaded file path: {e}", flush=True)
     return None
+
+# Monkey-patch GeminiRateManager.wait_if_needed to be non-blocking.
+# This is required because pdf_parser.py (which we cannot modify in this file)
+# calls wait_if_needed() and expects it to block. In our worker architecture,
+# we want to pause the task and release the worker, so we raise TaskPauseException
+# when a rate limit is encountered.
+# This patch is applied only in this process and is necessary for compatibility.
+# A future refactor will move this logic into the rate manager itself.
+from services.gemini_rate_manager import GeminiRateManager
+
+_original_wait_if_needed = GeminiRateManager.wait_if_needed
+
+def _non_blocking_wait(self, trace_fn=None):
+    decision = self.get_decision()
+    if not decision.allowed:
+        raise TaskPauseException(resume_at=decision.resume_at, reason=decision.reason)
+    # If allowed, we need to "consume" the pacing slot by calling _pace_request_atomically,
+    # but get_decision already did that internally? get_decision calls _pace_request_atomically,
+    # so it has already reserved the slot. So we do nothing.
+
+# Apply the patch
+GeminiRateManager.wait_if_needed = _non_blocking_wait
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Document Preprocessing
@@ -240,11 +346,37 @@ def handle_parse_document(payload, input_artifacts):
     pipeline_id = payload.get('_pipeline_id')
     task_id = payload.get('_task_id')
     lease_token = payload.get('_lease_token')
-    progress_json = payload.get('_progress_json')
+    progress_json = payload.get('_progress_json') or {}
 
     def _trace(msg: str):
         print(f"[{WORKER_ID}] {msg}", flush=True)
         emit_task_trace(task_id, msg)
+
+    # Check rate limit before starting
+    from services.gemini_rate_manager import GeminiRateManager
+    rate_mgr = GeminiRateManager()
+    decision = rate_mgr.get_decision()
+    if not decision.allowed:
+        _trace(f"[PARSER] Rate limit active: {decision.reason}, resume at {decision.resume_at}")
+        # Save current progress (if any) and pause
+        if progress_json:
+            # save progress to backend before pausing
+            try:
+                _api_request(
+                    "PATCH",
+                    f"{API_URL}/tasks/{task_id}/progress",
+                    json_data={
+                        "worker_id": WORKER_ID,
+                        "lease_token": lease_token,
+                        **progress_json
+                    },
+                    timeout=5,
+                    retries=3,
+                    expected_status=200
+                )
+            except Exception as e:
+                _trace(f"[PARSER] Failed to save progress before pause: {e}")
+        raise TaskPauseException(resume_at=decision.resume_at, reason=decision.reason, progress=progress_json)
 
     filepath = get_uploaded_file_path(pipeline_id)
     if not filepath or not os.path.exists(filepath):
@@ -267,73 +399,122 @@ def handle_parse_document(payload, input_artifacts):
             started_parsing_time = time.time()
             progress_cache = progress_json if isinstance(progress_json, dict) else {}
             progress_cache.setdefault("completed_pages", [])
-            progress_cache.setdefault("completed_pages_data", {})
+            # Do NOT store full page data in progress; only lightweight metadata
             progress_cache.setdefault("total_pages", total_pages)
+            progress_cache.setdefault("last_completed_page", 0)
+            progress_cache.setdefault("checkpoint_count", 0)
+            progress_cache.setdefault("last_checkpoint_time", started_parsing_time)
+            progress_cache.setdefault("resume_page", 1)
+            # Add checkpoint version with timestamp to help detect stale updates (backend may use it)
+            progress_cache.setdefault("checkpoint_version", 0)
+            progress_cache["checkpoint_version"] += 1  # increment on each save
+
+            # Lock for checkpoint updates to prevent races
+            checkpoint_lock = threading.Lock()
+
+            # Track pages completed for checkpoint frequency
+            page_counter = 0
+            last_checkpoint_time = time.time()
+            CHECKPOINT_INTERVAL_PAGES = 5
+            CHECKPOINT_INTERVAL_SECONDS = 30
+            consecutive_checkpoint_failures = 0
+            MAX_CHECKPOINT_FAILURES = 3
+
+            def save_checkpoint():
+                """Save current progress to backend with retry and failure tracking, using versioning."""
+                nonlocal consecutive_checkpoint_failures, last_checkpoint_time
+                with checkpoint_lock:
+                    try:
+                        progress_cache["checkpoint_count"] = len(progress_cache["completed_pages"])
+                        progress_cache["last_checkpoint_time"] = time.time()
+                        # Estimate remaining
+                        elapsed = time.time() - started_parsing_time
+                        completed = len(progress_cache["completed_pages"])
+                        if completed > 0 and elapsed > 0:
+                            pages_per_sec = completed / elapsed
+                            remaining_sec = (total_pages - completed) / pages_per_sec if pages_per_sec > 0 else 0
+                            progress_cache["estimated_completion_time"] = f"{round(remaining_sec, 1)}s remaining"
+                        else:
+                            progress_cache["estimated_completion_time"] = "Calculating..."
+                        # Update parser stats from rate manager
+                        mgr_metrics = rate_mgr.get_metrics()
+                        progress_cache["gemini_requests_sent"] = mgr_metrics["requests_sent"]
+                        progress_cache["429_count"] = mgr_metrics["429_count"]
+                        progress_cache["total_pause_duration"] = mgr_metrics["total_pause_duration"]
+                        progress_cache["parser_state"] = mgr_metrics["status"]
+                        progress_cache["retry_after_seconds"] = int(mgr_metrics["cooldown_remaining"])
+                        progress_cache["checkpoint_version"] += 1
+
+                        # Retry up to 3 times with exponential backoff
+                        for attempt in range(3):
+                            try:
+                                payload = {
+                                    "worker_id": WORKER_ID,
+                                    "lease_token": lease_token,
+                                    **progress_cache
+                                }
+                                resp = _api_request(
+                                    "PATCH",
+                                    f"{API_URL}/tasks/{task_id}/progress",
+                                    json_data=payload,
+                                    timeout=5,
+                                    retries=1,  # We handle retries manually
+                                    expected_status=200
+                                )
+                                if resp and resp.status_code == 200:
+                                    consecutive_checkpoint_failures = 0
+                                    # Update last_checkpoint_time after successful save
+                                    last_checkpoint_time = time.time()
+                                    _trace(f"[PARSER] Checkpoint saved (version {progress_cache['checkpoint_version']})")
+                                    break
+                                elif resp and resp.status_code == 409:
+                                    # Conflict: backend rejected due to version mismatch (stale update)
+                                    _trace(f"[PARSER] Checkpoint conflict (version {progress_cache['checkpoint_version']}) - aborting to prevent corruption")
+                                    raise RuntimeError("Checkpoint version conflict - another worker updated progress; aborting parsing")
+                                else:
+                                    _trace(f"[PARSER] Checkpoint failed with status {resp.status_code if resp else 'no response'}: {resp.text if resp else ''}")
+                            except Exception as e:
+                                wait = 2 ** attempt
+                                print(f"[{WORKER_ID}] Warning: checkpoint save attempt {attempt+1} failed: {e}. Retrying in {wait}s", flush=True)
+                                time.sleep(wait)
+                        else:
+                            consecutive_checkpoint_failures += 1
+                            if consecutive_checkpoint_failures >= MAX_CHECKPOINT_FAILURES:
+                                raise Exception(f"Checkpoint save failed {consecutive_checkpoint_failures} times; aborting parsing")
+                    except Exception as e:
+                        print(f"[{WORKER_ID}] CRITICAL: Failed to save checkpoint: {e}", flush=True)
+                        raise
 
             def on_page_completed_cb(page_number: int, page_res: Dict[str, Any]):
-                if page_number not in progress_cache["completed_pages"]:
-                    progress_cache["completed_pages"].append(page_number)
-                progress_cache["completed_pages_data"][str(page_number)] = page_res
-                progress_cache["last_completed_page"] = page_number
+                nonlocal page_counter
+                with checkpoint_lock:
+                    if page_number not in progress_cache["completed_pages"]:
+                        progress_cache["completed_pages"].append(page_number)
+                    progress_cache["last_completed_page"] = page_number
+                    progress_cache["resume_page"] = page_number + 1
+                    progress_cache["completed_pages_count"] = len(progress_cache["completed_pages"])
+                    progress_cache["remaining_pages"] = max(0, total_pages - progress_cache["completed_pages_count"])
                 
-                current_parser = "gemini" if page_res.get("source") == "gemini" else "ocr"
-                progress_cache["parser"] = current_parser
-                progress_cache["parser_locked"] = True
-                progress_cache["total_pages"] = total_pages
-                
-                completed_count = len(progress_cache["completed_pages"])
-                progress_cache["completed_pages_count"] = completed_count
-                progress_cache["remaining_pages"] = max(0, total_pages - completed_count)
-                progress_cache["checkpoint_count"] = completed_count
-                
-                from services.gemini_rate_manager import GeminiRateManager
-                rate_mgr = GeminiRateManager()
-                mgr_metrics = rate_mgr.get_metrics()
-                
-                elapsed = time.time() - started_parsing_time
-                pages_per_sec = completed_count / elapsed if elapsed > 0 else 0
-                pages_per_min = round(pages_per_sec * 60, 2)
-                
-                progress_cache["pages_per_minute"] = pages_per_min
-                progress_cache["gemini_requests_sent"] = mgr_metrics["requests_sent"]
-                progress_cache["429_count"] = mgr_metrics["429_count"]
-                progress_cache["total_pause_duration"] = mgr_metrics["total_pause_duration"]
-                progress_cache["parser_state"] = mgr_metrics["status"]
-                progress_cache["retry_after_seconds"] = int(mgr_metrics["cooldown_remaining"])
-                
-                if pages_per_sec > 0:
-                    remaining_sec = (total_pages - completed_count) / pages_per_sec
-                    progress_cache["estimated_completion_time"] = f"{round(remaining_sec, 1)}s remaining"
-                else:
-                    progress_cache["estimated_completion_time"] = "Calculating..."
-                
-                try:
-                    requests.patch(
-                        f"{API_URL}/tasks/{task_id}/progress",
-                        json={
-                            "worker_id": WORKER_ID,
-                            "lease_token": lease_token,
-                            **progress_cache
-                        },
-                        headers=HEADERS,
-                        timeout=5
-                    )
-                except Exception as e:
-                    print(f"[{WORKER_ID}] Warning: failed to save page checkpoint to backend: {e}", flush=True)
+                # Increment page counter for checkpoint frequency
+                page_counter += 1
+                now = time.time()
+                # Save checkpoint every N pages or every M seconds
+                if page_counter % CHECKPOINT_INTERVAL_PAGES == 0 or (now - last_checkpoint_time) >= CHECKPOINT_INTERVAL_SECONDS:
+                    save_checkpoint()
+                    page_counter = 0  # reset counter after checkpoint
 
-            while True:
+            # Ensure final checkpoint after parsing is done
+            try:
+                # Acquire concurrency slot for this parse session
+                slot_id = rate_mgr.acquire_request_slot(timeout=30)  # non-blocking, returns None if unavailable
+                if slot_id is None:
+                    _trace("[PARSER] Could not acquire Gemini concurrency slot; pausing")
+                    raise TaskPauseException(resume_at=time.time() + 60, reason="no_slot", progress=progress_cache)
+                else:
+                    _trace(f"[PARSER] Acquired Gemini slot: {slot_id}")
+
                 try:
-                    requests.patch(
-                        f"{API_URL}/tasks/{task_id}",
-                        json={
-                            "worker_id": WORKER_ID,
-                            "lease_token": lease_token,
-                            "status": "running"
-                        },
-                        headers=HEADERS,
-                        timeout=5
-                    )
-                    
+                    # Load preprocessing report
                     prep = input_artifacts.get("preprocessing_report", {})
                     document_type = prep.get("document_type", "MULTIMODAL")
                     routing_confidence = prep.get("routing_confidence", 1.0)
@@ -356,102 +537,52 @@ def handle_parse_document(payload, input_artifacts):
                         enhanced_pages_path=enhanced_pages_path,
                         on_page_completed=on_page_completed_cb
                     )
-                    break
-                    
+                    # Ensure final checkpoint (only if not already done by callback)
+                    save_checkpoint()
+                except TaskPauseException:
+                    # Re-raise to be caught by outer handler
+                    raise
                 except Exception as e:
-                    from services.document_preprocessor import GeminiRateLimitError
-                    is_rate_limit = False
-                    wait_sec = 60.0
-                    
-                    if type(e).__name__ == "GeminiRateLimitError":
-                        is_rate_limit = True
-                        wait_sec = getattr(e, "retry_after", 60.0)
-                    elif "HTTP 429" in str(e) or "Quota/Resource Exhausted" in str(e):
-                        is_rate_limit = True
-                        
-                    if is_rate_limit:
-                        _trace(f"[PARSER] Gemini Rate Limit reached. Pausing parser. Cooldown: {wait_sec:.1f}s.")
-                        
-                        requests.patch(
-                            f"{API_URL}/tasks/{task_id}",
-                            json={
-                                "worker_id": WORKER_ID,
-                                "lease_token": lease_token,
-                                "status": "paused_rate_limit"
-                            },
-                            headers=HEADERS,
-                            timeout=5
-                        )
-                        
-                        from services.gemini_rate_manager import GeminiRateManager
-                        rate_mgr = GeminiRateManager()
-                        mgr_metrics = rate_mgr.get_metrics()
-                        
-                        progress_cache["parser_state"] = "PAUSED_RATE_LIMIT"
-                        progress_cache["retry_after_seconds"] = int(wait_sec)
-                        progress_cache["gemini_requests_sent"] = mgr_metrics["requests_sent"]
-                        progress_cache["429_count"] = mgr_metrics["429_count"]
-                        progress_cache["total_pause_duration"] = mgr_metrics["total_pause_duration"]
-                        
-                        requests.patch(
-                            f"{API_URL}/tasks/{task_id}/progress",
-                            json={
-                                "worker_id": WORKER_ID,
-                                "lease_token": lease_token,
-                                **progress_cache
-                            },
-                            headers=HEADERS,
-                            timeout=5
-                        )
-                        
-                        start_sleep = time.time()
-                        while time.time() - start_sleep < wait_sec:
-                            elapsed = time.time() - start_sleep
-                            remaining = max(0, int(wait_sec - elapsed))
-                            progress_cache["retry_after_seconds"] = remaining
-                            
-                            try:
-                                requests.patch(
-                                    f"{API_URL}/tasks/{task_id}/progress",
-                                    json={
-                                        "worker_id": WORKER_ID,
-                                        "lease_token": lease_token,
-                                        **progress_cache
-                                    },
-                                    headers=HEADERS,
-                                    timeout=5
-                                )
-                            except Exception:
-                                pass
-                            
-                            time.sleep(min(remaining, 5.0) or 1.0)
-                        
-                        _trace(f"[PARSER] Cooldown expired. Resuming parsing...")
-                        progress_cache["parser_state"] = "RUNNING"
-                        progress_cache["retry_after_seconds"] = 0
-                        continue
+                    # Check if it's a rate limit from Gemini
+                    if "HTTP 429" in str(e) or "Quota/Resource Exhausted" in str(e):
+                        # Try to get resume_at from the rate manager
+                        decision2 = rate_mgr.get_decision()
+                        resume_at = decision2.resume_at if not decision2.allowed else time.time() + 60
+                        # Save progress before raising pause
+                        save_checkpoint()
+                        raise TaskPauseException(resume_at=resume_at, reason="rate_limit", progress=progress_cache)
                     else:
-                        _trace(f"[PARSER] Real exception encountered: {e}")
-                        raise e
-                        
-            document_graph = result.document_graph
-            parse_stats = result.stats
-            pages = result.pages
-            _trace(f"[PARSER] VLM parsing complete. Nodes: {parse_stats.get('node_count', 0)}, edges: {parse_stats.get('edge_count', 0)}")
-            # Return a dict compatible with downstream graph-native chunker
-            return {
-                "document_graph": document_graph,
-                "parse_stats": parse_stats,
-                "pages": pages,
-                "document_type": document_type,
-                "routing_confidence": routing_confidence
-            }
-        except ValueError as ve:
-            _trace(f"[PARSER] VALIDATION FAILURE: {ve}")
-            raise
-        except TimeoutError as te:
-            _trace(f"[PARSER] TIMEOUT: {te}")
-            raise Exception(str(te))
+                        raise
+                finally:
+                    # Release concurrency slot
+                    if slot_id:
+                        rate_mgr.release_request_slot(slot_id)
+                        _trace(f"[PARSER] Released Gemini slot: {slot_id}")
+
+                document_graph = result.document_graph
+                parse_stats = result.stats
+                pages = result.pages
+                _trace(f"[PARSER] VLM parsing complete. Nodes: {parse_stats.get('node_count', 0)}, edges: {parse_stats.get('edge_count', 0)}")
+                return {
+                    "document_graph": document_graph,
+                    "parse_stats": parse_stats,
+                    "pages": pages,
+                    "document_type": document_type,
+                    "routing_confidence": routing_confidence
+                }
+            except ValueError as ve:
+                _trace(f"[PARSER] VALIDATION FAILURE: {ve}")
+                raise
+            except TimeoutError as te:
+                _trace(f"[PARSER] TIMEOUT: {te}")
+                raise Exception(str(te))
+            except TaskPauseException:
+                # Ensure progress is saved before re-raising (but we already saved inside the try block)
+                # However, we might have saved earlier; we'll just re-raise without extra save
+                raise
+            except Exception as e:
+                _trace(f"[PARSER] CRITICAL ERROR: {e}")
+                raise
         except Exception as e:
             _trace(f"[PARSER] CRITICAL ERROR: {e}")
             raise
@@ -462,7 +593,6 @@ def handle_parse_document(payload, input_artifacts):
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 text = f.read()
             _trace(f"[PARSER] Read {len(text)} chars from file")
-            # For plain text, we wrap in a minimal document graph (single node)
             document_graph = {
                 "document_id": str(task_id),
                 "parser": "plaintext",
@@ -683,9 +813,15 @@ def get_pipeline_file_info(pipeline_id):
     uploaded_art_id = None
     
     try:
-        res = requests.get(f"{API_URL}/pipelines/{pipeline_id}", headers=HEADERS, timeout=5)
-        if res.status_code == 200:
-            p_data = res.json()
+        resp = _api_request(
+            "GET",
+            f"{API_URL}/pipelines/{pipeline_id}",
+            timeout=5,
+            retries=2,
+            expected_status=200
+        )
+        if resp and resp.status_code == 200:
+            p_data = resp.json()
             artifacts = p_data.get("artifacts", [])
             for art in artifacts:
                 if art.get("artifact_type") == "uploaded_file":
@@ -701,9 +837,15 @@ def get_pipeline_file_info(pipeline_id):
         print(f"[{WORKER_ID}] Error fetching pipeline detail: {e}", flush=True)
 
     try:
-        res_files = requests.get(f"{API_URL}/files", headers=HEADERS, timeout=5)
-        if res_files.status_code == 200:
-            files_list = res_files.json()
+        resp = _api_request(
+            "GET",
+            f"{API_URL}/files",
+            timeout=5,
+            retries=2,
+            expected_status=200
+        )
+        if resp and resp.status_code == 200:
+            files_list = resp.json()
             for f in files_list:
                 if f.get("pipeline_id") == pipeline_id:
                     file_id = f.get("id")
@@ -718,11 +860,16 @@ def get_pipeline_file_info(pipeline_id):
 def get_artifact_content_by_type(pipeline_id, artifact_type):
     from context.artifact_store import load_artifact_from_disk
     try:
-        res = requests.get(f"{API_URL}/pipelines/{pipeline_id}", headers=HEADERS, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
+        resp = _api_request(
+            "GET",
+            f"{API_URL}/pipelines/{pipeline_id}",
+            timeout=5,
+            retries=2,
+            expected_status=200
+        )
+        if resp and resp.status_code == 200:
+            data = resp.json()
             for art in data.get("artifacts", []):
-                # FIXED: use the function argument, not the literal string
                 if art.get("artifact_type") == artifact_type:
                     storage_uri = art.get("storage_uri")
                     return load_artifact_from_disk(storage_uri)
@@ -1356,6 +1503,7 @@ LEASE_DURATIONS = {
 }
 
 current_renewer = None
+shutdown_requested = False
 
 class LeaseRenewer(threading.Thread):
     def __init__(self, task_id, task_type, lease_token):
@@ -1366,12 +1514,14 @@ class LeaseRenewer(threading.Thread):
         self.stop_event = threading.Event()
         self.aborted = False
         self.daemon = True
+        self.last_renew_success = time.time()
+        self.renewal_failures = 0
 
     def run(self):
         lease_duration = LEASE_DURATIONS.get(self.task_type, 30)
         interval = max(1, min(15, lease_duration // 3))
         while not self.stop_event.wait(interval):
-            if self.stop_event.is_set():
+            if self.stop_event.is_set() or shutdown_requested:
                 break
             try:
                 payload = {
@@ -1379,25 +1529,49 @@ class LeaseRenewer(threading.Thread):
                     "lease_token": self.lease_token,
                     "extend_by_seconds": lease_duration
                 }
-                res = requests.post(
-                    f"{API_URL}/tasks/{self.task_id}/renew-lease", 
-                    json=payload, 
-                    headers=HEADERS, 
-                    timeout=5
+                resp = _api_request(
+                    "POST",
+                    f"{API_URL}/tasks/{self.task_id}/renew-lease",
+                    json_data=payload,
+                    timeout=5,
+                    retries=2,
+                    expected_status=200
                 )
-                if res.status_code == 200:
-                    print(f"Renewed lease for task #{self.task_id}", flush=True)
-                elif res.status_code == 409:
-                    print(f"Lease renewal rejected for task #{self.task_id}", flush=True)
+                if resp and resp.status_code == 200:
+                    self.last_renew_success = time.time()
+                    self.renewal_failures = 0
+                    print(f"[{WORKER_ID}] Renewed lease for task #{self.task_id}", flush=True)
+                elif resp and resp.status_code == 409:
+                    print(f"[{WORKER_ID}] Lease renewal rejected for task #{self.task_id}", flush=True)
                     self.aborted = True
                     break
                 else:
-                    print(f"[{WORKER_ID}] Lease renewal for task #{self.task_id} returned {res.status_code}: {res.text}", flush=True)
+                    status = resp.status_code if resp else "no response"
+                    print(f"[{WORKER_ID}] Lease renewal for task #{self.task_id} returned {status}: {resp.text if resp else ''}", flush=True)
+                    self.renewal_failures += 1
+                    if self.renewal_failures >= 3:
+                        print(f"[{WORKER_ID}] Lease renewal failed {self.renewal_failures} times; aborting", flush=True)
+                        self.aborted = True
+                        break
             except Exception as e:
                 print(f"[{WORKER_ID}] Error renewing lease for task #{self.task_id}: {e}", flush=True)
+                self.renewal_failures += 1
+                if self.renewal_failures >= 3:
+                    print(f"[{WORKER_ID}] Lease renewal failed {self.renewal_failures} times; aborting", flush=True)
+                    self.aborted = True
+                    break
 
     def stop(self):
         self.stop_event.set()
+
+def signal_handler(sig, frame):
+    global shutdown_requested
+    print(f"[{WORKER_ID}] Received signal {sig}, initiating graceful shutdown...", flush=True)
+    shutdown_requested = True
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
 
 def execute_task(task: Any):
     from context.artifact_store import load_artifact_from_disk, save_artifact_to_disk
@@ -1419,18 +1593,22 @@ def execute_task(task: Any):
             print(f"[{WORKER_ID}]   [HANG] [Simulation] Hanging task for {hang_time} seconds...", flush=True)
             start_hang = time.time()
             while time.time() - start_hang < hang_time:
-                if current_renewer and current_renewer.aborted:
-                    print(f"[{WORKER_ID}]   [HANG] Aborting hang simulation: lease rejected!", flush=True)
+                if current_renewer and current_renewer.aborted or shutdown_requested:
+                    print(f"[{WORKER_ID}]   [HANG] Aborting hang simulation: lease rejected or shutdown!", flush=True)
                     break
                 time.sleep(0.5)
             if current_renewer and current_renewer.aborted:
                 raise Exception("Task execution aborted during hang: lease expired or rejected.")
+            if shutdown_requested:
+                raise Exception("Task execution aborted due to shutdown.")
             print(f"[{WORKER_ID}]   [HANG] [Simulation] Wake up after hang!", flush=True)
         except (ValueError, TypeError):
             print(f"[{WORKER_ID}]   [WARN] Invalid simulate_hang_seconds value: {simulate_hang_seconds}", flush=True)
 
     if current_renewer and current_renewer.aborted:
         raise Exception("Task execution aborted: lease expired or rejected.")
+    if shutdown_requested:
+        raise Exception("Task execution aborted due to shutdown.")
 
     # Task types that are part of real pipeline and should not be randomly failed
     REAL_PIPELINE_TASK_TYPES = {
@@ -1465,15 +1643,21 @@ def execute_task(task: Any):
             input_artifacts = {}
             for art_id in task.get('input_artifact_ids', []):
                 try:
-                    res_art = requests.get(f"{API_URL}/artifacts/{art_id}", headers=HEADERS, timeout=30)
-                    if res_art.status_code == 200:
-                        meta = res_art.json()
+                    resp = _api_request(
+                        "GET",
+                        f"{API_URL}/artifacts/{art_id}",
+                        timeout=30,
+                        retries=3,
+                        expected_status=200
+                    )
+                    if resp and resp.status_code == 200:
+                        meta = resp.json()
                         art_type = meta.get('artifact_type')
                         storage_uri = meta.get('storage_uri')
                         data = load_artifact_from_disk(storage_uri)
                         input_artifacts[art_type] = data
                     else:
-                        raise RuntimeError(f"Artifact {art_id} fetch returned {res_art.status_code}")
+                        raise RuntimeError(f"Artifact {art_id} fetch returned {resp.status_code if resp else 'no response'}")
                 except Exception as ex:
                     print(f"[{WORKER_ID}] Error loading input artifact {art_id}: {ex}", flush=True)
                     raise RuntimeError(f"Failed to load required input artifact {art_id}: {ex}") from ex
@@ -1486,19 +1670,35 @@ def execute_task(task: Any):
             
             if current_renewer and current_renewer.aborted:
                 raise Exception("Task execution aborted: lease expired or rejected.")
+            if shutdown_requested:
+                raise Exception("Task execution aborted due to shutdown.")
                 
             import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            try:
                 handler_any: Any = handler
                 future = executor.submit(handler_any, task_data, input_artifacts)
                 try:
                     output_data = future.result(timeout=5400)
                 except concurrent.futures.TimeoutError:
+                    # Cancel the future and shut down executor
+                    future.cancel()
                     print(f"[{WORKER_ID}] [TIMEOUT] Task {task_id} exceeded 5400s limit!", flush=True)
                     raise Exception("Task timed out after 5400 seconds (Worker Deadlock Prevented)")
+                except Exception as e:
+                    future.cancel()
+                    raise
+                finally:
+                    # Ensure executor is shutdown (wait=False to avoid blocking)
+                    executor.shutdown(wait=False)
+            except Exception:
+                # If any exception occurred, executor is already shutdown
+                raise
 
             if current_renewer and current_renewer.aborted:
                 raise Exception("Task execution aborted: lease expired or rejected.")
+            if shutdown_requested:
+                raise Exception("Task execution aborted due to shutdown.")
             
             pipeline_id = task.get('pipeline_id')
             artifact_type = OUTPUT_ARTIFACT_TYPES[task_type]
@@ -1512,9 +1712,10 @@ def execute_task(task: Any):
             elif isinstance(output_data, list):
                 metadata["chunk_count"] = len(output_data)
                         
-            res_reg = requests.post(
+            resp = _api_request(
+                "POST",
                 f"{API_URL}/artifacts",
-                json={
+                json_data={
                     "pipeline_id": pipeline_id,
                     "task_id": task_id,
                     "artifact_type": artifact_type,
@@ -1522,13 +1723,14 @@ def execute_task(task: Any):
                     "checksum": checksum,
                     "metadata": metadata
                 },
-                headers=HEADERS,
-                timeout=30
+                timeout=30,
+                retries=3,
+                expected_status=201
             )
-            if res_reg.status_code != 201:
-                raise Exception(f"Failed to register output artifact: {res_reg.status_code} - {res_reg.text}")
+            if not resp or resp.status_code != 201:
+                raise Exception(f"Failed to register output artifact: {resp.status_code if resp else 'no response'} - {resp.text if resp else ''}")
                 
-            created_artifact = res_reg.json()
+            created_artifact = resp.json()
             task['output_artifact_ids'] = [created_artifact['id']]
         else:
             handler(task_data)
@@ -1544,12 +1746,20 @@ def register_worker():
                 "capabilities": WORKER_CAPABILITIES,
                 "resource_limits": {"concurrency": 1}
             }
-            res = requests.post(f"{API_URL}/workers/register", json=payload, headers=HEADERS, timeout=30)
-            if res.status_code in [200, 201]:
+            resp = _api_request(
+                "POST",
+                f"{API_URL}/workers/register",
+                json_data=payload,
+                timeout=30,
+                retries=5,
+                expected_status=None
+            )
+            if resp and resp.status_code in [200, 201]:
                 print(f"[{WORKER_ID}] Registered with capabilities: {WORKER_CAPABILITIES}", flush=True)
                 break
             else:
-                print(f"[{WORKER_ID}] Registration failed (status {res.status_code}): {res.text}. Retrying in 2s...", flush=True)
+                status = resp.status_code if resp else "no response"
+                print(f"[{WORKER_ID}] Registration failed (status {status}): {resp.text if resp else ''}. Retrying in 2s...", flush=True)
         except Exception as e:
             print(f"[{WORKER_ID}] Registration error: {e}. Retrying in 2s...", flush=True)
         time.sleep(2)
@@ -1610,6 +1820,7 @@ def get_next_task():
     return None
 
 def worker_loop():
+    global current_renewer, shutdown_requested
     worker_state['last_action'] = 'Registering worker'
     print(f"[{WORKER_ID}] Worker started! Verifying Redis connection...", flush=True)
     max_redis_retries = 12
@@ -1633,7 +1844,7 @@ def worker_loop():
     heartbeat_thread = threading.Thread(target=send_heartbeat, daemon=True)
     heartbeat_thread.start()
     
-    while True:
+    while not shutdown_requested:
         try:
             worker_state['last_action'] = 'Waiting for task'
             print(f"[{WORKER_ID}] Waiting for task...", flush=True)
@@ -1652,23 +1863,24 @@ def worker_loop():
                 response = None
                 for attempt in range(max_attempts):
                     try:
-                        response = requests.post(f"{API_URL}/tasks/{task_id}/claim", json={'worker_id': WORKER_ID}, headers=HEADERS, timeout=15)
-                    except requests.exceptions.Timeout:
-                        print(f"[{WORKER_ID}] Claim attempt {attempt+1} timed out for task #{task_id}", flush=True)
-                        response = None
+                        response = _api_request(
+                            "POST",
+                            f"{API_URL}/tasks/{task_id}/claim",
+                            json_data={'worker_id': WORKER_ID},
+                            timeout=15,
+                            retries=1,
+                            expected_status=200
+                        )
+                        if response and response.status_code == 200:
+                            break
+                        elif response and response.status_code == 400:
+                            time.sleep(0.2)
+                            continue
+                        else:
+                            break
+                    except Exception as e:
+                        print(f"[{WORKER_ID}] Claim attempt {attempt+1} error: {e}", flush=True)
                         time.sleep(0.5)
-                        continue
-                    except requests.exceptions.ConnectionError as ce:
-                        print(f"[{WORKER_ID}] Claim connection error for task #{task_id}: {ce}", flush=True)
-                        response = None
-                        time.sleep(1)
-                        continue
-                    if response.status_code == 200:
-                        break
-                    elif response.status_code == 400 and attempt < max_attempts - 1:
-                        time.sleep(0.2)
-                    else:
-                        break
                 
                 if not response or response.status_code != 200:
                     worker_state['last_action'] = f"Failed to claim task #{task_id}"
@@ -1686,10 +1898,10 @@ def worker_loop():
                 worker_state['status'] = 'busy'
                 worker_state['current_task_id'] = task_id
                 
-                global current_renewer
                 current_renewer = LeaseRenewer(task_id, task_type, lease_token)
                 current_renewer.start()
                 
+                paused = False
                 try:
                     retry_count = task.get('retry_count', 0)
                     if retry_count > 0:
@@ -1698,66 +1910,156 @@ def worker_loop():
                         print(f"[{WORKER_ID}] Waiting {delay}s backoff before retry...", flush=True)
                         start_sleep = time.time()
                         while time.time() - start_sleep < delay:
-                            if current_renewer.aborted:
+                            if current_renewer.aborted or shutdown_requested:
                                 break
                             time.sleep(0.5)
                         worker_state['last_action'] = f"Executing task #{task_id}"
                     
                     if current_renewer.aborted:
                         raise Exception("Task lease renewal was rejected (lease expired or worker mismatch) during backoff")
+                    if shutdown_requested:
+                        raise Exception("Shutdown requested during backoff")
                         
                     execute_task(task)
                     
-                    current_renewer.stop()
-                    current_renewer.join(timeout=2)
-                    
-                    if current_renewer.aborted:
-                        print(f"[{WORKER_ID}] Skipping task completion PATCH for task #{task_id} due to lease rejection.", flush=True)
-                    else:
+                    # If we reached here, task completed successfully
+                    if not current_renewer.aborted and not shutdown_requested:
                         output_artifact_ids = task.get('output_artifact_ids', [])
-                        res_complete = requests.patch(f"{API_URL}/tasks/{task_id}", 
-                                     json={
-                                         'status': 'completed', 
-                                         'worker_id': WORKER_ID, 
-                                         'lease_token': lease_token,
-                                         'output_artifact_ids': output_artifact_ids
-                                     }, headers=HEADERS, timeout=30)
-                        if res_complete.status_code != 200:
-                            print(f"[{WORKER_ID}] Warning: failed to patch status to completed: {res_complete.status_code} - {res_complete.text}", flush=True)
-                            if res_complete.status_code == 409:
+                        resp_complete = _api_request(
+                            "PATCH",
+                            f"{API_URL}/tasks/{task_id}",
+                            json_data={
+                                'status': 'completed',
+                                'worker_id': WORKER_ID,
+                                'lease_token': lease_token,
+                                'output_artifact_ids': output_artifact_ids
+                            },
+                            timeout=30,
+                            retries=3,
+                            expected_status=200
+                        )
+                        if not resp_complete or resp_complete.status_code != 200:
+                            print(f"[{WORKER_ID}] Warning: failed to patch status to completed: {resp_complete.status_code if resp_complete else 'no response'} - {resp_complete.text if resp_complete else ''}", flush=True)
+                            if resp_complete and resp_complete.status_code == 409:
                                 print(f"[{WORKER_ID}] [WARN] Task completion rejected: lease expired or owned by another worker.", flush=True)
                         else:
                             worker_state['tasks_completed'] += 1
                             worker_state['last_action'] = f"Completed task #{task_id}"
                             print(f"[{WORKER_ID}] Completed task {task_id} successfully!", flush=True)
                     
-                except Exception as e:
-                    current_renewer.stop()
-                    current_renewer.join(timeout=2)
+                except TaskPauseException as pause_ex:
+                    # Rate limit or other pause condition
+                    paused = True
+                    worker_state['last_action'] = f"Pausing task #{task_id} until {pause_ex.resume_at}"
+                    print(f"[{WORKER_ID}] Task {task_id} paused: {pause_ex.reason}, resume at {pause_ex.resume_at}", flush=True)
                     
-                    worker_state['last_action'] = f"Failed task #{task_id}"
-                    print(f"[{WORKER_ID}] Failed task {task_id}: {str(e)}", flush=True)
+                    # Save progress (already saved in handler, but ensure it's done)
+                    progress = pause_ex.progress
+                    if progress:
+                        try:
+                            _api_request(
+                                "PATCH",
+                                f"{API_URL}/tasks/{task_id}/progress",
+                                json_data={
+                                    "worker_id": WORKER_ID,
+                                    "lease_token": lease_token,
+                                    **progress
+                                },
+                                timeout=5,
+                                retries=3,
+                                expected_status=200
+                            )
+                        except Exception as e:
+                            print(f"[{WORKER_ID}] Failed to save progress on pause: {e}", flush=True)
                     
-                    if current_renewer.aborted:
-                        print(f"[{WORKER_ID}] Skipping task failure PATCH for task #{task_id} due to lease rejection.", flush=True)
-                    else:
-                        res_fail = requests.patch(f"{API_URL}/tasks/{task_id}", 
-                                     json={
-                                         'status': 'failed',
-                                         'error_message': str(e),
-                                         'worker_id': WORKER_ID,
-                                         'lease_token': lease_token
-                                     }, headers=HEADERS, timeout=15)
-                        if res_fail.status_code != 200:
-                            print(f"[{WORKER_ID}] Warning: failed to patch status to failed: {res_fail.status_code} - {res_fail.text}", flush=True)
-                            if res_fail.status_code == 409:
-                                print(f"[{WORKER_ID}] [WARN] Task failure report rejected: lease expired or owned by another worker.", flush=True)
+                    # Update task status to paused_rate_limit and store resume_at
+                    if not current_renewer.aborted and not shutdown_requested:
+                        resp_pause = _api_request(
+                            "PATCH",
+                            f"{API_URL}/tasks/{task_id}",
+                            json_data={
+                                'status': 'paused_rate_limit',
+                                'worker_id': WORKER_ID,
+                                'lease_token': lease_token,
+                                'resume_at': pause_ex.resume_at,
+                                'progress_json': progress
+                            },
+                            timeout=30,
+                            retries=3,
+                            expected_status=200
+                        )
+                        if not resp_pause or resp_pause.status_code != 200:
+                            print(f"[{WORKER_ID}] Warning: failed to patch status to paused_rate_limit: {resp_pause.status_code if resp_pause else 'no response'} - {resp_pause.text if resp_pause else ''}", flush=True)
                         else:
-                            worker_state['tasks_failed'] += 1
+                            print(f"[{WORKER_ID}] Task {task_id} paused successfully until {pause_ex.resume_at}", flush=True)
+                    else:
+                        print(f"[{WORKER_ID}] Cannot pause task {task_id}: lease aborted or shutdown", flush=True)
                     
+                except Exception as e:
+                    # Check if this is a permanent failure (e.g., malformed PDF, governance)
+                    error_str = str(e).lower()
+                    permanent_failure_keywords = ['malformed', 'invalid pdf', 'governance', 'permission denied', 'access denied']
+                    is_permanent = any(kw in error_str for kw in permanent_failure_keywords)
+                    if is_permanent:
+                        # Mark as failed permanently
+                        worker_state['last_action'] = f"Permanent failure for task #{task_id}"
+                        print(f"[{WORKER_ID}] Permanent failure for task {task_id}: {str(e)}", flush=True)
+                        if not current_renewer.aborted and not shutdown_requested:
+                            resp_fail = _api_request(
+                                "PATCH",
+                                f"{API_URL}/tasks/{task_id}",
+                                json_data={
+                                    'status': 'failed',
+                                    'error_message': f"PERMANENT: {str(e)}",
+                                    'worker_id': WORKER_ID,
+                                    'lease_token': lease_token
+                                },
+                                timeout=15,
+                                retries=3,
+                                expected_status=200
+                            )
+                            if not resp_fail or resp_fail.status_code != 200:
+                                print(f"[{WORKER_ID}] Warning: failed to patch status to failed: {resp_fail.status_code if resp_fail else 'no response'}", flush=True)
+                            else:
+                                worker_state['tasks_failed'] += 1
+                    else:
+                        # Retryable: mark as failed (will be retried by backend)
+                        worker_state['last_action'] = f"Failed task #{task_id}"
+                        print(f"[{WORKER_ID}] Failed task {task_id}: {str(e)}", flush=True)
+                        traceback.print_exc()
+                        
+                        if not current_renewer.aborted and not shutdown_requested:
+                            resp_fail = _api_request(
+                                "PATCH",
+                                f"{API_URL}/tasks/{task_id}",
+                                json_data={
+                                    'status': 'failed',
+                                    'error_message': str(e),
+                                    'worker_id': WORKER_ID,
+                                    'lease_token': lease_token
+                                },
+                                timeout=15,
+                                retries=3,
+                                expected_status=200
+                            )
+                            if not resp_fail or resp_fail.status_code != 200:
+                                print(f"[{WORKER_ID}] Warning: failed to patch status to failed: {resp_fail.status_code if resp_fail else 'no response'}", flush=True)
+                                if resp_fail and resp_fail.status_code == 409:
+                                    print(f"[{WORKER_ID}] [WARN] Task failure report rejected: lease expired or owned by another worker.", flush=True)
+                            else:
+                                worker_state['tasks_failed'] += 1
+                        else:
+                            print(f"[{WORKER_ID}] Cannot mark task {task_id} as failed: lease aborted or shutdown", flush=True)
+                
                 finally:
+                    # Stop lease renewer
+                    if current_renewer:
+                        current_renewer.stop()
+                        current_renewer.join(timeout=2)
+                    
                     worker_state['status'] = 'idle'
                     worker_state['current_task_id'] = None
+                    
             else:
                 pass
                 
