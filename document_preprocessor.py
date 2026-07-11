@@ -33,6 +33,167 @@ from pdf2image import convert_from_path
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Persistent Graph Storage (production artifact system)
+# ─────────────────────────────────────────────────────────────────────────────
+BASE_STORAGE_DIR = getattr(
+    config,
+    'BASE_STORAGE_DIR',
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'storage')
+)
+GRAPH_STORAGE_DIR = os.path.join(BASE_STORAGE_DIR, 'graphs')
+
+# Schema version – use semantic versioning (v1.0, v1.1, ...)
+GRAPH_SCHEMA_VERSION = getattr(config, 'GRAPH_SCHEMA_VERSION', 'v1.0')
+GRAPH_VERSION_SUBDIR = os.path.join(GRAPH_STORAGE_DIR, GRAPH_SCHEMA_VERSION)
+
+try:
+    os.makedirs(GRAPH_VERSION_SUBDIR, exist_ok=True)
+except Exception as e:
+    logger.warning(f"Could not create graph storage directory {GRAPH_VERSION_SUBDIR}: {e}")
+
+# In-memory cache for speed (optional, not relied upon for correctness)
+_GRAPH_CACHE = {}  # key: (content_hash, page_range_tuple) -> artifact dict
+
+def _get_content_hash(file_path: str) -> str:
+    """
+    Compute a stable content hash of the file.
+    This is used as the primary key for the graph artifact.
+    """
+    hasher = hashlib.sha256()
+    with open(file_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(65536), b''):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+def _get_graph_storage_path(content_hash: str) -> str:
+    """
+    Return the file path for the graph artifact given a content hash.
+    Includes version subdirectory.
+    """
+    return os.path.join(GRAPH_VERSION_SUBDIR, f"{content_hash}.json")
+
+def _store_graph(
+    file_path: str,
+    pages: List[int],
+    graph_pages: List[Dict[str, Any]],
+    parser: str = "gemini_vlm",
+    version: str = GRAPH_SCHEMA_VERSION
+) -> None:
+    """
+    Persist the rich document graph as a first-class artifact.
+    The graph is stored in a versioned subdirectory, keyed by content hash.
+    Also updates the in-memory cache for speed.
+    """
+    if not graph_pages:
+        return
+
+    content_hash = _get_content_hash(file_path)
+    cache_key = (content_hash, tuple(sorted(pages)))
+
+    # Build the complete graph artifact with rich metadata
+    artifact = {
+        "document": {
+            "content_hash": content_hash,
+            "filename": os.path.basename(file_path),      # only filename, not absolute path
+            "pages_requested": pages,
+            "timestamp": time.time(),
+            "version": version,
+            "parser": parser,
+        },
+        "pages": graph_pages,
+        "metadata": {
+            "page_count": len(graph_pages),
+            "node_count": sum(len(p.get("blocks", [])) for p in graph_pages),
+            "parser": parser,
+            "schema_version": version,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "model_used": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+        }
+    }
+
+    # Update in-memory cache
+    _GRAPH_CACHE[cache_key] = artifact
+
+    # Write to persistent storage
+    storage_path = _get_graph_storage_path(content_hash)
+    try:
+        with open(storage_path, 'w', encoding='utf-8') as f:
+            json.dump(artifact, f, ensure_ascii=False, indent=2)
+        logger.info(f"Graph artifact persisted to {storage_path}")
+    except Exception as e:
+        logger.error(f"Failed to persist graph artifact: {e}")
+        raise RuntimeError(f"Graph artifact persistence failed: {e}")
+
+def _get_graph_artifact(content_hash: str) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve the full graph artifact by content hash.
+    """
+    storage_path = _get_graph_storage_path(content_hash)
+    if not os.path.exists(storage_path):
+        return None
+
+    try:
+        with open(storage_path, 'r', encoding='utf-8') as f:
+            artifact = json.load(f)
+        # Update cache
+        cache_key = (content_hash, tuple(sorted(artifact["document"]["pages_requested"])))
+        _GRAPH_CACHE[cache_key] = artifact
+        return artifact
+    except Exception as e:
+        logger.error(f"Failed to load graph artifact: {e}")
+        return None
+
+def _get_graph(file_path: str, pages: List[int]) -> Optional[List[Dict[str, Any]]]:
+    """
+    Retrieve the document graph pages for the given file and pages.
+    First checks in-memory cache, then disk.
+    Returns None if no graph is found.
+    If the stored artifact contains pages beyond those requested, filters to the requested subset.
+    If any requested page is missing, returns None to indicate incompleteness.
+    """
+    content_hash = _get_content_hash(file_path)
+    cache_key = (content_hash, tuple(sorted(pages)))
+    artifact = None
+    if cache_key in _GRAPH_CACHE:
+        artifact = _GRAPH_CACHE[cache_key]
+    else:
+        artifact = _get_graph_artifact(content_hash)
+        if artifact:
+            _GRAPH_CACHE[cache_key] = artifact
+
+    if not artifact:
+        return None
+
+    stored_pages = artifact.get("pages", [])
+    requested_set = set(pages)
+    # Filter to only the requested pages
+    filtered = [p for p in stored_pages if p.get("page") in requested_set]
+    # Verify that we have exactly all requested pages
+    if len(filtered) != len(requested_set):
+        # Some pages are missing; return None to indicate incomplete graph
+        return None
+    return filtered if filtered else None
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public API for downstream artifact discovery
+# ─────────────────────────────────────────────────────────────────────────────
+def get_graph_artifact_path(content_hash: str) -> str:
+    """
+    Return the filesystem path where the graph artifact for the given content hash
+    is stored (or would be stored). Useful for downstream consumers that need
+    to read the artifact directly.
+    """
+    return _get_graph_storage_path(content_hash)
+
+def load_graph_artifact(content_hash: str) -> Optional[Dict[str, Any]]:
+    """
+    Public helper to load the full graph artifact for a document, given its content hash.
+    Returns the artifact dict, or None if not found.
+    """
+    return _get_graph_artifact(content_hash)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Memory Guard
 # ─────────────────────────────────────────────────────────────────────────────
 def _check_memory_before_render(pages_to_render: int, target_dpi: int):
@@ -498,23 +659,7 @@ def _call_gemini_with_pdf(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Internal Graph Store (preserves the rich document graph)
-# ─────────────────────────────────────────────────────────────────────────────
-_GRAPH_CACHE = {}  # key: (file_path_hash, page_range) -> graph dict
-
-def _store_graph(file_path: str, pages: List[int], graph_pages: List[Dict[str, Any]]) -> None:
-    """Store the full page graphs for later use."""
-    key = (hashlib.sha256(file_path.encode()).hexdigest(), tuple(sorted(pages)))
-    _GRAPH_CACHE[key] = {"pages": graph_pages}
-
-def _get_graph(file_path: str, pages: List[int]) -> Optional[List[Dict[str, Any]]]:
-    key = (hashlib.sha256(file_path.encode()).hexdigest(), tuple(sorted(pages)))
-    entry = _GRAPH_CACHE.get(key)
-    return entry["pages"] if entry else None
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Adaptive Planning (improved)
+# Adaptive Planning
 # ─────────────────────────────────────────────────────────────────────────────
 
 MAX_PAGES_WHOLE = 30
@@ -581,7 +726,7 @@ def _split_pdf_to_temp_chunk(file_path: str, start_page: int, end_page: int) -> 
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Core Adaptive Transcription Engine (using Files API, no caching)
+# Core Adaptive Transcription Engine (using Files API)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _execute_adaptive_transcription(
@@ -595,8 +740,8 @@ def _execute_adaptive_transcription(
     Returns dict mapping page_num to text.
     Raises RateLimitPauseRequired if rate limit encountered.
     All uploaded files are deleted after use to prevent leaks.
-    The full graph (blocks, tables, bbox, etc.) is stored in an internal cache
-    for future use by graph‑native components.
+    The full graph (blocks, tables, bbox, etc.) is persisted as a first‑class
+    artifact in the shared storage, keyed by content hash.
     """
     def _t(msg: str):
         if trace_fn:
@@ -616,15 +761,16 @@ def _execute_adaptive_transcription(
     rate_mgr = GeminiRateManager()
     result: Dict[int, str] = {}
     all_graph_pages = []  # accumulate graph data for caching
+    # Track which parser was used for each page
+    page_parser_map: Dict[int, str] = {}  # page -> parser
 
     # Helper to upload, call, delete, and store graph
-    def _process_pdf_file(pdf_path: str, pages_in_chunk: List[int], is_whole: bool) -> Tuple[Dict[int, str], List[Dict[str, Any]]]:
+    def _process_pdf_file(pdf_path: str, pages_in_chunk: List[int], is_whole: bool, parser_name: str = "gemini_vlm") -> Tuple[Dict[int, str], List[Dict[str, Any]]]:
         local_text = {}
         local_graph = []
         file_uri = None
         file_name = None
         try:
-            # Upload – this is a Gemini API call, so we use a rate slot.
             slot = rate_mgr.acquire_request_slot()
             if slot is None:
                 raise RateLimitPauseRequired(resume_at=time.time() + 30, reason="no_slot_available")
@@ -634,21 +780,19 @@ def _execute_adaptive_transcription(
                 if slot:
                     rate_mgr.release_request_slot(slot)
 
-            # Build prompt
             prompt = _build_graph_extraction_prompt(pages_in_chunk, is_whole)
 
-            # Inference – also uses a slot
             slot2 = rate_mgr.acquire_request_slot()
             if slot2 is None:
                 raise RateLimitPauseRequired(resume_at=time.time() + 30, reason="no_slot_available")
             try:
                 parsed = _call_gemini_with_pdf(file_uri, prompt, model, api_key, trace_fn)
-                # Extract text and also keep the full page objects
                 for pobj in parsed["pages"]:
                     pnum = pobj["page"]
                     if pnum in pages_in_chunk:
                         local_text[pnum] = pobj["text"]
-                        local_graph.append(pobj)  # store the full object (blocks, tables, etc.)
+                        local_graph.append(pobj)
+                        page_parser_map[pnum] = parser_name
                     else:
                         _t(f"[ADAPTIVE] Received page {pnum} not in requested list; ignoring")
             finally:
@@ -666,7 +810,7 @@ def _execute_adaptive_transcription(
 
     if strategy == "whole":
         try:
-            text_dict, graph_list = _process_pdf_file(file_path, pages_to_transcribe, is_whole=True)
+            text_dict, graph_list = _process_pdf_file(file_path, pages_to_transcribe, is_whole=True, parser_name="gemini_vlm")
             result.update(text_dict)
             all_graph_pages.extend(graph_list)
             _t(f"[ADAPTIVE] Whole document parsed, got {len(result)} pages")
@@ -684,7 +828,7 @@ def _execute_adaptive_transcription(
             try:
                 if batch == list(range(batch[0], batch[-1]+1)):
                     chunk_path = _split_pdf_to_temp_chunk(file_path, batch[0], batch[-1])
-                    text_dict, graph_list = _process_pdf_file(chunk_path, batch, is_whole=False)
+                    text_dict, graph_list = _process_pdf_file(chunk_path, batch, is_whole=False, parser_name="gemini_vlm")
                     result.update(text_dict)
                     all_graph_pages.extend(graph_list)
                 else:
@@ -694,7 +838,25 @@ def _execute_adaptive_transcription(
                         page_text = _transcribe_single_page_fallback(file_path, p, trace_fn, rate_mgr)
                         if page_text:
                             result[p] = page_text
-                            # For fallback, we don't have a graph; we'll create a minimal one later.
+                            # Build minimal graph page
+                            minimal_page = {
+                                "page": p,
+                                "text": page_text,
+                                "blocks": [
+                                    {
+                                        "type": "paragraph",
+                                        "text": page_text,
+                                        "bbox": [0.0, 0.0, 1.0, 1.0],
+                                        "reading_order": 1,
+                                        "confidence": 0.8,
+                                        "children": []
+                                    }
+                                ],
+                                "tables": [],
+                                "reading_order": [0]
+                            }
+                            all_graph_pages.append(minimal_page)
+                            page_parser_map[p] = "tesseract_ocr"
             except RateLimitPauseRequired:
                 raise
             except Exception as e:
@@ -703,6 +865,24 @@ def _execute_adaptive_transcription(
                     page_text = _transcribe_single_page_fallback(file_path, p, trace_fn, rate_mgr)
                     if page_text:
                         result[p] = page_text
+                        minimal_page = {
+                            "page": p,
+                            "text": page_text,
+                            "blocks": [
+                                {
+                                    "type": "paragraph",
+                                    "text": page_text,
+                                    "bbox": [0.0, 0.0, 1.0, 1.0],
+                                    "reading_order": 1,
+                                    "confidence": 0.8,
+                                    "children": []
+                                }
+                            ],
+                            "tables": [],
+                            "reading_order": [0]
+                        }
+                        all_graph_pages.append(minimal_page)
+                        page_parser_map[p] = "tesseract_ocr"
             finally:
                 if chunk_path and os.path.exists(chunk_path):
                     try:
@@ -719,14 +899,42 @@ def _execute_adaptive_transcription(
                 page_text = _transcribe_single_page_fallback(file_path, p, trace_fn, rate_mgr)
                 if page_text:
                     result[p] = page_text
+                    minimal_page = {
+                        "page": p,
+                        "text": page_text,
+                        "blocks": [
+                            {
+                                "type": "paragraph",
+                                "text": page_text,
+                                "bbox": [0.0, 0.0, 1.0, 1.0],
+                                "reading_order": 1,
+                                "confidence": 0.8,
+                                "children": []
+                            }
+                        ],
+                        "tables": [],
+                        "reading_order": [0]
+                    }
+                    all_graph_pages.append(minimal_page)
+                    page_parser_map[p] = "tesseract_ocr"
             except Exception as e:
                 _t(f"[ADAPTIVE] Page {p} fallback error: {e}")
 
-    # Store the graph in the internal cache (if we have any)
+    # Determine overall parser string
+    unique_parsers = set(page_parser_map.values())
+    if not unique_parsers:
+        parser_used = "none"
+    elif len(unique_parsers) == 1:
+        parser_used = unique_parsers.pop()
+    else:
+        parser_used = "mixed"
+
+    # Persist the full graph as a first-class artifact
     if all_graph_pages:
-        # We might have duplicates if multiple batches; we'll merge by page number
-        # For simplicity, we'll just store the list; later we can merge.
-        _store_graph(file_path, pages_to_transcribe, all_graph_pages)
+        _store_graph(file_path, pages_to_transcribe, all_graph_pages, parser=parser_used)
+        _t(f"[ADAPTIVE] Full graph artifact persisted for {len(all_graph_pages)} pages with parser {parser_used}")
+    else:
+        pass
 
     return result
 

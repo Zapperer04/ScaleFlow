@@ -2,12 +2,12 @@
 pdf_parser.py — VLM-first document parser for ScaleFlow.
 
 Architecture:
-    Document → VLM API (PRIMARY) → Document Graph (built from page text)
+    Document → VLM API (PRIMARY) → Document Graph (from persisted artifact)
                            ↘ OCR Fallback (image-based) → Document Graph
     → Return ParseResult (document_graph + stats + page metadata)
 
-Optimized: VLM path does NOT render images, saving memory and time.
-Rendering is deferred until OCR fallback is needed.
+Optimized: VLM path does NOT render images; rendering is deferred to OCR fallback.
+Now uses the graph artifact persisted by document_preprocessor.py.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ import threading
 import gc
 import uuid
 import copy
+import hashlib
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple, Set
 
@@ -55,7 +56,11 @@ except ImportError:
 
 # Imports from document_preprocessor (updated API)
 try:
-    from services.document_preprocessor import transcribe_pages, _transcribe_single_page_fallback
+    from services.document_preprocessor import (
+        transcribe_pages,
+        _transcribe_single_page_fallback,
+        load_graph_artifact,
+    )
     from services.gemini_rate_manager import RateLimitPauseRequired
     VLM_AVAILABLE = True
 except ImportError as e:
@@ -68,6 +73,8 @@ except ImportError as e:
         raise NotImplementedError("document_preprocessor not available")
     def _transcribe_single_page_fallback(*args, **kwargs):
         raise NotImplementedError("document_preprocessor not available")
+    def load_graph_artifact(*args, **kwargs):
+        return None
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +142,314 @@ def _close_pil_images(images: List[Any]) -> None:
 def _generate_node_id(page_number: int, unique_suffix: str) -> str:
     """Generate a unique node ID for a page."""
     return f"p{page_number}_n_{unique_suffix}"
+
+
+# ------------------------------------------------------------------------------
+# Semantic category mapping
+# ------------------------------------------------------------------------------
+_SEMANTIC_MAP = {
+    "heading": "heading",
+    "heading_level_1": "heading",
+    "heading_level_2": "heading",
+    "heading_level_3": "heading",
+    "heading_level_4": "heading",
+    "title": "heading",
+    "subtitle": "heading",
+    "paragraph": "paragraph",
+    "text": "paragraph",
+    "body_text": "paragraph",
+    "table": "table",
+    "figure": "figure",
+    "image": "figure",
+    "list": "list",
+    "list_item": "list",
+    "bullet": "list",
+    "caption": "caption",
+    "footer": "footer",
+    "header": "header",
+    "equation": "equation",
+    "formula": "equation",
+}
+
+def _normalize_semantic_category(raw_type: Optional[str]) -> str:
+    """Map raw type to controlled semantic category."""
+    if not raw_type:
+        return "paragraph"
+    raw_type_lower = raw_type.lower()
+    return _SEMANTIC_MAP.get(raw_type_lower, "paragraph")
+
+
+# ------------------------------------------------------------------------------
+# BBox normalisation
+# ------------------------------------------------------------------------------
+def _normalize_bbox(bbox: Any) -> Dict[str, float]:
+    """
+    Normalise bounding box to a dict with x1, y1, x2, y2 keys.
+    Supports both {'x1': ..., 'y1': ..., 'x2': ..., 'y2': ...} and [x1, y1, x2, y2].
+    """
+    if not bbox:
+        return {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0}
+    if isinstance(bbox, dict):
+        # Ensure all keys exist
+        return {
+            "x1": float(bbox.get("x1", 0.0)),
+            "y1": float(bbox.get("y1", 0.0)),
+            "x2": float(bbox.get("x2", 1.0)),
+            "y2": float(bbox.get("y2", 1.0)),
+        }
+    if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+        return {
+            "x1": float(bbox[0]),
+            "y1": float(bbox[1]),
+            "x2": float(bbox[2]),
+            "y2": float(bbox[3]),
+        }
+    return {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0}
+
+
+# ------------------------------------------------------------------------------
+# Graph conversion from artifact to parser graph
+# ------------------------------------------------------------------------------
+def _convert_artifact_to_graph(artifact: Dict[str, Any], task_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Convert the artifact format (with blocks, tables) into the parser's internal
+    document graph format (pages with nodes and edges).
+    Preserves parent-child relationships via CONTAINS edges.
+    Handles ID mapping, bbox normalisation, and forward compatibility.
+    """
+    if not artifact:
+        return {}
+
+    doc_info = artifact.get("document", {})
+    pages_artifact = artifact.get("pages", [])
+    metadata = artifact.get("metadata", {})
+
+    pages_graph = []
+    all_nodes = []
+    node_id_to_reading_order = {}
+    # Maps original block ID -> generated chunk_id
+    id_mapping: Dict[str, str] = {}
+    # Store nodes by original ID for parent/children resolution
+    node_by_original_id: Dict[str, Dict] = {}
+
+    # First pass: create nodes and store parent_original_id in each node
+    for page_data in pages_artifact:
+        page_num = page_data.get("page")
+        if page_num is None:
+            continue
+
+        blocks = page_data.get("blocks", [])
+        page_nodes = []
+
+        # Process blocks
+        for block in blocks:
+            # Preserve original block ID if present
+            original_id = block.get("id") or block.get("block_id")
+            # Generate a deterministic chunk_id based on page and reading order,
+            # but if original_id exists, use it as suffix for stability
+            if original_id:
+                chunk_id = _generate_node_id(page_num, f"block_{original_id}")
+            else:
+                chunk_id = _generate_node_id(page_num, f"block_{block.get('reading_order', 0)}")
+
+            # Normalise bbox
+            bbox = _normalize_bbox(block.get("bbox"))
+
+            # Build node
+            node = {
+                "chunk_id": chunk_id,
+                "text": block.get("text", ""),
+                "structural_type": block.get("type", "paragraph"),
+                "semantic_category": _normalize_semantic_category(block.get("type")),
+                "confidence": block.get("confidence", 1.0),
+                "reading_order": block.get("reading_order", 0),
+                "bbox": bbox,
+                "children": block.get("children", []),  # original IDs, will be mapped later
+            }
+            # Store original ID and parent original ID for later edge creation
+            if original_id:
+                node["original_id"] = original_id
+            parent_orig = block.get("parent")
+            if parent_orig:
+                node["parent_original_id"] = parent_orig
+
+            # Store mapping
+            if original_id:
+                id_mapping[original_id] = chunk_id
+                node_by_original_id[original_id] = node
+            else:
+                # If no original ID, use chunk_id as its own mapping
+                id_mapping[chunk_id] = chunk_id
+                node_by_original_id[chunk_id] = node
+
+            page_nodes.append(node)
+            all_nodes.append(node)
+            node_id_to_reading_order[chunk_id] = node.get("reading_order", 0)
+
+        # Process tables (may have original IDs as well)
+        tables = page_data.get("tables", [])
+        for table in tables:
+            original_id = table.get("id") or table.get("table_id")
+            tbl_reading_order = table.get("reading_order", len(page_nodes) + 1)
+            if original_id:
+                chunk_id = _generate_node_id(page_num, f"table_{original_id}")
+            else:
+                chunk_id = _generate_node_id(page_num, f"table_{tbl_reading_order}")
+
+            # Normalise bbox
+            bbox = _normalize_bbox(table.get("bbox"))
+
+            # Build node
+            table_text = table.get("caption", "") + "\n" + "\n".join(
+                [str(row) for row in table.get("rows", [])]
+            )
+            node = {
+                "chunk_id": chunk_id,
+                "text": table_text,
+                "structural_type": "table",
+                "semantic_category": "table",
+                "confidence": table.get("confidence", 1.0),
+                "reading_order": tbl_reading_order,
+                "bbox": bbox,
+                "children": [],  # tables might have children in future
+                "table_data": {
+                    "headers": table.get("headers", []),
+                    "rows": table.get("rows", []),
+                    "caption": table.get("caption", ""),
+                }
+            }
+            if original_id:
+                node["original_id"] = original_id
+            parent_orig = table.get("parent")
+            if parent_orig:
+                node["parent_original_id"] = parent_orig
+
+            # Store mapping
+            if original_id:
+                id_mapping[original_id] = chunk_id
+                node_by_original_id[original_id] = node
+            else:
+                id_mapping[chunk_id] = chunk_id
+                node_by_original_id[chunk_id] = node
+
+            page_nodes.append(node)
+            all_nodes.append(node)
+            node_id_to_reading_order[chunk_id] = tbl_reading_order
+
+        # Sort page nodes by reading_order
+        page_nodes.sort(key=lambda n: n.get("reading_order", 0))
+
+        pages_graph.append({
+            "page_number": page_num,
+            "nodes": page_nodes,
+            "edges": []
+        })
+
+    # Second pass: build edges using the ID mapping and the stored parent_original_id
+    edges = []
+    edge_set = set()
+
+    # Helper to add edge safely
+    def add_edge(from_id, to_id, relation):
+        if from_id and to_id and from_id != to_id:
+            key = (from_id, to_id, relation)
+            if key not in edge_set:
+                edge_set.add(key)
+                edges.append({
+                    "from": from_id,
+                    "to": to_id,
+                    "relation": relation,
+                })
+
+    # Intra-page NEXT edges
+    for pg in pages_graph:
+        nodes = pg["nodes"]
+        for i in range(len(nodes) - 1):
+            add_edge(nodes[i]["chunk_id"], nodes[i+1]["chunk_id"], "NEXT")
+
+    # Inter-page PAGE_NEXT edges
+    for i in range(len(pages_graph) - 1):
+        if pages_graph[i]["nodes"] and pages_graph[i+1]["nodes"]:
+            add_edge(
+                pages_graph[i]["nodes"][-1]["chunk_id"],
+                pages_graph[i+1]["nodes"][0]["chunk_id"],
+                "PAGE_NEXT"
+            )
+
+    # Build CONTAINS edges from parent_original_id stored in nodes
+    for node in all_nodes:
+        parent_orig = node.get("parent_original_id")
+        if parent_orig:
+            parent_chunk = id_mapping.get(parent_orig)
+            if parent_chunk:
+                add_edge(parent_chunk, node["chunk_id"], "CONTAINS")
+            else:
+                logger.debug(f"Parent reference {parent_orig} not found in ID mapping, skipping CONTAINS edge")
+
+        # Also handle children list (original IDs)
+        children_orig = node.get("children", [])
+        for child_orig in children_orig:
+            child_chunk = id_mapping.get(child_orig)
+            if child_chunk:
+                add_edge(node["chunk_id"], child_chunk, "CONTAINS")
+            else:
+                logger.debug(f"Child reference {child_orig} not found in ID mapping, skipping CONTAINS edge")
+
+    # Remove duplicate edges handled via set
+
+    # Build final graph
+    document_id = doc_info.get("filename", task_id or f"doc_{int(time.time())}")
+    graph = {
+        "document_id": document_id,
+        "parser": metadata.get("parser", "gemini_vlm"),
+        "schema_version": "1.0",
+        "document_type": "MULTIMODAL",
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "page_count": len(pages_graph),
+        "pages": pages_graph,
+        "edges": edges,
+        "statistics": {
+            "page_count": len(pages_graph),
+            "node_count": len(all_nodes),
+            "edge_count": len(edges),
+            "vlm_success_pages": len(pages_graph),
+            "ocr_fallback_pages": 0,
+            "failed_pages": 0,
+        },
+        "document_metadata": {
+            "source": "gemini_vlm",
+            "parser": metadata.get("parser", "gemini_vlm"),
+            "model_used": metadata.get("model_used", "unknown"),
+        }
+    }
+
+    # Preserve any unknown metadata from the artifact (forward compatibility)
+    for key, value in artifact.items():
+        if key not in ("document", "pages", "metadata"):
+            graph["document_metadata"][key] = value
+
+    # Also copy any unknown fields from metadata into document_metadata if not already there
+    for key, value in metadata.items():
+        if key not in graph["document_metadata"]:
+            graph["document_metadata"][key] = value
+
+    # Ensure page-level parser metadata preservation
+    # If artifact has per-page metadata, we could add it to each page.
+    # We'll just add it to document metadata for now.
+
+    return graph
+
+
+# ------------------------------------------------------------------------------
+# Helper to compute content hash (same as document_preprocessor)
+# ------------------------------------------------------------------------------
+def _get_content_hash(file_path: str) -> str:
+    """Compute SHA256 hash of file content."""
+    hasher = hashlib.sha256()
+    with open(file_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(65536), b''):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
 
 # ------------------------------------------------------------------------------
@@ -504,12 +819,13 @@ def compute_handwriting_score(pil_image: Image.Image) -> float:
 
 
 # ------------------------------------------------------------------------------
-# Helper to build a document graph from page texts
+# Helper to build a document graph from page texts (fallback for VLM when artifact missing)
 # ------------------------------------------------------------------------------
 def _build_graph_from_texts(page_texts: Dict[int, str], task_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Build a minimal document graph from a dict of page_number -> text.
     Each page gets a single node with the full text.
+    This is kept as a fallback when the rich artifact is not available.
     """
     pages_graph = []
     for page_num, text in sorted(page_texts.items()):
@@ -571,6 +887,7 @@ class ParseResult:
 
 # ------------------------------------------------------------------------------
 # Main VLM-first parse pipeline (optimized: no rendering for VLM)
+# Now uses persisted graph artifact.
 # ------------------------------------------------------------------------------
 def parse_pdf(
     filepath: str,
@@ -596,6 +913,7 @@ def parse_pdf(
     This function provides memory cleanup and validation.
 
     Optimized: VLM path does NOT render images; rendering is deferred to OCR fallback.
+    Now loads the rich graph artifact persisted by document_preprocessor.
     """
     # --------------------------------------------------------------------------
     # 1. Validation & governance
@@ -666,7 +984,7 @@ def parse_pdf(
     _trace(trace_fn, f"[PARSER] Effective parser choice: {parser_choice}")
 
     # --------------------------------------------------------------------------
-    # 2. Primary: VLM document graph extraction (no rendering)
+    # 2. Primary: VLM document graph extraction (no rendering, load artifact)
     # --------------------------------------------------------------------------
     document_graph = None
     vlm_success = False
@@ -683,7 +1001,7 @@ def parse_pdf(
         _trace(trace_fn, "[PARSER] Starting VLM document graph extraction via transcribe_pages...")
         try:
             vlm_start = time.time()
-            # Call transcribe_pages to get text for all pages
+            # Call transcribe_pages to get text for all pages (this also ensures artifact is stored)
             page_texts = transcribe_pages(
                 file_path=filepath,
                 page_numbers=list(range(1, total_pages + 1)),
@@ -692,29 +1010,45 @@ def parse_pdf(
             vlm_extraction_duration = time.time() - vlm_start
 
             if page_texts:
-                document_graph = _build_graph_from_texts(page_texts, task_id)
-                vlm_success = True
-                memory_peaks["vlm_mb"] = _rss_mb()
-                _trace(trace_fn, f"[PARSER] VLM extraction succeeded in {vlm_extraction_duration:.2f}s, got {len(page_texts)} pages")
+                # Compute content hash to locate the artifact (consistent with document_preprocessor)
+                content_hash = _get_content_hash(filepath)
+                artifact = load_graph_artifact(content_hash)
+                if artifact:
+                    _trace(trace_fn, "[PARSER] Loaded rich graph artifact")
+                    # Convert artifact to parser's graph format
+                    document_graph = _convert_artifact_to_graph(artifact, task_id)
+                    vlm_success = True
+                    memory_peaks["vlm_mb"] = _rss_mb()
+                    _trace(trace_fn, f"[PARSER] VLM extraction succeeded (artifact) in {vlm_extraction_duration:.2f}s")
+                else:
+                    _trace(trace_fn, "[PARSER] Artifact not found; falling back to simple graph from texts")
+                    # Fallback: build simple graph from page texts
+                    document_graph = _build_graph_from_texts(page_texts, task_id)
+                    vlm_success = True
+                    memory_peaks["vlm_mb"] = _rss_mb()
+                    _trace(trace_fn, f"[PARSER] VLM extraction succeeded (simple graph) in {vlm_extraction_duration:.2f}s")
 
                 # Build minimal page_metadata (no table/signature/handwriting)
+                # We'll derive node counts from the graph later
                 for pnum in range(1, total_pages + 1):
                     page_metadata.append({
                         "page_number": pnum,
                         "extraction_method": "vlm",
                         "parser_used": "gemini_vlm",
-                        "node_count": 1 if pnum in page_texts else 0,
+                        "node_count": 0,  # will be filled after graph is built
                         "table_detected": False,
                         "contains_signature": False,
                         "contains_handwriting": False,
                     })
 
                 # Call on_page_completed for each page if callback provided
-                if on_page_completed:
+                if on_page_completed and document_graph:
                     for pg in document_graph.get("pages", []):
                         pnum = pg.get("page_number")
                         if pnum:
-                            on_page_completed(pnum, {"text": pg["nodes"][0]["text"], "source": "gemini"})
+                            # Combine all node texts for the page
+                            page_text = "\n".join([n.get("text", "") for n in pg.get("nodes", [])])
+                            on_page_completed(pnum, {"text": page_text, "source": "gemini"})
             else:
                 _trace(trace_fn, "[PARSER] VLM returned empty page texts")
                 document_graph = None
@@ -910,7 +1244,7 @@ def parse_pdf(
 
     # If we had VLM success but no page_metadata (should not happen), create minimal
     if vlm_success and not page_metadata:
-        page_metadata = [{"page_number": i+1, "extraction_method": "vlm", "parser_used": "gemini_vlm", "node_count": 1} for i in range(total_pages)]
+        page_metadata = [{"page_number": i+1, "extraction_method": "vlm", "parser_used": "gemini_vlm", "node_count": 0} for i in range(total_pages)]
 
     # --------------------------------------------------------------------------
     # 4. Validate and repair the document graph
@@ -923,7 +1257,7 @@ def parse_pdf(
             document_graph["validation_error"] = str(e)
 
     # --------------------------------------------------------------------------
-    # 5. Compute final statistics
+    # 5. Compute final statistics and update page_metadata with node counts
     # --------------------------------------------------------------------------
     if document_graph is not None:
         total_nodes = sum(len(pg.get("nodes", [])) for pg in document_graph.get("pages", []))
@@ -934,7 +1268,14 @@ def parse_pdf(
         document_graph["statistics"]["edge_count"] = total_edges
         document_graph["statistics"]["page_count"] = total_pages
         document_graph["statistics"]["processed_pages"] = processed_pages
-        # Recompute vlm/ocr from page_metadata if available
+
+        # Update page_metadata with node counts from graph
+        for pg in document_graph.get("pages", []):
+            pnum = pg.get("page_number")
+            if pnum and 1 <= pnum <= len(page_metadata):
+                page_metadata[pnum-1]["node_count"] = len(pg.get("nodes", []))
+
+        # Recompute vlm/ocr from page_metadata
         if page_metadata:
             vlm_pages = sum(1 for meta in page_metadata if meta.get("parser_used") == "gemini_vlm")
             ocr_pages = sum(1 for meta in page_metadata if meta.get("parser_used") == "tesseract")
