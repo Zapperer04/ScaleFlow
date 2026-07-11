@@ -1,14 +1,21 @@
 import re
 import sys
 import os
-from typing import List, Dict
+import hashlib
+import logging
+from typing import List, Dict, Any, Optional, Set, Tuple
+from collections import defaultdict, deque
 
 # Adjust path to find config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
+logger = logging.getLogger(__name__)
 
-# Section detection patterns (as requested)
+
+# -----------------------------------------------------------------------------
+# Section detection patterns (legacy for plain text)
+# -----------------------------------------------------------------------------
 SECTION_PATTERNS = [
     r'^[A-Z][A-Z\s]{2,}$',
     r'^\d+\.\s+[A-Z]',
@@ -42,8 +49,6 @@ def detect_content_type(text: str) -> str:
     return 'paragraph'
 
 
-# Removed patent-specific indicator variables and functions to generalize the parser
-
 def _match_section_header(line: str, page_number: int = 0) -> bool:
     s = line.strip()
     if not s:
@@ -54,17 +59,14 @@ def _match_section_header(line: str, page_number: int = 0) -> bool:
     if len(s) > 120 or len(words) > 12:
         return False
         
-    # If the line ends with a period and has more than 4 words, it's likely a list item or sentence, not a header
     if s.endswith('.') and len(words) > 4:
         return False
 
     s_lower = s.lower()
     
-    # Phase headers should always be headers
     if re.match(r'^Phase\s+\d+', s, re.IGNORECASE) and len(words) <= 10:
         return True
 
-    # Standard section titles list (exact match or start-match with very few words)
     standard_sections = {
         'introduction', 'methodology', 'results', 'conclusion', 'abstract', 'references',
         'summary', 'objective', 'education', 'experience', 'technical skills', 'skills',
@@ -73,23 +75,15 @@ def _match_section_header(line: str, page_number: int = 0) -> bool:
         'workflow checklist', 'claims', 'description', 'detailed description', 'background'
     }
 
-    # If it is an exact or near-exact match of standard sections
     if s_lower in standard_sections or any(s_lower.startswith(sec) and len(words) <= 5 for sec in standard_sections):
         return True
 
-    # On page 1 (typically cover page), do not treat plain all-caps lines as headers
-    # unless they are standard section titles or start with numbers/markdown.
     if page_number == 1 and re.match(r'^[A-Z][A-Z\s\&\-\/\,]{2,}$', s):
-        # Only allow explicit standard sections or numbers on page 1
         if s_lower not in {'abstract', 'synopsis', 'summary', 'introduction', 'table of contents', 'objectives'}:
             return False
 
-    # Strictly uppercase line (e.g. "PROBLEM STATEMENT") - must not be a name or single short word
     if re.match(r'^[A-Z][A-Z\s\&\-\/\,]{3,}$', s):
-        # Filter out common false positives (dates, single letters, names usually have lowercase or are on cover page)
         if len(words) > 1 and not re.search(r'\b(by|at|on|for|the|of|in|and|a|an)\b', s_lower):
-            # Check if this might be a name (cover page names are often all caps like KAUSTAV KUMAR)
-            # If page_number == 1, we already filtered out non-standard headers. But just in case, or if page_number is not passed correctly:
             if page_number <= 1:
                 return False
             return True
@@ -101,10 +95,8 @@ def _match_section_header(line: str, page_number: int = 0) -> bool:
             if re.match(p, s) and len(words) <= 6:
                 return True
         else:
-            # For general patterns, require them to be short
             limit = 10 if 'Chapter' in p else 6
             if re.match(p, s, re.IGNORECASE) and len(words) <= limit:
-                # If page is 1, be very conservative
                 if page_number <= 1:
                     return False
                 return True
@@ -112,12 +104,10 @@ def _match_section_header(line: str, page_number: int = 0) -> bool:
 
 
 def _token_count(s: str) -> int:
-    # Rough token approximation using whitespace-split words
     return len(s.split())
 
 
 def _split_sentences(text: str) -> List[str]:
-    # naive sentence splitter that preserves punctuation
     return [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
 
 
@@ -128,7 +118,6 @@ def _merge_sentences_to_chunks(sentences: List[str], max_tokens: int, overlap_to
 
     for sent in sentences:
         tok = _token_count(sent)
-        # If a single sentence exceeds max_tokens, emit it alone (can't split mid-sentence)
         if tok >= max_tokens and current:
             chunks.append(' '.join(current).strip())
             current = []
@@ -136,7 +125,6 @@ def _merge_sentences_to_chunks(sentences: List[str], max_tokens: int, overlap_to
 
         if current_tokens + tok > max_tokens and current:
             chunks.append(' '.join(current).strip())
-            # overlap: keep last sentences until overlap_tokens satisfied
             overlap_block: List[str] = []
             overlap_count = 0
             for s in reversed(current):
@@ -164,31 +152,31 @@ class ChunkList(list):
         self.active_parent = None
 
 
+# -----------------------------------------------------------------------------
+# Plain‑text chunking (legacy, kept unchanged)
+# -----------------------------------------------------------------------------
 def chunk_text(text: str, page_number: int = 0, default_section: str = 'unknown', default_parent: str = None) -> List[Dict]:
     """
-    Intelligent semantic segmentation: returns list of dicts { 'text': ..., 'metadata': {...} }
-    Metadata includes: section, content_type, page_number, token_count, char_count
+    Intelligent semantic segmentation for plain text. Returns list of dicts
+    { 'text': ..., 'metadata': {...} }.
     """
     if not text:
         return []
 
-    # Configurable parameters with sensible defaults
     MAX_TOKENS = getattr(config, 'CHUNK_MAX_TOKENS', 400)
     OVERLAP_TOKENS = getattr(config, 'CHUNK_OVERLAP_TOKENS', 50)
     MIN_CHARS = getattr(config, 'CHUNK_MIN_CHARS', 50)
     MAX_CHUNKS = getattr(config, 'MAX_CHUNKS', 1500)
 
     default_sec_name = default_section
-
     lines = text.splitlines()
 
-    # Step 1: detect sections by scanning for headers
+    # Detect sections
     sections: List[Dict] = []
     current_section = {'name': default_sec_name, 'lines': []}
 
     for line in lines:
         if _match_section_header(line, page_number):
-            # start new section
             if current_section['lines'] or current_section['name'] != default_sec_name:
                 sections.append(current_section)
             hdr = line.strip()
@@ -199,32 +187,25 @@ def chunk_text(text: str, page_number: int = 0, default_section: str = 'unknown'
     if current_section['lines'] or current_section['name'] != default_sec_name:
         sections.append(current_section)
 
-    # If we didn't detect any sections, treat whole text as one section
     if not sections:
         sections = [{'name': default_sec_name, 'lines': lines}]
 
-    # Propagate empty parent headers context to sub-sections
+    # Propagate parent context
     propagated_sections = []
     active_parent = default_parent
     for sec in sections:
         sec_name = sec.get('name') or 'unknown'
         sec_text = '\n'.join(sec.get('lines', [])).strip()
-        
-        # If a section is empty (contains no lines/text) and is a header, it's a parent header (e.g., "Chapter 4")
         if not sec_text and sec_name != 'unknown':
             active_parent = sec_name
             continue
-            
-        # If active_parent is set, prefix or associate the current section with it
         full_sec_name = sec_name
         if active_parent and sec_name != 'unknown':
-            # If the current section is also a top-level header (e.g. Chapter), we reset active_parent
             if re.match(r'^(Chapter|Part|Volume)\s+\d+', sec_name, re.IGNORECASE):
                 active_parent = None
                 full_sec_name = sec_name
             else:
                 full_sec_name = f"{active_parent} > {sec_name}"
-            
         propagated_sections.append({
             'name': full_sec_name,
             'lines': sec.get('lines', [])
@@ -238,8 +219,6 @@ def chunk_text(text: str, page_number: int = 0, default_section: str = 'unknown'
         if not sec_text:
             continue
 
-
-        # Split section into paragraphs but preserve list blocks and tables
         raw_paragraphs = re.split(r'\n{2,}', sec_text)
         for para_idx, para in enumerate(raw_paragraphs):
             para = para.strip()
@@ -249,13 +228,11 @@ def chunk_text(text: str, page_number: int = 0, default_section: str = 'unknown'
             ctype = detect_content_type(para)
             parent_chunk_id = f"p{page_number}_s{sec_idx}_pa{para_idx}"
 
-            # If list or table, keep item-level granularity
             if ctype == 'list':
                 items = [l.strip() for l in para.splitlines() if l.strip()]
                 current_list_chunk = []
                 current_tokens = 0
                 list_chunk_idx = 0
-                
                 for item in items:
                     item_tokens = _token_count(item)
                     if current_tokens + item_tokens > MAX_TOKENS and current_list_chunk:
@@ -279,10 +256,8 @@ def chunk_text(text: str, page_number: int = 0, default_section: str = 'unknown'
                         list_chunk_idx += 1
                         current_list_chunk = []
                         current_tokens = 0
-                    
                     current_list_chunk.append(item)
                     current_tokens += item_tokens
-                
                 if current_list_chunk:
                     list_text = "\n".join(current_list_chunk)
                     if sec_name != 'unknown':
@@ -304,12 +279,10 @@ def chunk_text(text: str, page_number: int = 0, default_section: str = 'unknown'
                 continue
 
             if ctype == 'table':
-                # Keep entire table paragraph as one segment (do not split rows)
                 if len(para) >= MIN_CHARS:
                     formatted_text = para
                     if sec_name != 'unknown':
                         formatted_text = f"[Section: {sec_name}] {formatted_text}"
-
                     segments.append({
                         'text': formatted_text,
                         'metadata': {
@@ -326,15 +299,12 @@ def chunk_text(text: str, page_number: int = 0, default_section: str = 'unknown'
                     })
                 continue
 
-            # Paragraph or mixed content: split by sentences and then merge into chunks
             sentences = _split_sentences(para)
             if not sentences:
-                # fallback: treat as single paragraph
                 if len(para) >= MIN_CHARS or ctype == 'heading':
                     formatted_text = para
                     if sec_name != 'unknown':
                         formatted_text = f"[Section: {sec_name}] {formatted_text}"
-
                     segments.append({
                         'text': formatted_text,
                         'metadata': {
@@ -353,14 +323,11 @@ def chunk_text(text: str, page_number: int = 0, default_section: str = 'unknown'
 
             merged = _merge_sentences_to_chunks(sentences, MAX_TOKENS, OVERLAP_TOKENS)
             for m_idx, m in enumerate(merged):
-                # Keep if it meets the length requirement, is a heading, or is the only content generated from this block
                 if len(m) < MIN_CHARS and ctype != 'heading' and len(merged) > 1:
                     continue
-
                 formatted_text = m
                 if sec_name != 'unknown':
                     formatted_text = f"[Section: {sec_name}] {formatted_text}"
-
                 segments.append({
                     'text': formatted_text,
                     'metadata': {
@@ -376,26 +343,12 @@ def chunk_text(text: str, page_number: int = 0, default_section: str = 'unknown'
                     }
                 })
 
-    # Determine the final active parent and section
-    final_active_parent = active_parent
-    final_active_section = default_sec_name
-    if sections:
-        last_sec = sections[-1]
-        last_sec_name = last_sec.get('name') or 'unknown'
-        if ' > ' in last_sec_name:
-            parts = last_sec_name.split(' > ', 1)
-            final_active_parent = parts[0]
-            final_active_section = parts[1]
-        else:
-            final_active_section = last_sec_name
-
-    # final safety cap
     if len(segments) > MAX_CHUNKS:
         raise RuntimeError(f"Chunk explosion detected: Generated {len(segments)} segments (limit is {MAX_CHUNKS}).")
 
     res = ChunkList(segments)
-    res.active_section = final_active_section
-    res.active_parent = final_active_parent
+    res.active_section = final_active_section if 'final_active_section' in locals() else 'unknown'
+    res.active_parent = final_active_parent if 'final_active_parent' in locals() else None
     return res
 
 
@@ -461,42 +414,459 @@ def chunk_text_parent_child(text: str) -> dict:
     return {"parents": parents, "children": children}
 
 
-def chunk_document_graph(document_graph: dict) -> dict:
+# -----------------------------------------------------------------------------
+# GRAPH-NATIVE CHUNKING (ROBUST, PRODUCTION-READY)
+# -----------------------------------------------------------------------------
+
+def _get_document_id(graph: Dict) -> str:
+    """Extract document ID from graph or generate a stable one."""
+    doc_id = graph.get("document_id")
+    if not doc_id:
+        # Fallback: use a hash of the first few nodes' texts
+        pages = graph.get("pages", [])
+        texts = []
+        for page in pages[:2]:
+            for node in page.get("nodes", [])[:5]:
+                texts.append(node.get("text", ""))
+        if texts:
+            doc_id = hashlib.sha256("".join(texts).encode()).hexdigest()[:16]
+        else:
+            doc_id = "unknown_doc"
+    return doc_id
+
+
+def _build_node_map(pages: List[Dict]) -> Dict[str, Dict]:
+    """Map node_id to node object."""
+    node_map = {}
+    for page in pages:
+        page_num = page.get("page_number", 1)
+        for node in page.get("nodes", []):
+            node_id = node.get("node_id") or node.get("id")
+            if node_id:
+                node["page_number"] = page_num
+                node["reading_order"] = node.get("reading_order", 0)
+                # Ensure heading_level has a fallback
+                if "heading_level" not in node:
+                    # Infer from structural_type or semantic_category
+                    if node.get("structural_type") == "heading" or node.get("semantic_category") == "heading":
+                        node["heading_level"] = 1  # default, will be refined
+                    else:
+                        node["heading_level"] = 0
+                node_map[node_id] = node
+    return node_map
+
+
+def _build_children_map(nodes: List[Dict]) -> Dict[str, List[str]]:
+    """Build mapping from parent node_id to list of child node_ids."""
+    children = defaultdict(list)
+    for node in nodes:
+        parent_id = node.get("parent")
+        if parent_id:
+            children[parent_id].append(node.get("node_id") or node.get("id"))
+    return children
+
+
+def _infer_heading_level(node: Dict, node_map: Dict) -> int:
+    """Infer heading level from parent chain or node attributes."""
+    if "heading_level" in node and node["heading_level"] > 0:
+        return node["heading_level"]
+    # If node is a heading, try to deduce from parent headings
+    parent_id = node.get("parent")
+    if parent_id and parent_id in node_map:
+        parent = node_map[parent_id]
+        if parent.get("semantic_category") == "heading" or parent.get("structural_type") == "heading":
+            return _infer_heading_level(parent, node_map) + 1
+    # Default
+    return 1 if (node.get("semantic_category") == "heading" or node.get("structural_type") == "heading") else 0
+
+
+def _get_heading_path(node: Dict, node_map: Dict) -> List[str]:
+    """Return the heading hierarchy path for a node."""
+    path = []
+    current = node
+    while current:
+        if current.get("semantic_category") == "heading" or current.get("structural_type") == "heading":
+            text = current.get("text", "").strip()
+            if text:
+                path.append(text)
+        parent_id = current.get("parent")
+        if parent_id and parent_id in node_map:
+            current = node_map[parent_id]
+        else:
+            break
+    path.reverse()
+    return path
+
+
+def _merge_cross_page_paragraphs(nodes: List[Dict]) -> List[Dict]:
     """
-    Chunks a document graph by extracting texts from nodes and utilizing semantic chunking.
-    Returns a dict with {"chunks": list_of_chunks}.
+    Merge nodes that are logically the same paragraph but split across pages.
+    Uses safer criteria: same parent, same structural_type, no heading between,
+    and either page boundary with no heading in between.
+    """
+    if not nodes:
+        return []
+    merged = []
+    i = 0
+    while i < len(nodes):
+        node = nodes[i]
+        if node.get("structural_type") in ("heading", "table", "figure"):
+            merged.append(node)
+            i += 1
+            continue
+        # Try to merge with following nodes
+        combined_text = node.get("text", "")
+        combined_node = dict(node)
+        j = i + 1
+        while j < len(nodes):
+            next_node = nodes[j]
+            # Check merge conditions
+            if (next_node.get("parent") == node.get("parent") and
+                next_node.get("structural_type") == node.get("structural_type") and
+                next_node.get("structural_type") not in ("heading", "table", "figure") and
+                # no heading between them (check if any heading in between)
+                not any(n.get("structural_type") == "heading" for n in nodes[i+1:j]) and
+                # page boundary is allowed if same parent and no heading between
+                # additional safety: if parser provided a continuation flag, use it
+                (node.get("page_number") == next_node.get("page_number") or
+                 node.get("continues_next_page") or next_node.get("continues_from_previous"))):
+                combined_text += " " + next_node.get("text", "")
+                combined_node["page_end"] = next_node.get("page_number", combined_node.get("page_number", 1))
+                # Update reading order end
+                combined_node["reading_order"] = next_node.get("reading_order", combined_node.get("reading_order", 0))
+                j += 1
+            else:
+                break
+        combined_node["text"] = combined_text
+        merged.append(combined_node)
+        i = j
+    return merged
+
+
+def _group_into_sections(nodes: List[Dict], node_map: Dict) -> List[Dict]:
+    """
+    Group nodes into sections based on heading hierarchy.
+    Returns list of dicts with keys: 'heading_path', 'heading_nodes', 'content_nodes'.
+    Uses inferred heading levels if not present.
+    """
+    sections = []
+    current_heading_stack = []  # list of heading nodes
+    current_content = []
+    current_heading_path = []
+
+    for node in nodes:
+        is_heading = node.get("semantic_category") == "heading" or node.get("structural_type") == "heading"
+        if is_heading:
+            # Determine level
+            level = _infer_heading_level(node, node_map)
+            # Close current section if it has content
+            if current_content:
+                sections.append({
+                    "heading_path": list(current_heading_path),
+                    "heading_nodes": list(current_heading_stack),
+                    "content_nodes": current_content
+                })
+                current_content = []
+            # Adjust heading stack: pop headings with level >= current level
+            while len(current_heading_stack) >= level and current_heading_stack:
+                popped = current_heading_stack.pop()
+                # Update path
+                current_heading_path = [h.get("text", "").strip() for h in current_heading_stack]
+            current_heading_stack.append(node)
+            current_heading_path = [h.get("text", "").strip() for h in current_heading_stack]
+        else:
+            current_content.append(node)
+
+    # Add final section
+    if current_content:
+        sections.append({
+            "heading_path": list(current_heading_path),
+            "heading_nodes": list(current_heading_stack),
+            "content_nodes": current_content
+        })
+    # If there are no sections (no headings), create one with all nodes
+    if not sections and nodes:
+        sections.append({
+            "heading_path": [],
+            "heading_nodes": [],
+            "content_nodes": nodes
+        })
+    return sections
+
+
+def _create_chunk_id(doc_id: str, node_ids: List[str]) -> str:
+    """Deterministic chunk ID based on document ID and node IDs (stable across page changes)."""
+    sorted_ids = sorted(node_ids)
+    combined = doc_id + "|" + "|".join(sorted_ids)
+    return hashlib.sha256(combined.encode()).hexdigest()[:16]
+
+
+def _make_metadata(
+    doc_id: str,
+    chunk_id: str,
+    node_ids: List[str],
+    heading_path: List[str],
+    semantic_category: str,
+    structural_type: str,
+    page_start: int,
+    page_end: int,
+    reading_order_start: int,
+    reading_order_end: int,
+    bbox: Optional[List[float]] = None,
+    confidence: Optional[float] = None,
+    parent_chunk_id: Optional[str] = None,
+    child_chunk_ids: List[str] = None,
+    edges: List[Dict] = None,
+    additional: Dict = None,
+    embed: bool = True
+) -> Dict:
+    """Build metadata with essential fields only; keep lightweight."""
+    meta = {
+        "document_id": doc_id,
+        "chunk_id": chunk_id,
+        "node_ids": node_ids,
+        "heading_path": heading_path,
+        "section": heading_path[-1] if heading_path else "unknown",
+        "semantic_category": semantic_category,
+        "structural_type": structural_type,
+        "page_start": page_start,
+        "page_end": page_end,
+        "reading_order_start": reading_order_start,
+        "reading_order_end": reading_order_end,
+        "confidence": confidence if confidence is not None else 1.0,
+        "parent_chunk_id": parent_chunk_id,
+        "child_chunk_ids": child_chunk_ids or [],
+        "bbox": bbox,
+        "source": "graph",
+        "parser_version": "2.0",
+        "embed": embed  # flag to indicate if this chunk should be embedded
+    }
+    # Add edges only if present and not too large
+    if edges and len(edges) <= 10:
+        meta["edges"] = edges
+    if additional:
+        # Only add small additional fields
+        for k, v in additional.items():
+            if k in ("table_headers", "caption", "row_count", "col_count", "image_reference"):
+                meta[k] = v
+    return meta
+
+
+def _process_section(
+    section: Dict,
+    doc_id: str,
+    node_map: Dict,
+    children_map: Dict
+) -> List[Dict]:
+    """
+    Process a section to produce only child chunks (no duplicate parent text).
+    Parent hierarchy is stored only in metadata (parent_chunk_id) and not as a separate chunk.
+    Returns list of chunks (each with text and metadata).
     """
     chunks = []
+    heading_path = section.get("heading_path", [])
+    heading_nodes = section.get("heading_nodes", [])
+    content_nodes = section.get("content_nodes", [])
+
+    # Determine section-level metadata for parent (no separate chunk)
+    all_node_ids = [n.get("node_id") or n.get("id") for n in heading_nodes + content_nodes if (n.get("node_id") or n.get("id"))]
+    if not all_node_ids:
+        return chunks
+
+    pages = sorted(set([n.get("page_number", 1) for n in heading_nodes + content_nodes]))
+    page_start = pages[0] if pages else 1
+    page_end = pages[-1] if pages else 1
+    orders = [n.get("reading_order", 0) for n in heading_nodes + content_nodes if n.get("reading_order") is not None]
+    order_start = min(orders) if orders else 0
+    order_end = max(orders) if orders else 0
+
+    # Create a parent chunk ID (metadata only, no text chunk)
+    parent_chunk_id = _create_chunk_id(doc_id, all_node_ids)
+    parent_meta = {
+        "document_id": doc_id,
+        "chunk_id": parent_chunk_id,
+        "node_ids": all_node_ids,
+        "heading_path": heading_path,
+        "section": heading_path[-1] if heading_path else "unknown",
+        "semantic_category": "section",
+        "structural_type": "section",
+        "page_start": page_start,
+        "page_end": page_end,
+        "reading_order_start": order_start,
+        "reading_order_end": order_end,
+        "confidence": 1.0,
+        "parent_chunk_id": None,
+        "child_chunk_ids": [],
+        "bbox": None,
+        "source": "graph",
+        "parser_version": "2.0",
+        "embed": False  # do not embed parent chunks
+    }
+
+    # Process each content node as a child chunk
+    child_ids = []
+    for node in content_nodes:
+        node_id = node.get("node_id") or node.get("id")
+        if not node_id:
+            continue
+        node_text = node.get("text", "").strip()
+        if not node_text:
+            continue
+        node_type = node.get("structural_type") or node.get("type") or "paragraph"
+        node_sem_cat = node.get("semantic_category") or "unknown"
+        child_chunk_id = _create_chunk_id(doc_id, [node_id])
+        child_ids.append(child_chunk_id)
+
+        # Build metadata, keep tables lightweight
+        additional = {}
+        if node_type == "table":
+            # Store only headers, row count, column count, and caption
+            headers = node.get("headers") or []
+            rows = node.get("rows") or node.get("table_data") or []
+            additional["table_headers"] = headers[:10]  # limit
+            additional["row_count"] = len(rows)
+            additional["col_count"] = len(headers) if headers else (len(rows[0]) if rows else 0)
+            if node.get("caption"):
+                additional["caption"] = node.get("caption")
+        elif node_type == "figure":
+            if node.get("caption"):
+                additional["caption"] = node.get("caption")
+            if node.get("image_reference"):
+                additional["image_reference"] = node.get("image_reference")
+
+        meta = _make_metadata(
+            doc_id=doc_id,
+            chunk_id=child_chunk_id,
+            node_ids=[node_id],
+            heading_path=heading_path,
+            semantic_category=node_sem_cat,
+            structural_type=node_type,
+            page_start=node.get("page_number", 1),
+            page_end=node.get("page_number", 1),
+            reading_order_start=node.get("reading_order", 0),
+            reading_order_end=node.get("reading_order", 0),
+            bbox=node.get("bounding_box") or node.get("bbox"),
+            confidence=node.get("confidence"),
+            parent_chunk_id=parent_chunk_id,
+            child_chunk_ids=[],
+            edges=node.get("edges", []),
+            additional=additional,
+            embed=True
+        )
+        chunks.append({
+            "text": node_text,
+            "metadata": meta
+        })
+
+    # Update parent's child_chunk_ids in metadata (we'll attach it as a separate metadata-only entry)
+    if child_ids:
+        parent_meta["child_chunk_ids"] = child_ids
+        # We do not create a text chunk for parent; we only store the metadata
+        # to be used for retrieval hierarchy. We'll add it as a separate entry without text.
+        chunks.append({
+            "text": "",  # empty text, will be skipped by embedding
+            "metadata": parent_meta
+        })
+
+    return chunks
+
+
+def chunk_document_graph(document_graph: dict) -> dict:
+    """
+    Graph-native semantic chunking. Returns a dict with 'chunks' key containing list of chunk dicts.
+    Each chunk has 'text' and 'metadata' (rich but lightweight).
+    Preserves compatibility with existing pipeline.
+    """
     if not document_graph:
         return {"chunks": []}
 
     pages = document_graph.get("pages", [])
+    if not pages:
+        return {"chunks": []}
 
-    for page in pages:
-        page_number = page.get("page_number", 1)
-        nodes = page.get("nodes", [])
-        nodes = sorted(nodes, key=lambda n: n.get("reading_order", 0))
-        
-        for node in nodes:
-            node_text = node.get("text", "")
-            if not node_text.strip():
+    doc_id = _get_document_id(document_graph)
+
+    # Build node map and flatten nodes with page info
+    node_map = _build_node_map(pages)
+    all_nodes = list(node_map.values())
+
+    if not all_nodes:
+        return {"chunks": []}
+
+    # Build children map for relationships
+    children_map = _build_children_map(all_nodes)
+
+    # Sort by page and reading order
+    all_nodes.sort(key=lambda n: (n.get("page_number", 1), n.get("reading_order", 0)))
+
+    # Merge cross-page paragraphs
+    merged_nodes = _merge_cross_page_paragraphs(all_nodes)
+
+    # Group into sections using heading hierarchy
+    sections = _group_into_sections(merged_nodes, node_map)
+
+    # Process each section to generate chunks
+    all_chunks = []
+    for section in sections:
+        section_chunks = _process_section(section, doc_id, node_map, children_map)
+        all_chunks.extend(section_chunks)
+
+    # Fallback: if still no chunks (e.g., no headings, no content), create node-level chunks
+    if not all_chunks:
+        for node in all_nodes:
+            text = node.get("text", "").strip()
+            if not text:
                 continue
+            node_id = node.get("node_id") or node.get("id")
+            chunk_id = _create_chunk_id(doc_id, [node_id] if node_id else [])
+            meta = _make_metadata(
+                doc_id=doc_id,
+                chunk_id=chunk_id,
+                node_ids=[node_id] if node_id else [],
+                heading_path=[],
+                semantic_category=node.get("semantic_category") or "unknown",
+                structural_type=node.get("structural_type") or "paragraph",
+                page_start=node.get("page_number", 1),
+                page_end=node.get("page_number", 1),
+                reading_order_start=node.get("reading_order", 0),
+                reading_order_end=node.get("reading_order", 0),
+                bbox=node.get("bounding_box") or node.get("bbox"),
+                confidence=node.get("confidence"),
+                parent_chunk_id=None,
+                child_chunk_ids=[]
+            )
+            all_chunks.append({"text": text, "metadata": meta})
 
-            chunks.append({
-                "text": node_text,
-                "metadata": {
-                    "section": node.get("semantic_category") or node.get("section") or "unknown",
-                    "semantic_category": node.get("semantic_category") or "unknown",
-                    "entity_group": node.get("entity_group") or "unknown",
-                    "confidence": node.get("confidence", 1.0),
-                    "content_type": node.get("structural_type") or node.get("type", "paragraph"),
-                    "node_type": node.get("structural_type") or node.get("type", "paragraph"),
-                    "structural_type": node.get("structural_type") or node.get("type", "paragraph"),
-                    "page_number": page_number,
-                    "chunk_id": node.get("chunk_id") or node.get("node_id"),
-                    "token_count": len(node_text.split()),
-                    "char_count": len(node_text)
-                }
-            })
-                
-    return {"chunks": chunks}
+    # Limit chunks to prevent explosion; fallback to node-level if too many
+    MAX_GRAPH_CHUNKS = getattr(config, 'MAX_GRAPH_CHUNKS', 5000)
+    if len(all_chunks) > MAX_GRAPH_CHUNKS:
+        logger.warning(f"Graph chunk count {len(all_chunks)} exceeds limit {MAX_GRAPH_CHUNKS}. Falling back to node-level chunking.")
+        # Revert to simple node-level chunks (each node as a chunk)
+        fallback_chunks = []
+        for node in all_nodes:
+            text = node.get("text", "").strip()
+            if not text:
+                continue
+            node_id = node.get("node_id") or node.get("id")
+            chunk_id = _create_chunk_id(doc_id, [node_id] if node_id else [])
+            meta = _make_metadata(
+                doc_id=doc_id,
+                chunk_id=chunk_id,
+                node_ids=[node_id] if node_id else [],
+                heading_path=[],
+                semantic_category=node.get("semantic_category") or "unknown",
+                structural_type=node.get("structural_type") or "paragraph",
+                page_start=node.get("page_number", 1),
+                page_end=node.get("page_number", 1),
+                reading_order_start=node.get("reading_order", 0),
+                reading_order_end=node.get("reading_order", 0),
+                bbox=node.get("bounding_box") or node.get("bbox"),
+                confidence=node.get("confidence")
+            )
+            fallback_chunks.append({"text": text, "metadata": meta})
+        all_chunks = fallback_chunks
+
+    # Remove any chunks with empty text (like parent containers) to avoid embedding empty text
+    all_chunks = [c for c in all_chunks if c.get("text", "").strip()]
+
+    return {"chunks": all_chunks}
