@@ -149,8 +149,11 @@ def render_pdf_pages(
     target_dpi = int(dpi or getattr(config, "PREPROCESS_TARGET_DPI", 300))
     poppler_path = getattr(config, "PREPROCESS_POPPLER_PATH", "") or os.getenv("PREPROCESS_POPPLER_PATH", "") or None
 
-    # Self-healing adaptive DPI scale to fit memory budget
+    # Self-healing adaptive DPI — use REAL available memory, no fake floor
     available_mb = psutil.virtual_memory().available / (1024.0 * 1024.0)
+    # Safety: don't go below 256MB as a sanity floor, but do NOT inflate to 2048
+    available_mb = max(available_mb, 256.0)
+
     for trial_dpi in [target_dpi, 150, 100, 75]:
         estimated_mb = _estimate_pdf_render_memory_mb(reader, limit, trial_dpi)
         if estimated_mb <= available_mb * 0.80:
@@ -159,24 +162,36 @@ def render_pdf_pages(
     else:
         target_dpi = 75
 
+    # Re-check after DPI selection — hard reject if still too large
     estimated_mb = _estimate_pdf_render_memory_mb(reader, limit, target_dpi)
-    if estimated_mb > available_mb * 0.90:
+    if estimated_mb > available_mb * 0.85:
         raise MemoryError(
-            f"Rendering {limit} pages at lowest {target_dpi} DPI requires ~{estimated_mb:.0f} MB, exceeds safe memory budget"
+            f"Rendering {limit} pages at lowest {target_dpi} DPI requires ~{estimated_mb:.0f} MB, "
+            f"exceeds safe memory budget (available: {available_mb:.0f} MB). "
+            f"Consider splitting the document."
         )
 
-    images = convert_from_path(
-        filepath,
-        first_page=1,
-        last_page=limit,
-        dpi=target_dpi,
-        poppler_path=poppler_path,
-    )
-    # Ensure RGB mode
-    rendered = [img.convert("RGB") if img.mode != "RGB" else img for img in images]
-    if not rendered:
+    # Batch render: never hold more than MAX_PAGES_PER_RENDER images in memory at once.
+    # For a 182-page PDF at 75 DPI (~1.7 MB/page), batches of 50 peak at ~85 MB.
+    MAX_PAGES_PER_RENDER = 50
+    all_rendered: List[Any] = []
+    for batch_start in range(1, limit + 1, MAX_PAGES_PER_RENDER):
+        batch_end = min(batch_start + MAX_PAGES_PER_RENDER - 1, limit)
+        batch_images = convert_from_path(
+            filepath,
+            first_page=batch_start,
+            last_page=batch_end,
+            dpi=target_dpi,
+            poppler_path=poppler_path,
+        )
+        all_rendered.extend(img.convert("RGB") if img.mode != "RGB" else img for img in batch_images)
+        # Explicitly free batch list to release memory before next batch
+        del batch_images
+
+    if not all_rendered:
         raise RuntimeError("PDF rendering produced no images")
-    return rendered
+    return all_rendered
+
 
 
 def load_image_file(filepath: str) -> List[Any]:

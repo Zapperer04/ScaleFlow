@@ -1313,9 +1313,34 @@ def execute_vlm_document_graph_extraction(
     def _worker_task(page_index: int, image: Any):
         page_number = page_index + 1
         if page_index in results:
+            if hasattr(image, "close"):
+                try:
+                    image.close()
+                except Exception:
+                    pass
+            if page_index > 0:
+                image_list[page_index] = None
+                if isinstance(images, list):
+                    try:
+                        images[page_index] = None
+                    except Exception:
+                        pass
             return results[page_index]
 
         res = _process_page(page_index, image)
+        if hasattr(image, "close"):
+            try:
+                image.close()
+            except Exception:
+                pass
+        if page_index > 0:
+            image_list[page_index] = None
+            if isinstance(images, list):
+                try:
+                    images[page_index] = None
+                except Exception:
+                    pass
+
         if res is not None and on_page_completed:
             try:
                 on_page_completed(page_number, res)

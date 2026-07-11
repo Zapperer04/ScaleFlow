@@ -2,7 +2,7 @@ import time
 import requests
 import redis
 from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
-from typing import Any
+from typing import Any, Dict
 import json
 import os
 import random
@@ -256,142 +256,58 @@ def handle_parse_document(payload, input_artifacts):
     if is_pdf:
         _trace("[PARSER] PDF detected — starting VLM-first parser")
         try:
-            import pypdf
-            with open(filepath, "rb") as f:
-                pdf_reader = pypdf.PdfReader(f)
-                total_pages = len(pdf_reader.pages)
-        except Exception:
-            total_pages = 1
-
-        started_parsing_time = time.time()
-        progress_cache = progress_json if isinstance(progress_json, dict) else {}
-        progress_cache.setdefault("completed_pages", [])
-        progress_cache.setdefault("completed_pages_data", {})
-        progress_cache.setdefault("total_pages", total_pages)
-
-        def on_page_completed_cb(page_number: int, page_res: Dict[str, Any]):
-            if page_number not in progress_cache["completed_pages"]:
-                progress_cache["completed_pages"].append(page_number)
-            progress_cache["completed_pages_data"][str(page_number)] = page_res
-            progress_cache["last_completed_page"] = page_number
-            
-            current_parser = "gemini" if page_res.get("source") == "gemini" else "ocr"
-            progress_cache["parser"] = current_parser
-            progress_cache["parser_locked"] = True
-            progress_cache["total_pages"] = total_pages
-            
-            completed_count = len(progress_cache["completed_pages"])
-            progress_cache["completed_pages_count"] = completed_count
-            progress_cache["remaining_pages"] = max(0, total_pages - completed_count)
-            progress_cache["checkpoint_count"] = completed_count
-            
-            from services.gemini_rate_manager import GeminiRateManager
-            rate_mgr = GeminiRateManager()
-            mgr_metrics = rate_mgr.get_metrics()
-            
-            elapsed = time.time() - started_parsing_time
-            pages_per_sec = completed_count / elapsed if elapsed > 0 else 0
-            pages_per_min = round(pages_per_sec * 60, 2)
-            
-            progress_cache["pages_per_minute"] = pages_per_min
-            progress_cache["gemini_requests_sent"] = mgr_metrics["requests_sent"]
-            progress_cache["429_count"] = mgr_metrics["429_count"]
-            progress_cache["total_pause_duration"] = mgr_metrics["total_pause_duration"]
-            progress_cache["parser_state"] = mgr_metrics["status"]
-            progress_cache["retry_after_seconds"] = int(mgr_metrics["cooldown_remaining"])
-            
-            if pages_per_sec > 0:
-                remaining_sec = (total_pages - completed_count) / pages_per_sec
-                progress_cache["estimated_completion_time"] = f"{round(remaining_sec, 1)}s remaining"
-            else:
-                progress_cache["estimated_completion_time"] = "Calculating..."
-            
             try:
-                requests.patch(
-                    f"{API_URL}/tasks/{task_id}/progress",
-                    json={
-                        "worker_id": WORKER_ID,
-                        "lease_token": lease_token,
-                        **progress_cache
-                    },
-                    headers=HEADERS,
-                    timeout=5
-                )
-            except Exception as e:
-                print(f"[{WORKER_ID}] Warning: failed to save page checkpoint to backend: {e}", flush=True)
+                import pypdf
+                with open(filepath, "rb") as f:
+                    pdf_reader = pypdf.PdfReader(f)
+                    total_pages = len(pdf_reader.pages)
+            except Exception:
+                total_pages = 1
 
-        while True:
-            try:
-                requests.patch(
-                    f"{API_URL}/tasks/{task_id}",
-                    json={
-                        "worker_id": WORKER_ID,
-                        "lease_token": lease_token,
-                        "status": "running"
-                    },
-                    headers=HEADERS,
-                    timeout=5
-                )
-                
-                prep = input_artifacts.get("preprocessing_report", {})
-                document_type = prep.get("document_type", "MULTIMODAL")
-                routing_confidence = prep.get("routing_confidence", 1.0)
-                parse_method_hint = prep.get("parse_method_hint", "vlm_document_graph")
-                enhanced_pages_path = prep.get("enhanced_pages_path")
+            started_parsing_time = time.time()
+            progress_cache = progress_json if isinstance(progress_json, dict) else {}
+            progress_cache.setdefault("completed_pages", [])
+            progress_cache.setdefault("completed_pages_data", {})
+            progress_cache.setdefault("total_pages", total_pages)
 
-                from services.pdf_parser import parse_pdf
-                result = parse_pdf(
-                    filepath=filepath,
-                    task_id=task_id,
-                    lease_token=lease_token,
-                    progress_json=progress_cache,
-                    trace_fn=_trace,
-                    api_url=API_URL,
-                    api_headers=HEADERS,
-                    skip_ocr=False,
-                    document_type=document_type,
-                    routing_confidence=routing_confidence,
-                    parse_method_hint=parse_method_hint,
-                    enhanced_pages_path=enhanced_pages_path,
-                    on_page_completed=on_page_completed_cb
-                )
-                break
+            def on_page_completed_cb(page_number: int, page_res: Dict[str, Any]):
+                if page_number not in progress_cache["completed_pages"]:
+                    progress_cache["completed_pages"].append(page_number)
+                progress_cache["completed_pages_data"][str(page_number)] = page_res
+                progress_cache["last_completed_page"] = page_number
                 
-            except Exception as e:
-                from services.document_preprocessor import GeminiRateLimitError
-                is_rate_limit = False
-                wait_sec = 60.0
+                current_parser = "gemini" if page_res.get("source") == "gemini" else "ocr"
+                progress_cache["parser"] = current_parser
+                progress_cache["parser_locked"] = True
+                progress_cache["total_pages"] = total_pages
                 
-                if type(e).__name__ == "GeminiRateLimitError":
-                    is_rate_limit = True
-                    wait_sec = getattr(e, "retry_after", 60.0)
-                elif "HTTP 429" in str(e) or "Quota/Resource Exhausted" in str(e):
-                    is_rate_limit = True
-                    
-                if is_rate_limit:
-                    _trace(f"[PARSER] Gemini Rate Limit reached. Pausing parser. Cooldown: {wait_sec:.1f}s.")
-                    
-                    requests.patch(
-                        f"{API_URL}/tasks/{task_id}",
-                        json={
-                            "worker_id": WORKER_ID,
-                            "lease_token": lease_token,
-                            "status": "paused_rate_limit"
-                        },
-                        headers=HEADERS,
-                        timeout=5
-                    )
-                    
-                    from services.gemini_rate_manager import GeminiRateManager
-                    rate_mgr = GeminiRateManager()
-                    mgr_metrics = rate_mgr.get_metrics()
-                    
-                    progress_cache["parser_state"] = "PAUSED_RATE_LIMIT"
-                    progress_cache["retry_after_seconds"] = int(wait_sec)
-                    progress_cache["gemini_requests_sent"] = mgr_metrics["requests_sent"]
-                    progress_cache["429_count"] = mgr_metrics["429_count"]
-                    progress_cache["total_pause_duration"] = mgr_metrics["total_pause_duration"]
-                    
+                completed_count = len(progress_cache["completed_pages"])
+                progress_cache["completed_pages_count"] = completed_count
+                progress_cache["remaining_pages"] = max(0, total_pages - completed_count)
+                progress_cache["checkpoint_count"] = completed_count
+                
+                from services.gemini_rate_manager import GeminiRateManager
+                rate_mgr = GeminiRateManager()
+                mgr_metrics = rate_mgr.get_metrics()
+                
+                elapsed = time.time() - started_parsing_time
+                pages_per_sec = completed_count / elapsed if elapsed > 0 else 0
+                pages_per_min = round(pages_per_sec * 60, 2)
+                
+                progress_cache["pages_per_minute"] = pages_per_min
+                progress_cache["gemini_requests_sent"] = mgr_metrics["requests_sent"]
+                progress_cache["429_count"] = mgr_metrics["429_count"]
+                progress_cache["total_pause_duration"] = mgr_metrics["total_pause_duration"]
+                progress_cache["parser_state"] = mgr_metrics["status"]
+                progress_cache["retry_after_seconds"] = int(mgr_metrics["cooldown_remaining"])
+                
+                if pages_per_sec > 0:
+                    remaining_sec = (total_pages - completed_count) / pages_per_sec
+                    progress_cache["estimated_completion_time"] = f"{round(remaining_sec, 1)}s remaining"
+                else:
+                    progress_cache["estimated_completion_time"] = "Calculating..."
+                
+                try:
                     requests.patch(
                         f"{API_URL}/tasks/{task_id}/progress",
                         json={
@@ -402,41 +318,126 @@ def handle_parse_document(payload, input_artifacts):
                         headers=HEADERS,
                         timeout=5
                     )
+                except Exception as e:
+                    print(f"[{WORKER_ID}] Warning: failed to save page checkpoint to backend: {e}", flush=True)
+
+            while True:
+                try:
+                    requests.patch(
+                        f"{API_URL}/tasks/{task_id}",
+                        json={
+                            "worker_id": WORKER_ID,
+                            "lease_token": lease_token,
+                            "status": "running"
+                        },
+                        headers=HEADERS,
+                        timeout=5
+                    )
                     
-                    start_sleep = time.time()
-                    while time.time() - start_sleep < wait_sec:
-                        elapsed = time.time() - start_sleep
-                        remaining = max(0, int(wait_sec - elapsed))
-                        progress_cache["retry_after_seconds"] = remaining
+                    prep = input_artifacts.get("preprocessing_report", {})
+                    document_type = prep.get("document_type", "MULTIMODAL")
+                    routing_confidence = prep.get("routing_confidence", 1.0)
+                    parse_method_hint = prep.get("parse_method_hint", "vlm_document_graph")
+                    enhanced_pages_path = prep.get("enhanced_pages_path")
+
+                    from services.pdf_parser import parse_pdf
+                    result = parse_pdf(
+                        filepath=filepath,
+                        task_id=task_id,
+                        lease_token=lease_token,
+                        progress_json=progress_cache,
+                        trace_fn=_trace,
+                        api_url=API_URL,
+                        api_headers=HEADERS,
+                        skip_ocr=False,
+                        document_type=document_type,
+                        routing_confidence=routing_confidence,
+                        parse_method_hint=parse_method_hint,
+                        enhanced_pages_path=enhanced_pages_path,
+                        on_page_completed=on_page_completed_cb
+                    )
+                    break
+                    
+                except Exception as e:
+                    from services.document_preprocessor import GeminiRateLimitError
+                    is_rate_limit = False
+                    wait_sec = 60.0
+                    
+                    if type(e).__name__ == "GeminiRateLimitError":
+                        is_rate_limit = True
+                        wait_sec = getattr(e, "retry_after", 60.0)
+                    elif "HTTP 429" in str(e) or "Quota/Resource Exhausted" in str(e):
+                        is_rate_limit = True
                         
-                        try:
-                            requests.patch(
-                                f"{API_URL}/tasks/{task_id}/progress",
-                                json={
-                                    "worker_id": WORKER_ID,
-                                    "lease_token": lease_token,
-                                    **progress_cache
-                                },
-                                headers=HEADERS,
-                                timeout=5
-                            )
-                        except Exception:
-                            pass
+                    if is_rate_limit:
+                        _trace(f"[PARSER] Gemini Rate Limit reached. Pausing parser. Cooldown: {wait_sec:.1f}s.")
                         
-                        time.sleep(min(remaining, 5.0) or 1.0)
-                    
-                    _trace(f"[PARSER] Cooldown expired. Resuming parsing...")
-                    progress_cache["parser_state"] = "RUNNING"
-                    progress_cache["retry_after_seconds"] = 0
-                    continue
-                else:
-                    _trace(f"[PARSER] Real exception encountered: {e}")
-                    raise e
-                    
-        document_graph = result.document_graph
-        parse_stats = result.stats
-        pages = result.pages
-        _trace(f"[PARSER] VLM parsing complete. Nodes: {parse_stats.get('node_count', 0)}, edges: {parse_stats.get('edge_count', 0)}")
+                        requests.patch(
+                            f"{API_URL}/tasks/{task_id}",
+                            json={
+                                "worker_id": WORKER_ID,
+                                "lease_token": lease_token,
+                                "status": "paused_rate_limit"
+                            },
+                            headers=HEADERS,
+                            timeout=5
+                        )
+                        
+                        from services.gemini_rate_manager import GeminiRateManager
+                        rate_mgr = GeminiRateManager()
+                        mgr_metrics = rate_mgr.get_metrics()
+                        
+                        progress_cache["parser_state"] = "PAUSED_RATE_LIMIT"
+                        progress_cache["retry_after_seconds"] = int(wait_sec)
+                        progress_cache["gemini_requests_sent"] = mgr_metrics["requests_sent"]
+                        progress_cache["429_count"] = mgr_metrics["429_count"]
+                        progress_cache["total_pause_duration"] = mgr_metrics["total_pause_duration"]
+                        
+                        requests.patch(
+                            f"{API_URL}/tasks/{task_id}/progress",
+                            json={
+                                "worker_id": WORKER_ID,
+                                "lease_token": lease_token,
+                                **progress_cache
+                            },
+                            headers=HEADERS,
+                            timeout=5
+                        )
+                        
+                        start_sleep = time.time()
+                        while time.time() - start_sleep < wait_sec:
+                            elapsed = time.time() - start_sleep
+                            remaining = max(0, int(wait_sec - elapsed))
+                            progress_cache["retry_after_seconds"] = remaining
+                            
+                            try:
+                                requests.patch(
+                                    f"{API_URL}/tasks/{task_id}/progress",
+                                    json={
+                                        "worker_id": WORKER_ID,
+                                        "lease_token": lease_token,
+                                        **progress_cache
+                                    },
+                                    headers=HEADERS,
+                                    timeout=5
+                                )
+                            except Exception:
+                                pass
+                            
+                            time.sleep(min(remaining, 5.0) or 1.0)
+                        
+                        _trace(f"[PARSER] Cooldown expired. Resuming parsing...")
+                        progress_cache["parser_state"] = "RUNNING"
+                        progress_cache["retry_after_seconds"] = 0
+                        continue
+                    else:
+                        _trace(f"[PARSER] Real exception encountered: {e}")
+                        raise e
+                        
+            document_graph = result.document_graph
+            parse_stats = result.stats
+            pages = result.pages
+            _trace(f"[PARSER] VLM parsing complete. Nodes: {parse_stats.get('node_count', 0)}, edges: {parse_stats.get('edge_count', 0)}")
             # Return a dict compatible with downstream graph-native chunker
             return {
                 "document_graph": document_graph,
@@ -1339,7 +1340,7 @@ LEASE_DURATIONS = {
     "send_email": 30,
     "process_video": 120,
     "generate_report": 60,
-    "parse_document": 60,
+    "parse_document": 600,
     "validate_parse_quality": 60,
     "chunk_text": 60,
     "generate_embeddings": 600,
@@ -1491,10 +1492,10 @@ def execute_task(task: Any):
                 handler_any: Any = handler
                 future = executor.submit(handler_any, task_data, input_artifacts)
                 try:
-                    output_data = future.result(timeout=1800)
+                    output_data = future.result(timeout=5400)
                 except concurrent.futures.TimeoutError:
-                    print(f"[{WORKER_ID}] [TIMEOUT] Task {task_id} exceeded 1800s limit!", flush=True)
-                    raise Exception("Task timed out after 1800 seconds (Worker Deadlock Prevented)")
+                    print(f"[{WORKER_ID}] [TIMEOUT] Task {task_id} exceeded 5400s limit!", flush=True)
+                    raise Exception("Task timed out after 5400 seconds (Worker Deadlock Prevented)")
 
             if current_renewer and current_renewer.aborted:
                 raise Exception("Task execution aborted: lease expired or rejected.")

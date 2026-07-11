@@ -28,7 +28,17 @@ if "*" in ALLOWED_ORIGINS:
 else:
     CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGINS}})
 
-redis_client: Any = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+
+redis_client: Any = redis.Redis(
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    decode_responses=True,
+    socket_timeout=2,
+    socket_connect_timeout=2,
+    retry_on_timeout=False
+)
+
+
 
 PRIORITY_QUEUES = {
     'high': 'task_queue_high',
@@ -691,7 +701,7 @@ LEASE_DURATIONS = {
     "send_email": 30,
     "process_video": 120,
     "generate_report": 60,
-    "parse_document": 60,
+    "parse_document": 600,
     "chunk_text": 60,
     "generate_embeddings": 600,
     "summarize_document": 60,
@@ -768,7 +778,8 @@ def update_task_progress(task_id):
         task.last_progress_at = datetime.utcnow()
         
         # Extend lease automatically on progress
-        task.lease_expires_at = datetime.utcnow() + timedelta(seconds=30)
+        lease_duration = LEASE_DURATIONS.get(task.type, 30)
+        task.lease_expires_at = datetime.utcnow() + timedelta(seconds=lease_duration)
 
         # Merge progress payload
         import json
@@ -987,11 +998,24 @@ def update_task(task_id):
 def get_queue_stats():
     stats = {}
     total = 0
-    for name, queue_key in PRIORITY_QUEUES.items():
-        count = redis_client.llen(queue_key)
-        stats[name] = count
-        total += count
-    stats['total'] = total
+    redis_ok = True
+    try:
+        for name, queue_key in PRIORITY_QUEUES.items():
+            try:
+                count = redis_client.llen(queue_key)
+            except Exception as key_err:
+                import logging
+                logging.getLogger(__name__).warning(f"[queues/stats] Redis key '{queue_key}' error: {key_err}")
+                count = 0
+                redis_ok = False
+            stats[name] = count
+            total += count
+        stats['total'] = total
+        stats['redis_status'] = 'online' if redis_ok else 'offline'
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"[queues/stats] Redis unavailable: {e}")
+        stats = {'high': 0, 'medium': 0, 'low': 0, 'total': 0, 'redis_status': 'offline'}
     return jsonify(stats), 200
 
 @app.route('/workers/register', methods=['POST'])
@@ -4376,22 +4400,25 @@ def get_db_status():
             masked_url = ACTIVE_DATABASE_URL.replace(parsed.password, "***")
     except Exception:
         pass
-        
-    from sqlalchemy import inspect
+
+    from sqlalchemy import text
     try:
-        inspector = inspect(engine)
-        tables = inspector.get_table_names()
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
         status = "connected"
     except Exception as e:
-        tables = []
+        # Invalidate all stale connections in the pool so the next request gets a fresh one
+        try:
+            engine.dispose(close=False)
+        except Exception:
+            pass
         status = f"error: {str(e)}"
-        
+
     return jsonify({
         "db_mode": ACTIVE_DB_MODE,
         "database_url": masked_url,
         "dialect": engine.dialect.name,
         "status": status,
-        "tables": tables
     }), 200
 
 @app.route('/metrics/system', methods=['GET'])
@@ -5182,6 +5209,33 @@ def get_test_status_endpoint(test_type):
         }), 200
     return jsonify(ACTIVE_TEST_RUNS[test_type]), 200
 
+@app.route('/tasks/<int:task_id>/log', methods=['POST'])
+def append_task_log(task_id):
+    db = SessionLocal()
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "Missing payload"}), 400
+        
+        provided_key = request.headers.get("X-API-Key")
+        if provided_key != API_KEY:
+            return jsonify({"error": "Unauthorized"}), 401
+            
+        create_task_log(
+            db, 
+            task_id, 
+            data.get('event_type', 'task_trace'), 
+            data.get('message', ''), 
+            worker_id=data.get('worker_id')
+        )
+        db.commit()
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
 if __name__ == '__main__':
     import urllib.parse
     masked_url = ACTIVE_DATABASE_URL
@@ -5232,31 +5286,3 @@ if __name__ == '__main__':
         from waitress import serve
         print(f"Starting multi-threaded Waitress WSGI server on port {port} with 8 threads...", flush=True)
         serve(app, host='0.0.0.0', port=port, threads=8)
-@app.route('/tasks/<int:task_id>/log', methods=['POST'])
-def append_task_log(task_id):
-    db = SessionLocal()
-    try:
-        data = request.json
-        if not data:
-            return jsonify({"error": "Missing payload"}), 400
-        
-        # We don't strictly require API key here because the worker connects via internal network 
-        # but to be safe we can use the same logic or just allow it. Let's allow it as the worker sends X-API-Key.
-        provided_key = request.headers.get("X-API-Key")
-        if provided_key != API_KEY:
-            return jsonify({"error": "Unauthorized"}), 401
-            
-        create_task_log(
-            db, 
-            task_id, 
-            data.get('event_type', 'task_trace'), 
-            data.get('message', ''), 
-            worker_id=data.get('worker_id')
-        )
-        db.commit()
-        return jsonify({"status": "ok"}), 200
-    except Exception as e:
-        db.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        db.close()

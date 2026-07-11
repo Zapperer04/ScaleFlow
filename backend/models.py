@@ -110,7 +110,7 @@ class GzippedBinary(TypeDecorator):
             # Try decoding base64
             return base64.b64decode(value.encode("utf-8"))
         except Exception:
-            logger.warning(
+            logger.debug(
                 "[SNAPSHOT] Legacy snapshot format detected (type=%s)",
                 type(value).__name__,
             )
@@ -448,7 +448,18 @@ def init_db():
     Base.metadata.create_all(engine)
 
     # Auto-migration for existing tables (dialect-safe try/except blocks in separate transactions)
-    from sqlalchemy import text
+    from sqlalchemy import text, inspect
+
+    try:
+        inspector = inspect(engine)
+        existing_columns = {}
+        for table in ["tasks", "pipelines", "orchestration_events", "orchestration_snapshots"]:
+            try:
+                existing_columns[table] = [c["name"] for c in inspector.get_columns(table)]
+            except Exception:
+                existing_columns[table] = []
+    except Exception:
+        existing_columns = {}
 
     for table, col, ctype in [
         ("tasks", "assigned_worker_id", "VARCHAR(100)"),
@@ -478,11 +489,12 @@ def init_db():
         # For SQLite, we need to alter table; for PostgreSQL we'd use ALTER COLUMN TYPE.
         # However, we rely on create_all for new DB, and for existing, we'll skip this ALTER as it's complex.
     ]:
-        try:
-            with engine.begin() as conn:
-                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ctype}"))
-        except Exception:
-            pass
+        if col not in existing_columns.get(table, []):
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ctype}"))
+            except Exception:
+                pass
 
     # Auto-create indexes for foreign keys if missing
     for idx_name, table, col in [

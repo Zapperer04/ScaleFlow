@@ -65,7 +65,7 @@ MIN_OCR_CONFIDENCE = float(os.getenv("MIN_OCR_CONFIDENCE", "70.0"))
 PDF_LOW_TEXT_CHARS = int(os.getenv("PDF_LOW_TEXT_CHARS", "20"))
 PDF_MAX_PAGES = int(os.getenv("PDF_MAX_PAGES", "600"))
 PDF_MEMORY_LIMIT_MB = int(os.getenv("PDF_MEMORY_LIMIT_MB", "1500"))
-PDF_PARSE_TIMEOUT_S = int(os.getenv("PDF_PARSE_TIMEOUT_S", "1800"))
+PDF_PARSE_TIMEOUT_S = int(os.getenv("PDF_PARSE_TIMEOUT_S", "5400"))
 
 # 4. Retrieval Config
 DEFAULT_RETRIEVAL_TOP_K = int(os.getenv("DEFAULT_RETRIEVAL_TOP_K", "5"))

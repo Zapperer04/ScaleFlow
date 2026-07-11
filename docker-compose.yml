@@ -12,7 +12,7 @@ services:
       QDRANT_HOST: "qdrant"
       DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/task_schedular"
       DB_MODE: "postgres"
-      TASK_RUNNING_TIMEOUT_SECONDS: "1800"
+      TASK_RUNNING_TIMEOUT_SECONDS: "5400"
       PYTHONUNBUFFERED: "1"
       HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
       HUGGINGFACE_HUB_VERBOSITY: "error"
@@ -27,6 +27,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
+      - ./backend:/app
       - ./backend/storage:/app/storage
     depends_on:
       redis:
@@ -52,6 +53,9 @@ services:
       - REACT_APP_API_URL=http://localhost:5000
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
     depends_on:
       backend:
         condition: service_healthy
@@ -85,6 +89,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
+      - ./backend:/app
       - ./backend/storage:/app/storage
     depends_on:
       redis:
@@ -123,6 +128,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
+      - ./backend:/app
       - ./backend/storage:/app/storage
     depends_on:
       redis:
@@ -161,6 +167,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
+      - ./backend:/app
       - ./backend/storage:/app/storage
     depends_on:
       redis:

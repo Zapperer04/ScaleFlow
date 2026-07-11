@@ -98,20 +98,35 @@ function App() {
 
   // Fast Polling: Workers, queueStats, Tasks, Pipelines (every 3s)
   const loadFastData = useCallback(async () => {
+    // 1. Fetch Tasks
     try {
-      // 1. Fetch Tasks
       const tasksData = await fetchTasks(1, 50);
       const tasksList = tasksData.tasks || [];
       const metadata = tasksData.metadata || { total_tasks: 0 };
-      
-      // 2. Fetch Pipelines
+      setStats({
+        total: metadata.total_tasks,
+        pending: tasksList.filter(t => t.status === 'pending').length,
+        running: tasksList.filter(t => t.status === 'running').length,
+        completed: tasksList.filter(t => t.status === 'completed').length
+      });
+    } catch (error) {
+      console.warn('loadFastData: fetchTasks failed', error);
+    }
+
+    // 2. Fetch Pipelines
+    try {
       const pipelinesData = await fetchPipelines();
       setPipelines(pipelinesData);
+    } catch (error) {
+      console.warn('loadFastData: fetchPipelines failed', error);
+    }
 
-      // 3. Fetch Workers
+    // 3. Fetch Workers
+    let mergedWorkers = [];
+    try {
       const workersData = await fetchWorkers();
       const defaultWorkerIds = ['worker-1', 'worker-2', 'worker-3'];
-      const mergedWorkers = defaultWorkerIds.map(id => {
+      mergedWorkers = defaultWorkerIds.map(id => {
         const active = workersData.find(w => w.worker_id === id);
         if (active) {
           const secondsSinceLastSeen = (Date.now() - new Date(active.last_seen)) / 1000;
@@ -127,7 +142,6 @@ function App() {
           last_action: 'Offline'
         };
       });
-      
       workersData.forEach(w => {
         if (!defaultWorkerIds.includes(w.worker_id)) {
           const secondsSinceLastSeen = (Date.now() - new Date(w.last_seen)) / 1000;
@@ -136,15 +150,20 @@ function App() {
         }
       });
       setWorkers(mergedWorkers);
+    } catch (error) {
+      console.warn('loadFastData: fetchWorkers failed', error);
+    }
 
-      // 4. Fetch Queue Stats & check stuck state
+    // 4. Fetch Queue Stats & determine Redis status independently
+    try {
       const qs = await getQueueStats();
       setQueueStats(qs);
-      setRedisStatus('online');
+      // Use the explicit redis_status field from the backend if present
+      const redisOnline = qs.redis_status ? qs.redis_status === 'online' : true;
+      setRedisStatus(redisOnline ? 'online' : 'offline');
 
       const totalQueued = qs.total || 0;
       const allWorkersIdle = mergedWorkers.length > 0 && mergedWorkers.every(w => w.status === 'idle' || w.status === 'offline');
-      
       if (totalQueued > 0 && allWorkersIdle) {
         if (queueStuckSinceRef.current === null) {
           queueStuckSinceRef.current = Date.now();
@@ -155,19 +174,12 @@ function App() {
         queueStuckSinceRef.current = null;
         setShowStuckWarning(false);
       }
-
-      setStats({
-        total: metadata.total_tasks,
-        pending: tasksList.filter(t => t.status === 'pending').length,
-        running: tasksList.filter(t => t.status === 'running').length,
-        completed: tasksList.filter(t => t.status === 'completed').length
-      });
-
     } catch (error) {
-      console.error('Error loading fast telemetry:', error);
+      console.error('loadFastData: getQueueStats failed — Redis may be offline', error);
       setRedisStatus('offline');
     }
   }, []);
+
 
   // Slow Polling: Infrastructure health checks (every 10s)
   const loadSlowData = useCallback(async () => {

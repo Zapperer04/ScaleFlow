@@ -18,11 +18,8 @@ import config
 _client = None
 qmodels = None
 
-def get_client():
-    global _client, qmodels
-    if _client is not None:
-        return _client
-
+def _make_qdrant_client():
+    """Create a fresh QdrantClient. Falls back to in-memory on failure."""
     # Save original sys.path and remove parent directory to prevent models.py shadowing
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     original_sys_path = sys.path[:]
@@ -31,6 +28,7 @@ def get_client():
     try:
         from qdrant_client import QdrantClient
         from qdrant_client.http import models as qm
+        global qmodels
         qmodels = qm
     except Exception:
         sys.path = original_sys_path
@@ -40,16 +38,30 @@ def get_client():
 
     if os.environ.get("DB_MODE") == "sqlite":
         logger.info("SQLite mode detected: Using in-memory QdrantClient fallback")
-        _client = QdrantClient(location=":memory:")
+        return QdrantClient(location=":memory:")
     else:
         try:
-            _client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=12.0)
-            _client.get_collections()
+            client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=12.0)
+            client.get_collections()  # liveness probe
+            return client
         except Exception as e:
             logger.warning(f"Could not connect to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}: {e}. Falling back to in-memory QdrantClient.")
-            _client = QdrantClient(location=":memory:")
+            return QdrantClient(location=":memory:")
 
+def get_client():
+    global _client
+    if _client is not None:
+        # Liveness probe: reset stale client after Qdrant restart
+        try:
+            _client.get_collections()
+            return _client
+        except Exception as e:
+            logger.warning(f"Qdrant liveness probe failed ({e}). Reconnecting...")
+            _client = None
+
+    _client = _make_qdrant_client()
     return _client
+
 
 COLLECTIONS = {
     "chunks": config.QDRANT_COLLECTION_NAME,
