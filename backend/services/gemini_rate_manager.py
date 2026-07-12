@@ -47,12 +47,13 @@ class GeminiRateManager:
 
     # Default constants
     DEFAULT_MIN_INTERVAL_SECONDS = 0.5          # Minimum time between requests
-    DEFAULT_MAX_ACTIVE_REQUESTS = 10            # Maximum concurrent requests
+    DEFAULT_MAX_ACTIVE_REQUESTS = 10            # Default, override via env/config
     DEFAULT_BASE_BACKOFF_SECONDS = 5.0          # Base backoff for 429
     DEFAULT_MAX_BACKOFF_SECONDS = 300.0         # Cap backoff
     DEFAULT_BACKOFF_MULTIPLIER = 1.5            # Multiplier per level
     DEFAULT_RETRY_AFTER_FALLBACK = 60.0         # Fallback if Retry-After parsing fails
     DEFAULT_LEASE_TTL_SECONDS = 300.0           # TTL for active request slots (5 minutes)
+    MAX_RETRY_AFTER = 3600.0                    # Cap for Retry-After to prevent infinite pauses
 
     def __new__(cls, *args, **kwargs):
         with cls._lock:
@@ -81,22 +82,33 @@ class GeminiRateManager:
             "longest_pause": 0.0,
         }
         self._local_lock = threading.Lock()
+        self._metrics_lock = threading.Lock()   # For counters like _total_success, _total_failures
         self._shutdown_requested = False
         self._active_slot_ids = set()  # Slots owned by this process
-        self._was_in_cooldown = False   # Track cooldown exit to set last_pause_end
+        self._was_in_cooldown = False   # Track cooldown exit to set last_pause_end (protected by _local_lock)
 
         # Configuration
         self.min_interval = float(os.getenv("GEMINI_MIN_INTERVAL_SECONDS", self.DEFAULT_MIN_INTERVAL_SECONDS))
-        self.max_active = int(os.getenv("GEMINI_MAX_ACTIVE_REQUESTS", self.DEFAULT_MAX_ACTIVE_REQUESTS))
+        # Read max active from environment or config module if available, fallback to default
+        max_active_env = os.getenv("GEMINI_MAX_ACTIVE_REQUESTS")
+        if max_active_env is not None:
+            self.max_active = int(max_active_env)
+        else:
+            # Try to import config and use its value if present
+            try:
+                import sys
+                sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                import config
+                self.max_active = getattr(config, "GEMINI_MAX_ACTIVE_REQUESTS", self.DEFAULT_MAX_ACTIVE_REQUESTS)
+            except (ImportError, AttributeError):
+                self.max_active = self.DEFAULT_MAX_ACTIVE_REQUESTS
         self.base_backoff = float(os.getenv("GEMINI_BASE_BACKOFF_SECONDS", self.DEFAULT_BASE_BACKOFF_SECONDS))
         self.max_backoff = float(os.getenv("GEMINI_MAX_BACKOFF_SECONDS", self.DEFAULT_MAX_BACKOFF_SECONDS))
         self.backoff_multiplier = float(os.getenv("GEMINI_BACKOFF_MULTIPLIER", self.DEFAULT_BACKOFF_MULTIPLIER))
         self.retry_after_fallback = float(os.getenv("GEMINI_RETRY_AFTER_FALLBACK", self.DEFAULT_RETRY_AFTER_FALLBACK))
         self.lease_ttl = float(os.getenv("GEMINI_LEASE_TTL_SECONDS", self.DEFAULT_LEASE_TTL_SECONDS))
 
-        # Statistics for metrics (no longer used for wait time, but kept for compatibility)
-        self._total_wait_time = 0.0
-        self._wait_count = 0
+        # Statistics for metrics
         self._total_success = 0
         self._total_failures = 0
 
@@ -158,96 +170,115 @@ class GeminiRateManager:
             self._lua_renew_slot = None
             return
 
-        # Script to atomically set cooldown_until only if new value is larger
-        self._lua_set_cooldown = self.redis_client.register_script("""
-            local key = KEYS[1]
-            local new_val = tonumber(ARGV[1])
-            local current = redis.call('GET', key)
-            if not current or tonumber(current) < new_val then
-                redis.call('SET', key, new_val)
-                return 1
-            end
-            return 0
-        """)
-
-        # Script for pacing: stores next_allowed_time = max(next_allowed_time, now + interval)
-        # Returns remaining seconds to wait (0 if ready)
-        self._lua_pace_request = self.redis_client.register_script("""
-            local key = KEYS[1]
-            local now = tonumber(ARGV[1])
-            local interval = tonumber(ARGV[2])
-            local next_allowed = redis.call('GET', key)
-            if not next_allowed then
-                redis.call('SET', key, now + interval)
+        try:
+            # Script to atomically set cooldown_until only if new value is larger
+            self._lua_set_cooldown = self.redis_client.register_script("""
+                local key = KEYS[1]
+                local new_val = tonumber(ARGV[1])
+                local current = redis.call('GET', key)
+                if not current or tonumber(current) < new_val then
+                    redis.call('SET', key, new_val)
+                    return 1
+                end
                 return 0
-            end
-            next_allowed = tonumber(next_allowed)
-            if now >= next_allowed then
-                redis.call('SET', key, now + interval)
-                return 0
-            else
-                return next_allowed - now
-            end
-        """)
+            """)
+        except Exception as e:
+            logger.error(f"Failed to register _lua_set_cooldown: {e}")
+            self._lua_set_cooldown = None
 
-        # Script to acquire a concurrency slot with lease TTL
-        # Uses a sorted set where members are slot IDs, scores are expiration timestamps.
-        # Clean expired entries, then if size < max, add new slot with expiration.
-        self._lua_acquire_slot = self.redis_client.register_script("""
-            local slots_key = KEYS[1]
-            local max_active = tonumber(ARGV[1])
-            local ttl = tonumber(ARGV[2])
-            local now = tonumber(ARGV[3])
-            local slot_id = ARGV[4]
-            -- Remove expired slots
-            redis.call('ZREMRANGEBYSCORE', slots_key, '-inf', now)
-            local count = redis.call('ZCARD', slots_key)
-            if count < max_active then
-                redis.call('ZADD', slots_key, now + ttl, slot_id)
-                return 1
-            else
-                return 0
-            end
-        """)
+        try:
+            # Script for pacing: stores next_allowed_time = max(next_allowed_time, now + interval)
+            self._lua_pace_request = self.redis_client.register_script("""
+                local key = KEYS[1]
+                local now = tonumber(ARGV[1])
+                local interval = tonumber(ARGV[2])
+                local next_allowed = redis.call('GET', key)
+                if not next_allowed then
+                    redis.call('SET', key, now + interval)
+                    return 0
+                end
+                next_allowed = tonumber(next_allowed)
+                if now >= next_allowed then
+                    redis.call('SET', key, now + interval)
+                    return 0
+                else
+                    return next_allowed - now
+                end
+            """)
+        except Exception as e:
+            logger.error(f"Failed to register _lua_pace_request: {e}")
+            self._lua_pace_request = None
 
-        # Script to release a slot (remove from sorted set)
-        self._lua_release_slot = self.redis_client.register_script("""
-            local slots_key = KEYS[1]
-            local slot_id = ARGV[1]
-            return redis.call('ZREM', slots_key, slot_id)
-        """)
+        try:
+            # Script to acquire a concurrency slot with lease TTL
+            self._lua_acquire_slot = self.redis_client.register_script("""
+                local slots_key = KEYS[1]
+                local max_active = tonumber(ARGV[1])
+                local ttl = tonumber(ARGV[2])
+                local now = tonumber(ARGV[3])
+                local slot_id = ARGV[4]
+                redis.call('ZREMRANGEBYSCORE', slots_key, '-inf', now)
+                local count = redis.call('ZCARD', slots_key)
+                if count < max_active then
+                    redis.call('ZADD', slots_key, now + ttl, slot_id)
+                    return 1
+                else
+                    return 0
+                end
+            """)
+        except Exception as e:
+            logger.error(f"Failed to register _lua_acquire_slot: {e}")
+            self._lua_acquire_slot = None
 
-        # Script to validate a slot (check if slot_id exists and is not expired)
-        self._lua_validate_slot = self.redis_client.register_script("""
-            local slots_key = KEYS[1]
-            local slot_id = ARGV[1]
-            local now = tonumber(ARGV[2])
-            -- Clean expired first
-            redis.call('ZREMRANGEBYSCORE', slots_key, '-inf', now)
-            local score = redis.call('ZSCORE', slots_key, slot_id)
-            if score then
-                return 1
-            else
-                return 0
-            end
-        """)
+        try:
+            # Script to release a slot
+            self._lua_release_slot = self.redis_client.register_script("""
+                local slots_key = KEYS[1]
+                local slot_id = ARGV[1]
+                return redis.call('ZREM', slots_key, slot_id)
+            """)
+        except Exception as e:
+            logger.error(f"Failed to register _lua_release_slot: {e}")
+            self._lua_release_slot = None
 
-        # Script to renew a slot (update its score to now+ttl)
-        self._lua_renew_slot = self.redis_client.register_script("""
-            local slots_key = KEYS[1]
-            local slot_id = ARGV[1]
-            local now = tonumber(ARGV[2])
-            local ttl = tonumber(ARGV[3])
-            local score = redis.call('ZSCORE', slots_key, slot_id)
-            if score then
-                redis.call('ZADD', slots_key, now + ttl, slot_id)
-                return 1
-            else
-                return 0
-            end
-        """)
+        try:
+            # Script to validate a slot
+            self._lua_validate_slot = self.redis_client.register_script("""
+                local slots_key = KEYS[1]
+                local slot_id = ARGV[1]
+                local now = tonumber(ARGV[2])
+                redis.call('ZREMRANGEBYSCORE', slots_key, '-inf', now)
+                local score = redis.call('ZSCORE', slots_key, slot_id)
+                if score then
+                    return 1
+                else
+                    return 0
+                end
+            """)
+        except Exception as e:
+            logger.error(f"Failed to register _lua_validate_slot: {e}")
+            self._lua_validate_slot = None
 
-        logger.debug("Lua scripts loaded successfully.")
+        try:
+            # Script to renew a slot
+            self._lua_renew_slot = self.redis_client.register_script("""
+                local slots_key = KEYS[1]
+                local slot_id = ARGV[1]
+                local now = tonumber(ARGV[2])
+                local ttl = tonumber(ARGV[3])
+                local score = redis.call('ZSCORE', slots_key, slot_id)
+                if score then
+                    redis.call('ZADD', slots_key, now + ttl, slot_id)
+                    return 1
+                else
+                    return 0
+                end
+            """)
+        except Exception as e:
+            logger.error(f"Failed to register _lua_renew_slot: {e}")
+            self._lua_renew_slot = None
+
+        logger.debug("Lua scripts loaded (or failed) successfully.")
 
     # ----------------------------------------------------------------------
     # Internal helpers for Redis operations with fallback
@@ -305,7 +336,7 @@ class GeminiRateManager:
 
     def _set_cooldown_atomically(self, new_cooldown: float) -> bool:
         """Atomically set cooldown_until only if new value is larger."""
-        if self._ensure_redis() and self._lua_set_cooldown:
+        if self._ensure_redis() and self._lua_set_cooldown is not None:
             try:
                 key = self._get_key("cooldown_until")
                 result = self._lua_set_cooldown(keys=[key], args=[str(new_cooldown)])
@@ -314,13 +345,14 @@ class GeminiRateManager:
                 return int(result) == 1
             except Exception:
                 self._load_lua_scripts()
-                try:
-                    result = self._lua_set_cooldown(keys=[key], args=[str(new_cooldown)])
-                    if int(result) == 1:
-                        logger.debug(f"Cooldown extended to {new_cooldown} (Redis after reload)")
-                    return int(result) == 1
-                except Exception:
-                    logger.warning("Failed to set cooldown in Redis; falling back to local.")
+                if self._lua_set_cooldown is not None:
+                    try:
+                        result = self._lua_set_cooldown(keys=[key], args=[str(new_cooldown)])
+                        if int(result) == 1:
+                            logger.debug(f"Cooldown extended to {new_cooldown} (Redis after reload)")
+                        return int(result) == 1
+                    except Exception:
+                        logger.warning("Failed to set cooldown in Redis; falling back to local.")
         # Fallback to local with lock
         with self._local_lock:
             current = self._local_state.get("cooldown_until", 0.0)
@@ -332,7 +364,7 @@ class GeminiRateManager:
 
     def _pace_request_atomically(self, now: float) -> float:
         """Atomically reserve next allowed time; returns wait seconds (0 if ready)."""
-        if self._ensure_redis() and self._lua_pace_request:
+        if self._ensure_redis() and self._lua_pace_request is not None:
             try:
                 key = self._get_key("next_allowed_time")
                 remaining = self._lua_pace_request(keys=[key], args=[str(now), str(self.min_interval)])
@@ -344,16 +376,17 @@ class GeminiRateManager:
                 return remaining
             except Exception:
                 self._load_lua_scripts()
-                try:
-                    remaining = self._lua_pace_request(keys=[key], args=[str(now), str(self.min_interval)])
-                    remaining = float(remaining)
-                    if remaining > 0:
-                        logger.debug(f"Pacing: need to wait {remaining:.2f}s (Redis after reload)")
-                    else:
-                        logger.debug("Pacing: allowed (Redis after reload)")
-                    return remaining
-                except Exception:
-                    logger.warning("Failed to pace request in Redis; falling back to local.")
+                if self._lua_pace_request is not None:
+                    try:
+                        remaining = self._lua_pace_request(keys=[key], args=[str(now), str(self.min_interval)])
+                        remaining = float(remaining)
+                        if remaining > 0:
+                            logger.debug(f"Pacing: need to wait {remaining:.2f}s (Redis after reload)")
+                        else:
+                            logger.debug("Pacing: allowed (Redis after reload)")
+                        return remaining
+                    except Exception:
+                        logger.warning("Failed to pace request in Redis; falling back to local.")
         # Local fallback with lock
         with self._local_lock:
             last = self._local_state.get("last_request_timestamp", 0.0)
@@ -372,14 +405,13 @@ class GeminiRateManager:
         Atomically acquire a concurrency slot with lease.
         Returns slot_id (str) if acquired, else None.
         """
-        if not self._ensure_redis() or not self._lua_acquire_slot:
-            # Fallback: when Redis is unavailable, allow only ONE concurrent request globally per worker?
-            # To prevent over-subscription, we use a local lock but with a safety limit: 1 concurrent.
-            # This is a conservative fallback.
-            logger.warning("Redis unavailable; concurrency control is local with max_active=1 to avoid over-subscription.")
+        if not self._ensure_redis() or self._lua_acquire_slot is None:
+            # Fallback: when Redis is unavailable, allow only ONE concurrent request globally per worker.
+            # This is a conservative fallback; note that it is process-local, so multiple workers
+            # may each run one request concurrently, which could exceed the intended global limit.
+            logger.warning("Redis unavailable or slot script not loaded; concurrency control is local with max_active=1 to avoid over-subscription.")
             with self._local_lock:
                 active = self._local_state.get("active_requests", 0)
-                # Use a hard limit of 1 in local mode to prevent multiple workers from overloading
                 if active < 1:
                     self._local_state["active_requests"] = active + 1
                     logger.debug("Slot acquired locally (fallback mode, max 1)")
@@ -395,7 +427,6 @@ class GeminiRateManager:
                 args=[str(self.max_active), str(self.lease_ttl), str(time.time()), slot_id]
             )
             if int(result) == 1:
-                # Track locally for potential cleanup
                 with self._local_lock:
                     self._active_slot_ids.add(slot_id)
                 logger.debug(f"Slot acquired: {slot_id}")
@@ -404,29 +435,30 @@ class GeminiRateManager:
             return None
         except Exception:
             self._load_lua_scripts()
-            try:
-                result = self._lua_acquire_slot(
-                    keys=[key],
-                    args=[str(self.max_active), str(self.lease_ttl), str(time.time()), slot_id]
-                )
-                if int(result) == 1:
-                    with self._local_lock:
-                        self._active_slot_ids.add(slot_id)
-                    logger.debug(f"Slot acquired: {slot_id} (after reload)")
-                    return slot_id
-                logger.debug("Slot acquisition failed: max active reached (after reload)")
-                return None
-            except Exception as e:
-                logger.error(f"Error acquiring slot: {e}. Falling back to local.")
-                # Fallback to local with limit 1
-                with self._local_lock:
-                    active = self._local_state.get("active_requests", 0)
-                    if active < 1:
-                        self._local_state["active_requests"] = active + 1
-                        logger.debug("Slot acquired locally (fallback, limit 1)")
-                        return "local_slot"
-                    logger.debug("Slot acquisition failed (local fallback): max active reached")
+            if self._lua_acquire_slot is not None:
+                try:
+                    result = self._lua_acquire_slot(
+                        keys=[key],
+                        args=[str(self.max_active), str(self.lease_ttl), str(time.time()), slot_id]
+                    )
+                    if int(result) == 1:
+                        with self._local_lock:
+                            self._active_slot_ids.add(slot_id)
+                        logger.debug(f"Slot acquired: {slot_id} (after reload)")
+                        return slot_id
+                    logger.debug("Slot acquisition failed: max active reached (after reload)")
                     return None
+                except Exception as e:
+                    logger.error(f"Error acquiring slot: {e}. Falling back to local.")
+            # Final fallback: local with limit 1
+            with self._local_lock:
+                active = self._local_state.get("active_requests", 0)
+                if active < 1:
+                    self._local_state["active_requests"] = active + 1
+                    logger.debug("Slot acquired locally (fallback, limit 1)")
+                    return "local_slot"
+                logger.debug("Slot acquisition failed (local fallback): max active reached")
+                return None
 
     def _release_slot_atomically(self, slot_id: str):
         """Release a slot by slot_id."""
@@ -438,8 +470,7 @@ class GeminiRateManager:
                     logger.debug("Slot released locally")
             return
 
-        if not self._ensure_redis() or not self._lua_release_slot:
-            # Try local removal
+        if not self._ensure_redis() or self._lua_release_slot is None:
             with self._local_lock:
                 if slot_id in self._active_slot_ids:
                     self._active_slot_ids.remove(slot_id)
@@ -455,11 +486,12 @@ class GeminiRateManager:
             logger.debug(f"Slot {slot_id} released")
         except Exception:
             self._load_lua_scripts()
-            try:
-                self._lua_release_slot(keys=[key], args=[slot_id])
-                logger.debug(f"Slot {slot_id} released (after reload)")
-            except Exception as e:
-                logger.error(f"Error releasing slot: {e}")
+            if self._lua_release_slot is not None:
+                try:
+                    self._lua_release_slot(keys=[key], args=[slot_id])
+                    logger.debug(f"Slot {slot_id} released (after reload)")
+                except Exception as e:
+                    logger.error(f"Error releasing slot: {e}")
         # Remove from local set regardless
         with self._local_lock:
             self._active_slot_ids.discard(slot_id)
@@ -467,12 +499,10 @@ class GeminiRateManager:
     def _validate_slot_atomically(self, slot_id: str) -> bool:
         """Check if a slot is still active and not expired."""
         if slot_id == "local_slot":
-            # Local slots are always valid (no expiry)
             with self._local_lock:
                 return slot_id in self._active_slot_ids or self._local_state.get("active_requests", 0) > 0
 
-        if not self._ensure_redis() or not self._lua_validate_slot:
-            # Fallback: check local set
+        if not self._ensure_redis() or self._lua_validate_slot is None:
             with self._local_lock:
                 return slot_id in self._active_slot_ids
 
@@ -487,26 +517,26 @@ class GeminiRateManager:
             return valid
         except Exception:
             self._load_lua_scripts()
-            try:
-                result = self._lua_validate_slot(keys=[key], args=[slot_id, str(time.time())])
-                valid = int(result) == 1
-                if valid:
-                    logger.debug(f"Slot {slot_id} validated (after reload)")
-                else:
-                    logger.debug(f"Slot {slot_id} invalid/expired (after reload)")
-                return valid
-            except Exception as e:
-                logger.error(f"Error validating slot: {e}")
-                return False
+            if self._lua_validate_slot is not None:
+                try:
+                    result = self._lua_validate_slot(keys=[key], args=[slot_id, str(time.time())])
+                    valid = int(result) == 1
+                    if valid:
+                        logger.debug(f"Slot {slot_id} validated (after reload)")
+                    else:
+                        logger.debug(f"Slot {slot_id} invalid/expired (after reload)")
+                    return valid
+                except Exception as e:
+                    logger.error(f"Error validating slot: {e}")
+                    return False
+            return False
 
     def _renew_slot_atomically(self, slot_id: str) -> bool:
         """Renew a slot's lease, extending its TTL."""
         if slot_id == "local_slot":
-            # Local slots never expire
             return True
 
-        if not self._ensure_redis() or not self._lua_renew_slot:
-            # Can't renew in fallback; assume valid if still in local set
+        if not self._ensure_redis() or self._lua_renew_slot is None:
             with self._local_lock:
                 return slot_id in self._active_slot_ids
 
@@ -516,12 +546,14 @@ class GeminiRateManager:
             return int(result) == 1
         except Exception:
             self._load_lua_scripts()
-            try:
-                result = self._lua_renew_slot(keys=[key], args=[slot_id, str(time.time()), str(self.lease_ttl)])
-                return int(result) == 1
-            except Exception as e:
-                logger.error(f"Error renewing slot: {e}")
-                return False
+            if self._lua_renew_slot is not None:
+                try:
+                    result = self._lua_renew_slot(keys=[key], args=[slot_id, str(time.time()), str(self.lease_ttl)])
+                    return int(result) == 1
+                except Exception as e:
+                    logger.error(f"Error renewing slot: {e}")
+                    return False
+            return False
 
     def _emit_trace(self, trace_fn: Optional[Callable], message: str):
         if trace_fn:
@@ -541,15 +573,16 @@ class GeminiRateManager:
         if now < cooldown_until:
             remaining = max(0.0, cooldown_until - now)
             logger.debug(f"check_availability: cooldown active, remaining {remaining:.1f}s")
-            self._was_in_cooldown = True
+            with self._local_lock:
+                self._was_in_cooldown = True
             return False, remaining
         else:
-            # If we were in cooldown before and now it's over, update last_pause_end
-            if self._was_in_cooldown:
-                # The cooldown ended at cooldown_until
-                self._set_value("last_pause_end", cooldown_until)
-                self._was_in_cooldown = False
-                logger.debug(f"Cooldown ended at {cooldown_until}")
+            with self._local_lock:
+                if self._was_in_cooldown:
+                    # The cooldown ended at cooldown_until
+                    self._set_value("last_pause_end", cooldown_until)
+                    self._was_in_cooldown = False
+                    logger.debug(f"Cooldown ended at {cooldown_until}")
             logger.debug("check_availability: available")
             return True, 0.0
 
@@ -557,8 +590,8 @@ class GeminiRateManager:
         """Reset exponential backoff level on a successful request and clear pause reason."""
         self._set_value("backoff_level", 0)
         self._incr_value("requests_sent")
-        self._total_success += 1
-        # Clear pause reason as we are successful
+        with self._metrics_lock:
+            self._total_success += 1
         self._set_value("current_pause_reason", "")
         logger.debug("Success registered, backoff reset and pause reason cleared.")
 
@@ -569,7 +602,8 @@ class GeminiRateManager:
         and returns the pause duration in seconds.
         """
         self._incr_value("429_count")
-        self._total_failures += 1
+        with self._metrics_lock:
+            self._total_failures += 1
         now = time.time()
         self._set_value("last_429_time", now)
 
@@ -594,8 +628,8 @@ class GeminiRateManager:
         if updated:
             self._set_value("last_pause_start", now)
             self._set_value("current_pause_reason", f"429 (backoff {retry_after:.1f}s)")
-            # We are now in cooldown, so set was_in_cooldown flag
-            self._was_in_cooldown = True
+            with self._local_lock:
+                self._was_in_cooldown = True
             longest = self._get_value("longest_pause", 0.0)
             if retry_after > longest:
                 self._set_value("longest_pause", retry_after)
@@ -615,12 +649,10 @@ class GeminiRateManager:
                 reason=decision.reason,
                 retry_after=decision.retry_after
             )
-        # Allowed, return normally
         self._emit_trace(trace_fn, "[Rate Manager] Request allowed")
 
     def get_metrics(self) -> Dict[str, Any]:
         availability, cooldown = self.check_availability()
-        # Get active requests count from Redis if possible
         active = 0
         if self._ensure_redis():
             try:
@@ -632,7 +664,10 @@ class GeminiRateManager:
             with self._local_lock:
                 active = self._local_state.get("active_requests", 0)
 
-        # Wait time metrics are no longer used (non-blocking), keep as 0 for compatibility
+        with self._metrics_lock:
+            total_success = self._total_success
+            total_failures = self._total_failures
+
         return {
             "requests_sent": self._get_value("requests_sent", 0),
             "429_count": self._get_value("429_count", 0),
@@ -644,8 +679,8 @@ class GeminiRateManager:
             "longest_pause": self._get_value("longest_pause", 0.0),
             "backoff_level": self._get_value("backoff_level", 0),
             "active_requests": active,
-            "total_success": self._total_success,
-            "total_failures": self._total_failures,
+            "total_success": total_success,
+            "total_failures": total_failures,
             "average_wait_seconds": 0.0,  # No longer tracked
             "max_concurrent": self.max_active,
             "min_interval": self.min_interval,
@@ -653,7 +688,7 @@ class GeminiRateManager:
         }
 
     # ----------------------------------------------------------------------
-    # New public methods for non-blocking decision and lease management
+    # Public methods for non-blocking decision and lease management
     # ----------------------------------------------------------------------
 
     def get_decision(self) -> RateDecision:
@@ -689,7 +724,6 @@ class GeminiRateManager:
                 reason="pacing"
             )
 
-        # All checks passed
         logger.debug("Decision: allowed")
         return RateDecision(
             allowed=True,
@@ -757,8 +791,14 @@ class GeminiRateManager:
         return 0.0
 
     def shutdown(self):
-        """Gracefully shutdown the manager, releasing resources."""
+        """Gracefully shutdown the manager, releasing all active slots and Redis connection."""
         self._shutdown_requested = True
+        # Release any slots held by this process
+        with self._local_lock:
+            slot_ids = list(self._active_slot_ids)
+            for sid in slot_ids:
+                self._release_slot_atomically(sid)
+            self._active_slot_ids.clear()
         # Close Redis connection
         if self._redis_client:
             try:
@@ -805,13 +845,23 @@ class GeminiRateManager:
         header = str(header).strip()
         # Try parsing as integer seconds
         try:
-            return float(header)
+            val = float(header)
+            if val < 0:
+                return -1.0
+            if val > self.MAX_RETRY_AFTER:
+                logger.warning(f"Retry-After {val}s exceeds max {self.MAX_RETRY_AFTER}s, capping.")
+                return self.MAX_RETRY_AFTER
+            return val
         except ValueError:
             pass
         # Try parsing as HTTP-date
         try:
             dt = parsedate_to_datetime(header)
-            return max(0.0, dt.timestamp() - time.time())
+            val = max(0.0, dt.timestamp() - time.time())
+            if val > self.MAX_RETRY_AFTER:
+                logger.warning(f"Retry-After {val}s exceeds max {self.MAX_RETRY_AFTER}s, capping.")
+                return self.MAX_RETRY_AFTER
+            return val
         except Exception:
             pass
         # Fallback
@@ -823,8 +873,9 @@ class GeminiRateManager:
         Returns a float between 0 and max_backoff.
         """
         base = self.base_backoff * (self.backoff_multiplier ** (level - 1))
-        # Use provider-aware jitter range [0.5, 2.0] as specified in verify_rate_limit_resumable.py
         jitter = random.uniform(0.5, 2.0)
         backoff = min(self.max_backoff, base * jitter)
+        if backoff < 0:
+            backoff = 0.0
         logger.debug(f"Backoff computed: level={level}, base={base}, jitter={jitter:.2f}, actual={backoff:.2f}")
         return backoff
