@@ -543,8 +543,11 @@ def handle_parse_document(payload, input_artifacts):
                     # Re-raise to be caught by outer handler
                     raise
                 except Exception as e:
-                    # Check if it's a rate limit from Gemini
-                    if "HTTP 429" in str(e) or "Quota/Resource Exhausted" in str(e):
+                    from services.gemini_rate_manager import RateLimitPauseRequired
+                    if isinstance(e, RateLimitPauseRequired):
+                        save_checkpoint()
+                        raise TaskPauseException(resume_at=e.resume_at, reason="rate_limit", progress=progress_cache)
+                    elif "HTTP 429" in str(e) or "Quota/Resource Exhausted" in str(e) or "RateLimitPauseRequired" in str(e) or "rate_limit" in str(e).lower():
                         # Try to get resume_at from the rate manager
                         decision2 = rate_mgr.get_decision()
                         resume_at = decision2.resume_at if not decision2.allowed else time.time() + 60

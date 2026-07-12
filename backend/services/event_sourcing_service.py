@@ -330,7 +330,7 @@ def publish_event(db, event_type, pipeline_id=None, task_id=None, message=None, 
     validate_event_payload(event_type, payload)
     
     # 2. Categorize
-    category = EVENT_CATEGORIES.get(event_type, "operational")
+    category = "telemetry" if event_type in EVENT_CATEGORIES else "operational"
     
     # 3. Write to DB
     evt = OrchestrationEvent(

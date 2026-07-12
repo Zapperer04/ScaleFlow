@@ -148,7 +148,9 @@ def create_task_log(db, task_id, event_type, message, worker_id=None, payload=No
         "task_lease_renewed": "lease_renewed",
         "task_recovered_after_lease_expiry": "task_recovered",
         "max_retries_exceeded_after_lease_expiry": "task_failed",
-        "input_artifact_received": "artifact_created"
+        "input_artifact_received": "artifact_created",
+        "task_progress": "task_trace",
+        "task_paused": "task_trace"
     }
     canonical_type = mapping.get(event_type, event_type)
     if canonical_type not in CANONICAL_EVENTS:
@@ -998,6 +1000,13 @@ def update_task(task_id):
                 task.started_at = datetime.utcnow()
                 task.last_progress_at = datetime.utcnow()
                 create_task_log(db, task.id, "task_started", "Worker started execution", worker_id=worker_id)
+            elif data['status'] == 'paused_rate_limit':
+                resume_at = data.get('resume_at')
+                if resume_at:
+                    task.deferred_at = datetime.utcfromtimestamp(resume_at)
+                else:
+                    task.deferred_at = datetime.utcnow()
+                create_task_log(db, task.id, "task_paused", f"Paused due to rate limit until {task.deferred_at}", worker_id=worker_id)
             elif data['status'] == 'completed':
                 task.completed_at = datetime.utcnow()
                 create_task_log(db, task.id, "task_completed", "Execution finished successfully", worker_id=worker_id)
@@ -1520,13 +1529,19 @@ def scan_and_unblock_deferred_tasks(db):
         print(f"[Unblock Scanner] Error calculating system metrics: {e}", flush=True)
         return
 
+    from sqlalchemy import or_, and_
     deferred_tasks = db.query(Task).filter(
-        Task.status == 'blocked',
-        Task.blocked_reason.in_([
-            "System overload backpressure: deferred",
-            "Upstream congestion: throttled",
-            "Retry backoff delay"
-        ])
+        or_(
+            and_(
+                Task.status == 'blocked',
+                Task.blocked_reason.in_([
+                    "System overload backpressure: deferred",
+                    "Upstream congestion: throttled",
+                    "Retry backoff delay"
+                ])
+            ),
+            Task.status == 'paused_rate_limit'
+        )
     ).order_by(Task.deferred_at.asc(), Task.id.asc()).all()
 
     if not deferred_tasks:
@@ -1536,6 +1551,20 @@ def scan_and_unblock_deferred_tasks(db):
     released_count = 0
 
     for task in deferred_tasks:
+        # Handle paused_rate_limit tasks specifically
+        if task.status == 'paused_rate_limit':
+            if task.deferred_at and now >= task.deferred_at:
+                task.status = 'pending'
+                task.deferred_at = None
+                db.flush()
+                create_task_log(db, task.id, "task_queued", f"Resumed paused task #{task.id} (priority: {task.priority}) after rate limit pause expired.")
+                add_task_to_queue(task.id, task.priority, db=db)
+                if task.pipeline_id:
+                    from orchestrator.dependency_resolver import update_pipeline_status
+                    update_pipeline_status(db, task.pipeline_id)
+                released_count += 1
+                print(f"[Unblock Scanner] Resumed paused task #{task.id} (priority: {task.priority}) after rate limit expired.", flush=True)
+            continue
         if not task.deferred_at:
             task.deferred_at = task.created_at or now
             db.flush()

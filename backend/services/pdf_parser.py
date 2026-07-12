@@ -216,6 +216,7 @@ def _convert_artifact_to_graph(artifact: Dict[str, Any], task_id: Optional[str] 
     document graph format (pages with nodes and edges).
     Preserves parent-child relationships via CONTAINS edges.
     Handles ID mapping, bbox normalisation, and forward compatibility.
+    Now ensures chunker‑compatible fields: node_id, parent, children (resolved IDs).
     """
     if not artifact:
         return {}
@@ -345,7 +346,31 @@ def _convert_artifact_to_graph(artifact: Dict[str, Any], task_id: Optional[str] 
             "edges": []
         })
 
-    # Second pass: build edges using the ID mapping and the stored parent_original_id
+    # ---- Second pass: resolve parent and children to generated chunk IDs ----
+    for node in all_nodes:
+        # Ensure node_id and id are set (for chunker compatibility)
+        node["node_id"] = node["chunk_id"]
+        node["id"] = node["chunk_id"]
+
+        # Resolve parent from parent_original_id
+        parent_orig = node.get("parent_original_id")
+        if parent_orig:
+            parent_chunk = id_mapping.get(parent_orig)
+            if parent_chunk:
+                node["parent"] = parent_chunk
+        # Resolve children list (original IDs -> chunk IDs)
+        children_orig = node.get("children", [])
+        resolved_children = []
+        for child_orig in children_orig:
+            child_chunk = id_mapping.get(child_orig)
+            if child_chunk:
+                resolved_children.append(child_chunk)
+        if resolved_children:
+            node["children"] = resolved_children
+        # Keep original_id if needed
+        # Keep parent_original_id if needed (optional)
+
+    # ---- Build edges using the ID mapping and the stored parent_original_id ----
     edges = []
     edge_set = set()
 
@@ -376,24 +401,15 @@ def _convert_artifact_to_graph(artifact: Dict[str, Any], task_id: Optional[str] 
                 "PAGE_NEXT"
             )
 
-    # Build CONTAINS edges from parent_original_id stored in nodes
+    # Build CONTAINS edges from parent_original_id stored in nodes (already resolved)
     for node in all_nodes:
-        parent_orig = node.get("parent_original_id")
-        if parent_orig:
-            parent_chunk = id_mapping.get(parent_orig)
-            if parent_chunk:
-                add_edge(parent_chunk, node["chunk_id"], "CONTAINS")
-            else:
-                logger.debug(f"Parent reference {parent_orig} not found in ID mapping, skipping CONTAINS edge")
-
-        # Also handle children list (original IDs)
-        children_orig = node.get("children", [])
-        for child_orig in children_orig:
-            child_chunk = id_mapping.get(child_orig)
+        parent_chunk = node.get("parent")
+        if parent_chunk:
+            add_edge(parent_chunk, node["chunk_id"], "CONTAINS")
+        # Also handle children list (already resolved)
+        for child_chunk in node.get("children", []):
             if child_chunk:
                 add_edge(node["chunk_id"], child_chunk, "CONTAINS")
-            else:
-                logger.debug(f"Child reference {child_orig} not found in ID mapping, skipping CONTAINS edge")
 
     # Remove duplicate edges handled via set
 
@@ -432,10 +448,6 @@ def _convert_artifact_to_graph(artifact: Dict[str, Any], task_id: Optional[str] 
     for key, value in metadata.items():
         if key not in graph["document_metadata"]:
             graph["document_metadata"][key] = value
-
-    # Ensure page-level parser metadata preservation
-    # If artifact has per-page metadata, we could add it to each page.
-    # We'll just add it to document metadata for now.
 
     return graph
 
@@ -826,17 +838,23 @@ def _build_graph_from_texts(page_texts: Dict[int, str], task_id: Optional[str] =
     Build a minimal document graph from a dict of page_number -> text.
     Each page gets a single node with the full text.
     This is kept as a fallback when the rich artifact is not available.
+    Also ensures chunker‑compatible fields (node_id, id, parent, children).
     """
     pages_graph = []
     for page_num, text in sorted(page_texts.items()):
+        chunk_id = _generate_node_id(page_num, "vlm")
         node = {
-            "chunk_id": _generate_node_id(page_num, "vlm"),
+            "chunk_id": chunk_id,
+            "node_id": chunk_id,
+            "id": chunk_id,
             "text": text,
             "structural_type": "paragraph",
             "semantic_category": "body_text",
             "confidence": 1.0,
             "reading_order": 1,
             "bbox": {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0},
+            "parent": None,
+            "children": [],
         }
         pages_graph.append({
             "page_number": page_num,
@@ -1147,14 +1165,19 @@ def parse_pdf(
             try:
                 text = _transcribe_single_page_fallback(filepath, page_number, trace_fn)
                 if text is not None:
+                    chunk_id = _generate_node_id(page_number, "ocr")
                     node = {
-                        "chunk_id": _generate_node_id(page_number, "ocr"),
+                        "chunk_id": chunk_id,
+                        "node_id": chunk_id,
+                        "id": chunk_id,
                         "text": text,
                         "structural_type": "paragraph",
                         "semantic_category": "body_text",
                         "confidence": 0.8,
                         "reading_order": 1,
                         "bbox": {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0},
+                        "parent": None,
+                        "children": [],
                     }
                     pages_graph.append({
                         "page_number": page_number,
