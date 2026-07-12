@@ -6,12 +6,15 @@ Expands top-retrieved chunks using graph relations:
   - semantic parent
   - semantic children
   - cross references
+
+Now with proper multi-hop BFS, batch fetching, and (file_id, chunk_id) keys.
 """
 
 from __future__ import annotations
 
 import logging
 import time
+from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
@@ -19,22 +22,26 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Pluggable chunk lookup — must be configured before use.
 # ---------------------------------------------------------------------------
-ChunkLookup = Callable[[int, int, str], Optional[Dict[str, Any]]]
-_chunk_lookup: Optional[ChunkLookup] = None
+BatchChunkLookup = Callable[
+    [int, List[Tuple[int, str]]],
+    Dict[Tuple[int, str], Dict[str, Any]]
+]
 
+_batch_chunk_lookup: Optional[BatchChunkLookup] = None
 
-def set_chunk_lookup(func: ChunkLookup) -> None:
-    """Register a function to fetch a chunk by (pipeline_id, file_id, chunk_id)."""
-    global _chunk_lookup
-    _chunk_lookup = func
+def set_batch_chunk_lookup(func: BatchChunkLookup) -> None:
+    """
+    Register a function to fetch multiple chunks by (file_id, chunk_id) pairs.
+    Returns a dict mapping (file_id, chunk_id) -> chunk dict.
+    """
+    global _batch_chunk_lookup
+    _batch_chunk_lookup = func
 
-
-def get_chunk_by_id(pipeline_id: int, file_id: int, chunk_id: str) -> Optional[Dict[str, Any]]:
-    """Fetch a chunk dict from the configured lookup provider."""
-    if _chunk_lookup is None:
-        raise RuntimeError("Chunk lookup provider not configured. Call set_chunk_lookup() first.")
-    return _chunk_lookup(pipeline_id, file_id, chunk_id)
-
+def get_chunks_batch(pipeline_id: int, requests: List[Tuple[int, str]]) -> Dict[Tuple[int, str], Dict[str, Any]]:
+    """Fetch multiple chunks in one batch."""
+    if _batch_chunk_lookup is None:
+        raise RuntimeError("Batch chunk lookup provider not configured. Call set_batch_chunk_lookup() first.")
+    return _batch_chunk_lookup(pipeline_id, requests)
 
 # ---------------------------------------------------------------------------
 # Configuration constants
@@ -45,139 +52,274 @@ MAX_NEIGHBORS_PER_CHUNK = 10
 MAX_CHILDREN_PER_CHUNK = 10
 MAX_CROSS_REFS_PER_CHUNK = 10
 
-# Expansion weights
+# Expansion weights (base scores, multiplied by original retrieval score)
 WEIGHT_ORIGINAL = 1.00
 WEIGHT_NEIGHBOR = 0.80
 WEIGHT_PARENT = 0.90
 WEIGHT_CHILD = 0.75
 WEIGHT_CROSSREF = 0.60
-
+DECAY_PER_HOP = 0.7   # multiplier for each additional hop beyond the first
 
 # ---------------------------------------------------------------------------
 # Helper: collect related chunk IDs from a chunk dict
 # ---------------------------------------------------------------------------
-def _collect_ids(field: Any, max_items: int) -> List[str]:
-    """Safely extract up to max_items string IDs from a field (list or dict of lists)."""
-    ids: List[str] = []
+def _collect_ids(field: Any, max_items: int) -> List[Tuple[int, str]]:
+    """
+    Extract up to max_items (file_id, chunk_id) pairs from a field.
+    Returns list of (file_id, chunk_id) tuples.
+    If file_id is missing, it will be None (caller will fill with parent file_id).
+    """
+    ids: List[Tuple[int, str]] = []
     if isinstance(field, list):
         for item in field[:max_items]:
             if isinstance(item, str):
-                ids.append(item)
+                # We'll use None as placeholder; caller will fill with parent file_id
+                ids.append((None, item))
+            elif isinstance(item, dict):
+                fid = item.get("file_id")
+                cid = item.get("chunk_id")
+                if cid and isinstance(cid, str):
+                    ids.append((fid, cid))
     elif isinstance(field, dict):
         for v in field.values():
             if isinstance(v, list):
                 for item in v:
                     if isinstance(item, str):
-                        ids.append(item)
-                        if len(ids) >= max_items:
-                            return ids[:max_items]
+                        ids.append((None, item))
+                    elif isinstance(item, dict):
+                        fid = item.get("file_id")
+                        cid = item.get("chunk_id")
+                        if cid and isinstance(cid, str):
+                            ids.append((fid, cid))
+                    if len(ids) >= max_items:
+                        return ids[:max_items]
     return ids[:max_items]
 
-
-def collect_neighbors(
-    chunk: Dict[str, Any], pipeline_id: int, file_id: int, limit: int = MAX_NEIGHBORS_PER_CHUNK
-) -> List[Dict[str, Any]]:
-    """Fetch up to `limit` neighbor chunks."""
-    neighbors = _collect_ids(chunk.get("neighbors", []), limit)
-    results: List[Dict[str, Any]] = []
-    for nid in neighbors:
-        node = get_chunk_by_id(pipeline_id, file_id, nid)
-        if node:
-            results.append(node)
-        if len(results) >= limit:
-            break
-    return results
-
-
-def collect_parents(
-    chunk: Dict[str, Any], pipeline_id: int, file_id: int, limit: int = 1
-) -> List[Dict[str, Any]]:
-    """Fetch semantic parent (single chunk)."""
-    parent_id = chunk.get("semantic_parent")
-    if parent_id and isinstance(parent_id, str):
-        node = get_chunk_by_id(pipeline_id, file_id, parent_id)
-        if node:
-            return [node]
-    return []
-
-
-def collect_children(
-    chunk: Dict[str, Any], pipeline_id: int, file_id: int, limit: int = MAX_CHILDREN_PER_CHUNK
-) -> List[Dict[str, Any]]:
-    """Fetch up to `limit` semantic children."""
-    children = _collect_ids(chunk.get("semantic_children", []), limit)
-    results: List[Dict[str, Any]] = []
-    for cid in children:
-        node = get_chunk_by_id(pipeline_id, file_id, cid)
-        if node:
-            results.append(node)
-        if len(results) >= limit:
-            break
-    return results
-
-
-def collect_cross_refs(
-    chunk: Dict[str, Any], pipeline_id: int, file_id: int, limit: int = MAX_CROSS_REFS_PER_CHUNK
-) -> List[Dict[str, Any]]:
-    """Fetch up to `limit` cross‑referenced chunks (tables, figures, etc.)."""
-    cross_refs = _collect_ids(chunk.get("cross_refs", []), limit)
-    results: List[Dict[str, Any]] = []
-    for rid in cross_refs:
-        node = get_chunk_by_id(pipeline_id, file_id, rid)
-        if node:
-            results.append(node)
-        if len(results) >= limit:
-            break
-    return results
-
-
 # ---------------------------------------------------------------------------
-# Scoring and deduplication
+# Main expansion entry point (with proper BFS)
 # ---------------------------------------------------------------------------
-def score_expansion(
-    chunks: List[Dict[str, Any]],
-    original_score: float,
-    weight: float,
-    relation: str,
-    is_original: bool = False,
+def expand_graph_context(
+    top_chunks: List[Dict[str, Any]],
+    pipeline_id: int,
+    expansion_depth: int = DEFAULT_GRAPH_EXPANSION_DEPTH,
+    limit: int = DEFAULT_GRAPH_EXPANSION_LIMIT,
 ) -> List[Dict[str, Any]]:
     """
-    Attach graph‑expansion metadata to a list of raw chunks.
-    Returns the same objects enriched with scoring fields.
-    """
-    for c in chunks:
-        c["graph_expansion"] = not is_original
-        c["graph_relation"] = relation if not is_original else "original"
-        c["graph_score"] = weight
-        if "retrieval_score" not in c:
-            c["retrieval_score"] = original_score
-    return chunks
+    Expand a list of top‑retrieved chunks using their graph relations, with batched fetching.
 
+    Uses iterative BFS up to `expansion_depth` hops.
+    """
+    if not top_chunks:
+        return []
 
-def deduplicate_expansion(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Deduplicate by (pipeline_id, file_id, chunk_id), keeping the highest graph_score.
-    """
-    seen: Dict[Tuple[int, int, str], Dict[str, Any]] = {}
-    for entry in entries:
-        pid = entry.get("pipeline_id")
+    if expansion_depth <= 0:
+        return top_chunks[:limit]
+
+    if _batch_chunk_lookup is None:
+        raise RuntimeError("Batch chunk lookup provider not configured.")
+
+    start = time.perf_counter()
+
+    # We'll collect all expanded entries here
+    all_entries: List[Dict[str, Any]] = []
+
+    # Track visited (file_id, chunk_id) to avoid duplicate requests
+    visited: Set[Tuple[int, str]] = set()
+
+    # Layer 0: seeds
+    # Also add seeds as original entries
+    current_layer = top_chunks[:]  # list of dicts
+    for seed in current_layer:
+        cid = seed.get("chunk_id")
+        fid = seed.get("file_id")
+        if cid and fid is not None:
+            fid = int(fid)
+            key = (fid, cid)
+            if key not in visited:
+                visited.add(key)
+                entry = dict(seed)
+                entry["graph_score"] = seed.get("retrieval_score", 1.0) * WEIGHT_ORIGINAL
+                entry["graph_hop"] = 0
+                entry["graph_relations"] = ["original"]
+                entry["retrieval_score"] = seed.get("retrieval_score", 1.0)
+                all_entries.append(entry)
+
+    for hop in range(1, expansion_depth + 1):
+        # Collect all relation IDs from the current layer
+        layer_requests = []
+        for chunk in current_layer:
+            file_id = chunk.get("file_id")
+            if file_id is None:
+                continue
+            file_id = int(file_id)
+            chunk_id = chunk.get("chunk_id")
+            if not chunk_id:
+                continue
+            seed_score = chunk.get("retrieval_score", 1.0)
+            seed_file_id = chunk.get("graph_seed_file_id", file_id)
+            seed_chunk_id = chunk.get("graph_seed_chunk_id", chunk_id)
+
+            # Neighbors
+            neighbor_ids = _collect_ids(chunk.get("neighbors", []), MAX_NEIGHBORS_PER_CHUNK)
+            for fid, cid in neighbor_ids:
+                if fid is None:
+                    fid = file_id
+                else:
+                    fid = int(fid)
+                key = (fid, cid)
+                if key not in visited:
+                    visited.add(key)
+                    layer_requests.append({
+                        "file_id": fid,
+                        "chunk_id": cid,
+                        "relation": "neighbor",
+                        "weight": WEIGHT_NEIGHBOR,
+                        "original_score": seed_score,
+                        "seed_file_id": seed_file_id,
+                        "seed_chunk_id": seed_chunk_id,
+                    })
+
+            # Parent
+            parent_id = chunk.get("semantic_parent")
+            if parent_id and isinstance(parent_id, str):
+                fid = file_id
+                key = (fid, parent_id)
+                if key not in visited:
+                    visited.add(key)
+                    layer_requests.append({
+                        "file_id": fid,
+                        "chunk_id": parent_id,
+                        "relation": "parent",
+                        "weight": WEIGHT_PARENT,
+                        "original_score": seed_score,
+                        "seed_file_id": seed_file_id,
+                        "seed_chunk_id": seed_chunk_id,
+                    })
+
+            # Children
+            child_ids = _collect_ids(chunk.get("semantic_children", []), MAX_CHILDREN_PER_CHUNK)
+            for fid, cid in child_ids:
+                if fid is None:
+                    fid = file_id
+                else:
+                    fid = int(fid)
+                key = (fid, cid)
+                if key not in visited:
+                    visited.add(key)
+                    layer_requests.append({
+                        "file_id": fid,
+                        "chunk_id": cid,
+                        "relation": "child",
+                        "weight": WEIGHT_CHILD,
+                        "original_score": seed_score,
+                        "seed_file_id": seed_file_id,
+                        "seed_chunk_id": seed_chunk_id,
+                    })
+
+            # Cross-references
+            cross_ids = _collect_ids(chunk.get("cross_refs", []), MAX_CROSS_REFS_PER_CHUNK)
+            for fid, cid in cross_ids:
+                if fid is None:
+                    fid = file_id
+                else:
+                    fid = int(fid)
+                key = (fid, cid)
+                if key not in visited:
+                    visited.add(key)
+                    layer_requests.append({
+                        "file_id": fid,
+                        "chunk_id": cid,
+                        "relation": "cross_ref",
+                        "weight": WEIGHT_CROSSREF,
+                        "original_score": seed_score,
+                        "seed_file_id": seed_file_id,
+                        "seed_chunk_id": seed_chunk_id,
+                    })
+
+        if not layer_requests:
+            break
+
+        # Batch fetch all chunks in this layer
+        fetch_tuples = [(req["file_id"], req["chunk_id"]) for req in layer_requests]
+        fetched = get_chunks_batch(pipeline_id, fetch_tuples)  # returns dict (file_id, chunk_id) -> chunk
+
+        # Build next layer and add entries
+        next_layer = []
+        for req in layer_requests:
+            chunk = fetched.get((req["file_id"], req["chunk_id"]))
+            if not chunk:
+                continue
+
+            # Compute graph score with decay
+            decay = DECAY_PER_HOP ** (hop - 1)
+            graph_score = req["original_score"] * req["weight"] * decay
+
+            # Create entry
+            entry = dict(chunk)
+            entry["graph_score"] = graph_score
+            entry["graph_hop"] = hop
+            entry["graph_relations"] = [req["relation"]]
+            entry["retrieval_score"] = req["original_score"]
+            entry["graph_seed_file_id"] = req["seed_file_id"]
+            entry["graph_seed_chunk_id"] = req["seed_chunk_id"]
+            all_entries.append(entry)
+
+            # Add to next layer for further expansion
+            if hop < expansion_depth:
+                next_layer.append(entry)
+
+        current_layer = next_layer
+        if not current_layer:
+            break
+
+    # Deduplicate by (file_id, chunk_id), merging graph_relations
+    dedup_map: Dict[Tuple[int, str], Dict[str, Any]] = {}
+    for entry in all_entries:
         fid = entry.get("file_id")
         cid = entry.get("chunk_id")
-        if pid is None or fid is None or cid is None:
+        if fid is None or cid is None:
             continue
-        key = (int(pid), int(fid), str(cid))
-        if key not in seen:
-            seen[key] = entry
+        fid = int(fid)
+        key = (fid, cid)
+        existing = dedup_map.get(key)
+        if existing is None or entry.get("graph_score", 0.0) > existing.get("graph_score", 0.0):
+            dedup_map[key] = entry
         else:
-            existing_score = seen[key].get("graph_score", 0.0)
-            current_score = entry.get("graph_score", 0.0)
-            if current_score > existing_score:
-                seen[key] = entry
-    return list(seen.values())
+            # Merge relations
+            if "graph_relations" in existing and "graph_relations" in entry:
+                existing["graph_relations"] = list(set(existing["graph_relations"] + entry["graph_relations"]))
 
+    # Sort by graph_score and truncate
+    deduped = list(dedup_map.values())
+    deduped.sort(key=lambda x: x.get("graph_score", 0.0), reverse=True)
+    if len(deduped) > limit:
+        deduped = deduped[:limit]
+
+    # Clean up: remove old graph_relation field if present
+    for d in deduped:
+        if "graph_relation" in d:
+            del d["graph_relation"]
+        # Ensure graph_relations is always a list
+        if "graph_relations" not in d or not isinstance(d["graph_relations"], list):
+            d["graph_relations"] = []
+
+    # Telemetry
+    elapsed = time.perf_counter() - start
+    relation_counts = defaultdict(int)
+    for entry in deduped:
+        for rel in entry.get("graph_relations", []):
+            relation_counts[rel] += 1
+
+    logger.info(
+        f"Graph expansion: {len(top_chunks)} seeds, depth={expansion_depth}, "
+        f"{len(all_entries)} candidates → {len(deduped)} final "
+        f"({elapsed*1000:.1f} ms). Relations: {dict(relation_counts)}"
+    )
+
+    return deduped
 
 # ---------------------------------------------------------------------------
-# Single chunk expansion
+# Backward‑compatible single‑chunk expansion (uses the main function)
 # ---------------------------------------------------------------------------
 def expand_single_chunk(
     chunk: Dict[str, Any],
@@ -187,96 +329,117 @@ def expand_single_chunk(
     visited: Optional[Set[Tuple[int, int, str]]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Expand one chunk: collect neighbors, parent, children, cross‑refs.
-    The returned list includes the original chunk (scored as original) and the
-    newly fetched chunks with appropriate graph scores.
-
-    Args:
-        chunk: the original chunk dict. Must contain 'chunk_id' and 'file_id'.
-        pipeline_id: owning pipeline.
-        depth: expansion depth (currently only depth=1 is implemented).
-        limit_per_type: max items per relation type.
-        visited: set of (pipeline_id, file_id, chunk_id) already visited.
-
-    Returns:
-        list of chunk dicts enriched with scoring and expansion metadata.
+    Legacy function – kept for backward compatibility.
     """
-    if visited is None:
-        visited = set()
-
-    file_id = chunk.get("file_id")
-    if file_id is None:
-        logger.warning("Chunk missing file_id, skipping expansion")
-        return [chunk]
-
-    original_id = str(chunk.get("chunk_id", ""))
-    visited_key = (pipeline_id, int(file_id), original_id)
-    visited.add(visited_key)
-
-    if depth > 1:
-        logger.warning("Multi-hop graph expansion (depth > 1) is not yet implemented. Using depth=1.")
-        depth = 1
-
-    result: List[Dict[str, Any]] = []
-    # Add the original chunk with full score
-    scored_original = score_expansion(
-        [chunk], chunk.get("retrieval_score", 1.0), WEIGHT_ORIGINAL, "original", is_original=True
-    )
-    result.extend(scored_original)
-
-    # 1. neighbors
-    neighbors = collect_neighbors(chunk, pipeline_id, file_id, limit_per_type)
-    for nb in neighbors:
-        nb_id = str(nb.get("chunk_id", ""))
-        nb_fid = nb.get("file_id", file_id)  # inherit if missing
-        nb_key = (pipeline_id, int(nb_fid), nb_id)
-        if nb_key not in visited:
-            visited.add(nb_key)
-            result.extend(
-                score_expansion([nb], chunk.get("retrieval_score", 1.0), WEIGHT_NEIGHBOR, "neighbor")
-            )
-
-    # 2. semantic parent
-    parents = collect_parents(chunk, pipeline_id, file_id)
-    for p in parents:
-        p_id = str(p.get("chunk_id", ""))
-        p_fid = p.get("file_id", file_id)
-        p_key = (pipeline_id, int(p_fid), p_id)
-        if p_key not in visited:
-            visited.add(p_key)
-            result.extend(
-                score_expansion([p], chunk.get("retrieval_score", 1.0), WEIGHT_PARENT, "parent")
-            )
-
-    # 3. semantic children
-    children = collect_children(chunk, pipeline_id, file_id, limit_per_type)
-    for child in children:
-        c_id = str(child.get("chunk_id", ""))
-        c_fid = child.get("file_id", file_id)
-        c_key = (pipeline_id, int(c_fid), c_id)
-        if c_key not in visited:
-            visited.add(c_key)
-            result.extend(
-                score_expansion([child], chunk.get("retrieval_score", 1.0), WEIGHT_CHILD, "child")
-            )
-
-    # 4. cross references
-    cross = collect_cross_refs(chunk, pipeline_id, file_id, limit_per_type)
-    for x in cross:
-        x_id = str(x.get("chunk_id", ""))
-        x_fid = x.get("file_id", file_id)
-        x_key = (pipeline_id, int(x_fid), x_id)
-        if x_key not in visited:
-            visited.add(x_key)
-            result.extend(
-                score_expansion([x], chunk.get("retrieval_score", 1.0), WEIGHT_CROSSREF, "cross_ref")
-            )
-
-    return result
-
+    # Ignore visited (we'll use the batch version)
+    return expand_graph_context([chunk], pipeline_id, expansion_depth=depth, limit=limit_per_type * 4)
 
 # ---------------------------------------------------------------------------
-# Main expansion entry point
+# Module exports
+# ---------------------------------------------------------------------------
+__all__ = [
+    "set_batch_chunk_lookup",
+    "expand_graph_context",
+    "expand_single_chunk",
+]"""
+graph_expansion_service.py — Graph-native context expansion for ScaleFlow.
+
+Expands top-retrieved chunks using graph relations:
+  - neighbors
+  - semantic parent
+  - semantic children
+  - cross references
+
+Now with proper multi-hop BFS, batch fetching, and (file_id, chunk_id) keys.
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from collections import defaultdict
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Pluggable chunk lookup — must be configured before use.
+# ---------------------------------------------------------------------------
+BatchChunkLookup = Callable[
+    [int, List[Tuple[int, str]]],
+    Dict[Tuple[int, str], Dict[str, Any]]
+]
+
+_batch_chunk_lookup: Optional[BatchChunkLookup] = None
+
+def set_batch_chunk_lookup(func: BatchChunkLookup) -> None:
+    """
+    Register a function to fetch multiple chunks by (file_id, chunk_id) pairs.
+    Returns a dict mapping (file_id, chunk_id) -> chunk dict.
+    """
+    global _batch_chunk_lookup
+    _batch_chunk_lookup = func
+
+def get_chunks_batch(pipeline_id: int, requests: List[Tuple[int, str]]) -> Dict[Tuple[int, str], Dict[str, Any]]:
+    """Fetch multiple chunks in one batch."""
+    if _batch_chunk_lookup is None:
+        raise RuntimeError("Batch chunk lookup provider not configured. Call set_batch_chunk_lookup() first.")
+    return _batch_chunk_lookup(pipeline_id, requests)
+
+# ---------------------------------------------------------------------------
+# Configuration constants
+# ---------------------------------------------------------------------------
+DEFAULT_GRAPH_EXPANSION_DEPTH = 1
+DEFAULT_GRAPH_EXPANSION_LIMIT = 50
+MAX_NEIGHBORS_PER_CHUNK = 10
+MAX_CHILDREN_PER_CHUNK = 10
+MAX_CROSS_REFS_PER_CHUNK = 10
+
+# Expansion weights (base scores, multiplied by original retrieval score)
+WEIGHT_ORIGINAL = 1.00
+WEIGHT_NEIGHBOR = 0.80
+WEIGHT_PARENT = 0.90
+WEIGHT_CHILD = 0.75
+WEIGHT_CROSSREF = 0.60
+DECAY_PER_HOP = 0.7   # multiplier for each additional hop beyond the first
+
+# ---------------------------------------------------------------------------
+# Helper: collect related chunk IDs from a chunk dict
+# ---------------------------------------------------------------------------
+def _collect_ids(field: Any, max_items: int) -> List[Tuple[int, str]]:
+    """
+    Extract up to max_items (file_id, chunk_id) pairs from a field.
+    Returns list of (file_id, chunk_id) tuples.
+    If file_id is missing, it will be None (caller will fill with parent file_id).
+    """
+    ids: List[Tuple[int, str]] = []
+    if isinstance(field, list):
+        for item in field[:max_items]:
+            if isinstance(item, str):
+                # We'll use None as placeholder; caller will fill with parent file_id
+                ids.append((None, item))
+            elif isinstance(item, dict):
+                fid = item.get("file_id")
+                cid = item.get("chunk_id")
+                if cid and isinstance(cid, str):
+                    ids.append((fid, cid))
+    elif isinstance(field, dict):
+        for v in field.values():
+            if isinstance(v, list):
+                for item in v:
+                    if isinstance(item, str):
+                        ids.append((None, item))
+                    elif isinstance(item, dict):
+                        fid = item.get("file_id")
+                        cid = item.get("chunk_id")
+                        if cid and isinstance(cid, str):
+                            ids.append((fid, cid))
+                    if len(ids) >= max_items:
+                        return ids[:max_items]
+    return ids[:max_items]
+
+# ---------------------------------------------------------------------------
+# Main expansion entry point (with proper BFS)
 # ---------------------------------------------------------------------------
 def expand_graph_context(
     top_chunks: List[Dict[str, Any]],
@@ -285,81 +448,240 @@ def expand_graph_context(
     limit: int = DEFAULT_GRAPH_EXPANSION_LIMIT,
 ) -> List[Dict[str, Any]]:
     """
-    Expand a list of top‑retrieved chunks using their graph relations.
+    Expand a list of top‑retrieved chunks using their graph relations, with batched fetching.
 
-    Args:
-        top_chunks: list of chunk dicts from dense/BM25 retrieval.
-        pipeline_id: ID of the pipeline.
-        expansion_depth: how many hops to expand (default 1).
-        limit: maximum number of chunks to return after expansion.
-
-    Returns:
-        deduplicated list of enriched chunk dicts, with graph expansion metadata.
+    Uses iterative BFS up to `expansion_depth` hops.
     """
     if not top_chunks:
         return []
 
+    if expansion_depth <= 0:
+        return top_chunks[:limit]
+
+    if _batch_chunk_lookup is None:
+        raise RuntimeError("Batch chunk lookup provider not configured.")
+
     start = time.perf_counter()
+
+    # We'll collect all expanded entries here
     all_entries: List[Dict[str, Any]] = []
-    visited: Set[Tuple[int, int, str]] = set()
 
-    # A reasonable per‑type limit that doesn't starve categories
-    limit_per_type = min(MAX_NEIGHBORS_PER_CHUNK, max(3, limit // 10))
+    # Track visited (file_id, chunk_id) to avoid duplicate requests
+    visited: Set[Tuple[int, str]] = set()
 
-    for chunk in top_chunks:
-        # Ensure pipeline_id is set
-        chunk.setdefault("pipeline_id", pipeline_id)
-        # Ensure file_id is set; if not present, we cannot expand reliably but we can try.
-        if "file_id" not in chunk:
-            logger.warning(f"Chunk {chunk.get('chunk_id')} has no file_id; expansion skipped.")
-            chunk["graph_expansion"] = False
-            chunk["graph_score"] = WEIGHT_ORIGINAL
-            chunk["graph_relation"] = "original"
-            chunk.setdefault("retrieval_score", 1.0)
-            all_entries.append(chunk)
+    # Layer 0: seeds
+    # Also add seeds as original entries
+    current_layer = top_chunks[:]  # list of dicts
+    for seed in current_layer:
+        cid = seed.get("chunk_id")
+        fid = seed.get("file_id")
+        if cid and fid is not None:
+            fid = int(fid)
+            key = (fid, cid)
+            if key not in visited:
+                visited.add(key)
+                entry = dict(seed)
+                entry["graph_score"] = seed.get("retrieval_score", 1.0) * WEIGHT_ORIGINAL
+                entry["graph_hop"] = 0
+                entry["graph_relations"] = ["original"]
+                entry["retrieval_score"] = seed.get("retrieval_score", 1.0)
+                all_entries.append(entry)
+
+    for hop in range(1, expansion_depth + 1):
+        # Collect all relation IDs from the current layer
+        layer_requests = []
+        for chunk in current_layer:
+            file_id = chunk.get("file_id")
+            if file_id is None:
+                continue
+            file_id = int(file_id)
+            chunk_id = chunk.get("chunk_id")
+            if not chunk_id:
+                continue
+            seed_score = chunk.get("retrieval_score", 1.0)
+            seed_file_id = chunk.get("graph_seed_file_id", file_id)
+            seed_chunk_id = chunk.get("graph_seed_chunk_id", chunk_id)
+
+            # Neighbors
+            neighbor_ids = _collect_ids(chunk.get("neighbors", []), MAX_NEIGHBORS_PER_CHUNK)
+            for fid, cid in neighbor_ids:
+                if fid is None:
+                    fid = file_id
+                else:
+                    fid = int(fid)
+                key = (fid, cid)
+                if key not in visited:
+                    visited.add(key)
+                    layer_requests.append({
+                        "file_id": fid,
+                        "chunk_id": cid,
+                        "relation": "neighbor",
+                        "weight": WEIGHT_NEIGHBOR,
+                        "original_score": seed_score,
+                        "seed_file_id": seed_file_id,
+                        "seed_chunk_id": seed_chunk_id,
+                    })
+
+            # Parent
+            parent_id = chunk.get("semantic_parent")
+            if parent_id and isinstance(parent_id, str):
+                fid = file_id
+                key = (fid, parent_id)
+                if key not in visited:
+                    visited.add(key)
+                    layer_requests.append({
+                        "file_id": fid,
+                        "chunk_id": parent_id,
+                        "relation": "parent",
+                        "weight": WEIGHT_PARENT,
+                        "original_score": seed_score,
+                        "seed_file_id": seed_file_id,
+                        "seed_chunk_id": seed_chunk_id,
+                    })
+
+            # Children
+            child_ids = _collect_ids(chunk.get("semantic_children", []), MAX_CHILDREN_PER_CHUNK)
+            for fid, cid in child_ids:
+                if fid is None:
+                    fid = file_id
+                else:
+                    fid = int(fid)
+                key = (fid, cid)
+                if key not in visited:
+                    visited.add(key)
+                    layer_requests.append({
+                        "file_id": fid,
+                        "chunk_id": cid,
+                        "relation": "child",
+                        "weight": WEIGHT_CHILD,
+                        "original_score": seed_score,
+                        "seed_file_id": seed_file_id,
+                        "seed_chunk_id": seed_chunk_id,
+                    })
+
+            # Cross-references
+            cross_ids = _collect_ids(chunk.get("cross_refs", []), MAX_CROSS_REFS_PER_CHUNK)
+            for fid, cid in cross_ids:
+                if fid is None:
+                    fid = file_id
+                else:
+                    fid = int(fid)
+                key = (fid, cid)
+                if key not in visited:
+                    visited.add(key)
+                    layer_requests.append({
+                        "file_id": fid,
+                        "chunk_id": cid,
+                        "relation": "cross_ref",
+                        "weight": WEIGHT_CROSSREF,
+                        "original_score": seed_score,
+                        "seed_file_id": seed_file_id,
+                        "seed_chunk_id": seed_chunk_id,
+                    })
+
+        if not layer_requests:
+            break
+
+        # Batch fetch all chunks in this layer
+        fetch_tuples = [(req["file_id"], req["chunk_id"]) for req in layer_requests]
+        fetched = get_chunks_batch(pipeline_id, fetch_tuples)  # returns dict (file_id, chunk_id) -> chunk
+
+        # Build next layer and add entries
+        next_layer = []
+        for req in layer_requests:
+            chunk = fetched.get((req["file_id"], req["chunk_id"]))
+            if not chunk:
+                continue
+
+            # Compute graph score with decay
+            decay = DECAY_PER_HOP ** (hop - 1)
+            graph_score = req["original_score"] * req["weight"] * decay
+
+            # Create entry
+            entry = dict(chunk)
+            entry["graph_score"] = graph_score
+            entry["graph_hop"] = hop
+            entry["graph_relations"] = [req["relation"]]
+            entry["retrieval_score"] = req["original_score"]
+            entry["graph_seed_file_id"] = req["seed_file_id"]
+            entry["graph_seed_chunk_id"] = req["seed_chunk_id"]
+            all_entries.append(entry)
+
+            # Add to next layer for further expansion
+            if hop < expansion_depth:
+                next_layer.append(entry)
+
+        current_layer = next_layer
+        if not current_layer:
+            break
+
+    # Deduplicate by (file_id, chunk_id), merging graph_relations
+    dedup_map: Dict[Tuple[int, str], Dict[str, Any]] = {}
+    for entry in all_entries:
+        fid = entry.get("file_id")
+        cid = entry.get("chunk_id")
+        if fid is None or cid is None:
             continue
+        fid = int(fid)
+        key = (fid, cid)
+        existing = dedup_map.get(key)
+        if existing is None or entry.get("graph_score", 0.0) > existing.get("graph_score", 0.0):
+            dedup_map[key] = entry
+        else:
+            # Merge relations
+            if "graph_relations" in existing and "graph_relations" in entry:
+                existing["graph_relations"] = list(set(existing["graph_relations"] + entry["graph_relations"]))
 
-        try:
-            expanded = expand_single_chunk(
-                chunk,
-                pipeline_id=pipeline_id,
-                depth=expansion_depth,
-                limit_per_type=limit_per_type,
-                visited=visited,
-            )
-            all_entries.extend(expanded)
-        except Exception as e:
-            logger.warning(f"Expansion failed for chunk {chunk.get('chunk_id')}: {e}")
-            # Ensure consistent schema on fallback
-            chunk["graph_expansion"] = False
-            chunk["graph_score"] = WEIGHT_ORIGINAL
-            chunk["graph_relation"] = "original"
-            chunk.setdefault("retrieval_score", 1.0)
-            all_entries.append(chunk)
-
-    deduped = deduplicate_expansion(all_entries)
+    # Sort by graph_score and truncate
+    deduped = list(dedup_map.values())
+    deduped.sort(key=lambda x: x.get("graph_score", 0.0), reverse=True)
     if len(deduped) > limit:
         deduped = deduped[:limit]
 
+    # Clean up: remove old graph_relation field if present
+    for d in deduped:
+        if "graph_relation" in d:
+            del d["graph_relation"]
+        # Ensure graph_relations is always a list
+        if "graph_relations" not in d or not isinstance(d["graph_relations"], list):
+            d["graph_relations"] = []
+
+    # Telemetry
     elapsed = time.perf_counter() - start
+    relation_counts = defaultdict(int)
+    for entry in deduped:
+        for rel in entry.get("graph_relations", []):
+            relation_counts[rel] += 1
+
     logger.info(
-        f"Graph expansion: {len(top_chunks)} seeds → {len(all_entries)} candidates → "
-        f"{len(deduped)} final ({elapsed*1000:.1f} ms)"
+        f"Graph expansion: {len(top_chunks)} seeds, depth={expansion_depth}, "
+        f"{len(all_entries)} candidates → {len(deduped)} final "
+        f"({elapsed*1000:.1f} ms). Relations: {dict(relation_counts)}"
     )
+
     return deduped
 
+# ---------------------------------------------------------------------------
+# Backward‑compatible single‑chunk expansion (uses the main function)
+# ---------------------------------------------------------------------------
+def expand_single_chunk(
+    chunk: Dict[str, Any],
+    pipeline_id: int,
+    depth: int = 1,
+    limit_per_type: int = 10,
+    visited: Optional[Set[Tuple[int, int, str]]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Legacy function – kept for backward compatibility.
+    """
+    # Ignore visited (we'll use the batch version)
+    return expand_graph_context([chunk], pipeline_id, expansion_depth=depth, limit=limit_per_type * 4)
 
 # ---------------------------------------------------------------------------
 # Module exports
 # ---------------------------------------------------------------------------
 __all__ = [
-    "set_chunk_lookup",
+    "set_batch_chunk_lookup",
     "expand_graph_context",
     "expand_single_chunk",
-    "score_expansion",
-    "deduplicate_expansion",
-    "collect_neighbors",
-    "collect_parents",
-    "collect_children",
-    "collect_cross_refs",
 ]
