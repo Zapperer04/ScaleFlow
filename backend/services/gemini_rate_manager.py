@@ -5,9 +5,12 @@ import threading
 import redis
 import uuid
 import logging
-from typing import Optional, Tuple, Dict, Any, Callable
+import json
+from typing import Optional, Tuple, Dict, Any, Callable, Union
 from email.utils import parsedate_to_datetime
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo  # Python 3.9+ standard library
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,9 @@ class GeminiRateManager:
     global request pacing, and distributed concurrency control with lease-based slots.
     Uses Redis for shared state across workers; falls back to local thread-safe state.
     This manager does NOT block; it returns decisions or raises RateLimitPauseRequired.
+    Extended with intelligent 429 classification, adaptive backoff state machine,
+    distributed circuit breaker, adaptive batch recommendation, upload URI cache,
+    enhanced metrics, and better logging.
     """
     _instance = None
     _lock = threading.Lock()
@@ -54,6 +60,16 @@ class GeminiRateManager:
     DEFAULT_RETRY_AFTER_FALLBACK = 60.0         # Fallback if Retry-After parsing fails
     DEFAULT_LEASE_TTL_SECONDS = 300.0           # TTL for active request slots (5 minutes)
     MAX_RETRY_AFTER = 3600.0                    # Cap for Retry-After to prevent infinite pauses
+
+    # New defaults for extended features
+    DEFAULT_MIN_BATCH_SIZE = 2
+    DEFAULT_MAX_BATCH_SIZE = 8
+    DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 5       # consecutive failures to open
+    DEFAULT_CIRCUIT_BREAKER_TIMEOUT = 60.0      # seconds to wait before attempting probe (used if no explicit reset)
+    DEFAULT_UPLOAD_CACHE_TTL = 86400.0          # 24 hours
+    DEFAULT_MAX_FAILURE_STREAK = 10             # cap for backoff computation
+    DEFAULT_SUCCESS_RECOVERY_THRESHOLD = 3      # consecutive successes to increase batch size
+    DEFAULT_RESET_TIMEZONE = "America/Los_Angeles"  # for RPD reset
 
     def __new__(cls, *args, **kwargs):
         with cls._lock:
@@ -80,6 +96,17 @@ class GeminiRateManager:
             "current_pause_reason": "",
             "last_429_time": 0.0,
             "longest_pause": 0.0,
+            # New local state for extended features (fallback)
+            "failure_streak": 0,
+            "breaker_state": "CLOSED",
+            "breaker_opened_at": 0.0,
+            "breaker_next_probe": 0.0,
+            "breaker_probe_sent": 0,
+            "last_429_classification": "UNKNOWN",
+            "success_count_since_last_failure": 0,
+            "last_quota_reset_time": 0.0,
+            "upload_cache_hits": 0,
+            "upload_cache_misses": 0,
         }
         self._local_lock = threading.Lock()
         self._metrics_lock = threading.Lock()   # For counters like _total_success, _total_failures
@@ -107,6 +134,16 @@ class GeminiRateManager:
         self.backoff_multiplier = float(os.getenv("GEMINI_BACKOFF_MULTIPLIER", self.DEFAULT_BACKOFF_MULTIPLIER))
         self.retry_after_fallback = float(os.getenv("GEMINI_RETRY_AFTER_FALLBACK", self.DEFAULT_RETRY_AFTER_FALLBACK))
         self.lease_ttl = float(os.getenv("GEMINI_LEASE_TTL_SECONDS", self.DEFAULT_LEASE_TTL_SECONDS))
+
+        # New configuration
+        self.min_batch_size = int(os.getenv("GEMINI_MIN_BATCH_SIZE", self.DEFAULT_MIN_BATCH_SIZE))
+        self.max_batch_size = int(os.getenv("GEMINI_MAX_BATCH_SIZE", self.DEFAULT_MAX_BATCH_SIZE))
+        self.circuit_breaker_threshold = int(os.getenv("GEMINI_CIRCUIT_BREAKER_THRESHOLD", self.DEFAULT_CIRCUIT_BREAKER_THRESHOLD))
+        self.circuit_breaker_timeout = float(os.getenv("GEMINI_CIRCUIT_BREAKER_TIMEOUT", self.DEFAULT_CIRCUIT_BREAKER_TIMEOUT))
+        self.upload_cache_ttl = float(os.getenv("GEMINI_UPLOAD_CACHE_TTL", self.DEFAULT_UPLOAD_CACHE_TTL))
+        self.max_failure_streak = int(os.getenv("GEMINI_MAX_FAILURE_STREAK", self.DEFAULT_MAX_FAILURE_STREAK))
+        self.success_recovery_threshold = int(os.getenv("GEMINI_SUCCESS_RECOVERY_THRESHOLD", self.DEFAULT_SUCCESS_RECOVERY_THRESHOLD))
+        self.reset_timezone_str = os.getenv("GEMINI_RESET_TIMEZONE", self.DEFAULT_RESET_TIMEZONE)
 
         # Statistics for metrics
         self._total_success = 0
@@ -168,6 +205,10 @@ class GeminiRateManager:
             self._lua_release_slot = None
             self._lua_validate_slot = None
             self._lua_renew_slot = None
+            self._lua_breaker_attempt_probe = None
+            self._lua_breaker_close = None
+            self._lua_breaker_open = None
+            self._lua_breaker_get_state = None
             return
 
         try:
@@ -277,6 +318,99 @@ class GeminiRateManager:
         except Exception as e:
             logger.error(f"Failed to register _lua_renew_slot: {e}")
             self._lua_renew_slot = None
+
+        # ---- New Lua scripts for circuit breaker ----
+        try:
+            # Attempt to allow a probe request.
+            # Returns 1 if probe is allowed (and state transitioned), else 0.
+            self._lua_breaker_attempt_probe = self.redis_client.register_script("""
+                local state_key = KEYS[1]
+                local opened_at_key = KEYS[2]
+                local next_probe_key = KEYS[3]
+                local probe_sent_key = KEYS[4]
+                local now = tonumber(ARGV[1])
+                local timeout = tonumber(ARGV[2])
+                local state = redis.call('GET', state_key) or 'CLOSED'
+                if state == 'OPEN' then
+                    local next_probe = tonumber(redis.call('GET', next_probe_key) or '0')
+                    if now >= next_probe then
+                        -- transition to HALF_OPEN and set probe_sent
+                        redis.call('SET', state_key, 'HALF_OPEN')
+                        redis.call('SET', probe_sent_key, '1', 'EX', timeout)
+                        return 1
+                    else
+                        return 0
+                    end
+                elseif state == 'HALF_OPEN' then
+                    -- check if probe_sent exists
+                    local sent = redis.call('EXISTS', probe_sent_key)
+                    if sent == 0 then
+                        -- no probe in flight, allow this one
+                        redis.call('SET', probe_sent_key, '1', 'EX', timeout)
+                        return 1
+                    else
+                        return 0
+                    end
+                else
+                    -- CLOSED: no probe needed
+                    return 0
+                end
+            """)
+        except Exception as e:
+            logger.error(f"Failed to register _lua_breaker_attempt_probe: {e}")
+            self._lua_breaker_attempt_probe = None
+
+        try:
+            # Close the breaker: set state CLOSED, clear probe_sent, clear timestamps
+            self._lua_breaker_close = self.redis_client.register_script("""
+                local state_key = KEYS[1]
+                local opened_at_key = KEYS[2]
+                local next_probe_key = KEYS[3]
+                local probe_sent_key = KEYS[4]
+                redis.call('SET', state_key, 'CLOSED')
+                redis.call('DEL', opened_at_key, next_probe_key, probe_sent_key)
+                return 1
+            """)
+        except Exception as e:
+            logger.error(f"Failed to register _lua_breaker_close: {e}")
+            self._lua_breaker_close = None
+
+        try:
+            # Open the breaker: set state OPEN, set timestamps, clear probe_sent.
+            # ARGV[1] = now, ARGV[2] = next_probe_time (absolute timestamp)
+            self._lua_breaker_open = self.redis_client.register_script("""
+                local state_key = KEYS[1]
+                local opened_at_key = KEYS[2]
+                local next_probe_key = KEYS[3]
+                local probe_sent_key = KEYS[4]
+                local now = tonumber(ARGV[1])
+                local next_probe = tonumber(ARGV[2])
+                redis.call('SET', state_key, 'OPEN')
+                redis.call('SET', opened_at_key, now)
+                redis.call('SET', next_probe_key, next_probe)
+                redis.call('DEL', probe_sent_key)
+                return 1
+            """)
+        except Exception as e:
+            logger.error(f"Failed to register _lua_breaker_open: {e}")
+            self._lua_breaker_open = None
+
+        try:
+            # Get breaker state and associated timestamps
+            self._lua_breaker_get_state = self.redis_client.register_script("""
+                local state_key = KEYS[1]
+                local opened_at_key = KEYS[2]
+                local next_probe_key = KEYS[3]
+                local probe_sent_key = KEYS[4]
+                local state = redis.call('GET', state_key) or 'CLOSED'
+                local opened_at = tonumber(redis.call('GET', opened_at_key) or '0')
+                local next_probe = tonumber(redis.call('GET', next_probe_key) or '0')
+                local probe_sent = redis.call('EXISTS', probe_sent_key)
+                return {state, opened_at, next_probe, probe_sent}
+            """)
+        except Exception as e:
+            logger.error(f"Failed to register _lua_breaker_get_state: {e}")
+            self._lua_breaker_get_state = None
 
         logger.debug("Lua scripts loaded (or failed) successfully.")
 
@@ -587,19 +721,36 @@ class GeminiRateManager:
             return True, 0.0
 
     def register_success(self):
-        """Reset exponential backoff level on a successful request and clear pause reason."""
+        """
+        Reset exponential backoff level and failure streak on a successful request,
+        clear pause reason, and close circuit breaker if in HALF_OPEN or OPEN (probe succeeded).
+        Also increments success counter for batch recovery.
+        """
+        # Reset backoff_level (legacy)
         self._set_value("backoff_level", 0)
+        # Reset failure streak
+        self._set_value("failure_streak", 0)
         self._incr_value("requests_sent")
         with self._metrics_lock:
             self._total_success += 1
         self._set_value("current_pause_reason", "")
-        logger.debug("Success registered, backoff reset and pause reason cleared.")
+        # Increment success count since last failure (for batch recovery)
+        with self._local_lock:
+            success_count = self._local_state.get("success_count_since_last_failure", 0) + 1
+            self._local_state["success_count_since_last_failure"] = success_count
+        # If we have a circuit breaker in HALF_OPEN or OPEN, close it (probe succeeded)
+        self._close_circuit_breaker()
 
-    def register_429(self, retry_after_header: Optional[str] = None) -> float:
+        # Log success with additional info
+        batch_rec = self.get_recommended_batch_size()
+        logger.info(f"Success registered. Backoff reset, failure streak 0, recommended batch size {batch_rec}.")
+        logger.debug(f"Success: breaker state={self._get_breaker_state()}, batch_rec={batch_rec}")
+
+    def register_429(self, retry_after_header: Optional[str] = None, response: Optional[Any] = None) -> float:
         """
         Registers a 429 response.
-        Parses Retry-After, computes backoff with Full Jitter, updates cooldown state,
-        and returns the pause duration in seconds.
+        Parses Retry-After, classifies the 429, computes adaptive backoff based on failure streak,
+        updates cooldown state, updates circuit breaker, and returns the pause duration in seconds.
         """
         self._incr_value("429_count")
         with self._metrics_lock:
@@ -607,34 +758,82 @@ class GeminiRateManager:
         now = time.time()
         self._set_value("last_429_time", now)
 
-        # 1. Parse Retry-After
+        # 1. Classify the 429 (if response provided)
+        classification = "UNKNOWN"
+        reset_time = 0.0
+        if response is not None:
+            classification, reset_time = self.classify_429(response)
+        self._set_value("last_429_classification", classification)
+        if reset_time > 0:
+            self._set_value("last_quota_reset_time", reset_time)
+
+        # 2. Increment failure streak
+        streak = self._incr_value("failure_streak")  # returns new value
+        # Cap streak
+        if streak > self.max_failure_streak:
+            self._set_value("failure_streak", self.max_failure_streak)
+            streak = self.max_failure_streak
+
+        # Reset success count since last failure
+        with self._local_lock:
+            self._local_state["success_count_since_last_failure"] = 0
+
+        # 3. Parse Retry-After
         retry_after = self._parse_retry_after(retry_after_header)
         logger.debug(f"Retry-After parsed: {retry_after:.1f}s")
 
-        # 2. If Retry-After not given or invalid, compute exponential backoff with Full Jitter
-        if retry_after <= 0.0:
-            backoff_level = self._incr_value("backoff_level")
-            retry_after = self._compute_backoff(backoff_level)
-            logger.debug(f"Computed exponential backoff level {backoff_level}: {retry_after:.1f}s")
+        # 4. Determine cooldown duration
+        # If classification is RPD and reset_time is known, cooldown until reset_time (or next midnight)
+        cooldown_seconds = 0.0
+        if classification in ("RPD_LIMIT", "RPD") and reset_time > 0:
+            cooldown_seconds = max(0.0, reset_time - now)
+            if cooldown_seconds > 0:
+                logger.info(f"RPD limit detected, cooldown until quota reset at {reset_time} ({cooldown_seconds:.0f}s)")
+        elif retry_after > 0:
+            cooldown_seconds = retry_after
+        else:
+            # Compute adaptive backoff using failure streak
+            cooldown_seconds = self._compute_backoff_from_streak(streak)
+            logger.debug(f"Computed adaptive backoff for streak {streak}: {cooldown_seconds:.1f}s")
 
-        # 3. Cooldown extension: never shorten, merge overlapping, ignore stale
-        new_cooldown = now + retry_after
+        # 5. Cooldown extension: never shorten, merge overlapping, ignore stale
+        new_cooldown = now + cooldown_seconds
         updated = self._set_cooldown_atomically(new_cooldown)
         if updated:
-            logger.info(f"429 cooldown extended to {new_cooldown} (duration {retry_after:.1f}s)")
+            logger.info(f"429 cooldown extended to {new_cooldown} (duration {cooldown_seconds:.1f}s)")
 
-        # 4. Update pause metrics
-        self._incr_float("total_pause_duration", retry_after)
+        # 6. Update pause metrics
+        self._incr_float("total_pause_duration", cooldown_seconds)
         if updated:
             self._set_value("last_pause_start", now)
-            self._set_value("current_pause_reason", f"429 (backoff {retry_after:.1f}s)")
+            reason = f"429 (classification={classification}, streak={streak}, backoff={cooldown_seconds:.1f}s)"
+            self._set_value("current_pause_reason", reason)
             with self._local_lock:
                 self._was_in_cooldown = True
             longest = self._get_value("longest_pause", 0.0)
-            if retry_after > longest:
-                self._set_value("longest_pause", retry_after)
+            if cooldown_seconds > longest:
+                self._set_value("longest_pause", cooldown_seconds)
 
-        return retry_after
+        # 7. Circuit breaker: if failure streak >= threshold, open breaker
+        # For RPD, we open immediately and set next_probe to reset_time (or soon after)
+        if classification in ("RPD_LIMIT", "RPD") and reset_time > 0:
+            # Open breaker with next_probe = reset_time + small buffer
+            self._open_circuit_breaker(reset_time)
+            logger.warning(f"Circuit breaker opened due to RPD quota exhaustion, next probe at {reset_time}")
+        elif streak >= self.circuit_breaker_threshold:
+            self._open_circuit_breaker()
+            logger.warning(f"Circuit breaker opened due to {streak} consecutive failures.")
+
+        # 8. Log the 429 with classification, streak, backoff, etc.
+        breaker_state = self._get_breaker_state()
+        batch_rec = self.get_recommended_batch_size()
+        logger.info(
+            f"429 registered: classification={classification}, streak={streak}, "
+            f"retry_after={retry_after:.1f}s, cooldown_until={new_cooldown}, "
+            f"breaker_state={breaker_state}, recommended_batch_size={batch_rec}"
+        )
+
+        return cooldown_seconds
 
     def wait_if_needed(self, trace_fn: Optional[Callable] = None) -> None:
         """
@@ -668,6 +867,13 @@ class GeminiRateManager:
             total_success = self._total_success
             total_failures = self._total_failures
 
+        # Gather breaker info
+        breaker_state, opened_at, next_probe, probe_sent = self._get_breaker_state_full()
+
+        # Gather cache stats
+        cache_hits = self._get_value("upload_cache_hits", 0)
+        cache_misses = self._get_value("upload_cache_misses", 0)
+
         return {
             "requests_sent": self._get_value("requests_sent", 0),
             "429_count": self._get_value("429_count", 0),
@@ -677,7 +883,7 @@ class GeminiRateManager:
             "current_pause_reason": self._get_value("current_pause_reason", ""),
             "last_429_time": self._get_value("last_429_time", 0.0),
             "longest_pause": self._get_value("longest_pause", 0.0),
-            "backoff_level": self._get_value("backoff_level", 0),
+            "backoff_level": self._get_value("backoff_level", 0),  # legacy, but we keep
             "active_requests": active,
             "total_success": total_success,
             "total_failures": total_failures,
@@ -685,6 +891,18 @@ class GeminiRateManager:
             "max_concurrent": self.max_active,
             "min_interval": self.min_interval,
             "last_pause_end": self._get_value("last_pause_end", 0.0),
+            # New metrics
+            "failure_streak": self._get_value("failure_streak", 0),
+            "last_429_classification": self._get_value("last_429_classification", "UNKNOWN"),
+            "recommended_batch_size": self.get_recommended_batch_size(),
+            "breaker_state": breaker_state,
+            "breaker_opened_at": opened_at,
+            "breaker_next_probe_time": next_probe,
+            "breaker_probe_pending": bool(probe_sent),
+            "upload_cache_hits": cache_hits,
+            "upload_cache_misses": cache_misses,
+            "success_count_since_last_failure": self._local_state.get("success_count_since_last_failure", 0),
+            "last_quota_reset_time": self._get_value("last_quota_reset_time", 0.0),
         }
 
     # ----------------------------------------------------------------------
@@ -696,6 +914,7 @@ class GeminiRateManager:
         Returns a RateDecision object indicating whether a request can proceed.
         If not allowed, the decision includes retry_after and resume_at for checkpointing.
         This method does NOT block.
+        Now incorporates circuit breaker state, with proper ordering: cooldown, pacing, then breaker.
         """
         now = time.time()
         logger.debug("get_decision called")
@@ -724,6 +943,49 @@ class GeminiRateManager:
                 reason="pacing"
             )
 
+        # 3. Check circuit breaker
+        breaker_state, opened_at, next_probe, probe_sent = self._get_breaker_state_full()
+
+        if breaker_state == "OPEN":
+            if now >= next_probe:
+                # Attempt to acquire probe token
+                if self._attempt_probe():
+                    # We got probe token, allow request (will be treated as probe)
+                    logger.info("Circuit breaker: HALF_OPEN, probe request allowed.")
+                    # Do NOT return yet; we allow.
+                else:
+                    # Could not get probe token, another worker is probing or we are still OPEN
+                    resume_at = next_probe if next_probe > now else now + 5.0
+                    return RateDecision(
+                        allowed=False,
+                        retry_after=resume_at - now,
+                        resume_at=resume_at,
+                        reason="circuit_open_waiting"
+                    )
+            else:
+                # Still OPEN, not yet time to probe
+                return RateDecision(
+                    allowed=False,
+                    retry_after=next_probe - now,
+                    resume_at=next_probe,
+                    reason="circuit_open"
+                )
+        elif breaker_state == "HALF_OPEN":
+            # Check if we can acquire probe token (only one allowed)
+            if not self._attempt_probe():
+                # Another probe in flight or we already have one
+                return RateDecision(
+                    allowed=False,
+                    retry_after=5.0,
+                    resume_at=now + 5.0,
+                    reason="circuit_half_open_waiting"
+                )
+            # else we have token, proceed
+            logger.info("Circuit breaker: HALF_OPEN, probe token acquired.")
+
+        # If we reach here, either breaker is CLOSED, or we are in HALF_OPEN with probe token,
+        # or we are in OPEN and we successfully acquired probe (which transitions to HALF_OPEN).
+        # In all cases, request allowed.
         logger.debug("Decision: allowed")
         return RateDecision(
             allowed=True,
@@ -753,7 +1015,15 @@ class GeminiRateManager:
         Returns slot_id (str) on success, None if no slot available.
         This method does NOT block; it tries once and returns immediately.
         The caller must release the slot using release_request_slot(slot_id).
+        Now also rejects if circuit breaker is OPEN (to prevent any Gemini request).
         """
+        # Check circuit breaker before acquiring slot (quick reject)
+        breaker_state, _, _, _ = self._get_breaker_state_full()
+        if breaker_state == "OPEN":
+            logger.warning("Slot acquisition blocked: circuit breaker is OPEN.")
+            return None
+        # Note: HALF_OPEN state still allows acquisition, but get_decision will enforce probe token.
+        # We let it proceed.
         return self._acquire_slot_atomically()
 
     def release_request_slot(self, slot_id: str):
@@ -779,8 +1049,8 @@ class GeminiRateManager:
         return remaining
 
     def current_backoff_level(self) -> int:
-        """Returns the current exponential backoff level."""
-        return self._get_value("backoff_level", 0)
+        """Returns the current exponential backoff level (legacy, but returns failure streak for compatibility)."""
+        return self._get_value("failure_streak", 0)
 
     def get_resume_at(self) -> float:
         """Returns the Unix timestamp when cooldown ends (0 if not in cooldown)."""
@@ -835,7 +1105,483 @@ class GeminiRateManager:
         return self.SlotContext(self, slot_id)
 
     # ----------------------------------------------------------------------
-    # Internal helper methods
+    # New Public APIs for Extended Features
+    # ----------------------------------------------------------------------
+
+    @staticmethod
+    def classify_429(response: Any) -> Tuple[str, float]:
+        """
+        Classify a 429 response into one of the categories:
+        RPM_LIMIT, TPM_LIMIT, RPD_LIMIT, MODEL_CAPACITY, TRANSIENT, UNKNOWN.
+        Inspects HTTP status, JSON body, error.status, error.details, Retry-After, message text.
+        Returns (classification, quota_reset_time) where quota_reset_time is a Unix timestamp
+        (0 if unknown) for daily quota reset.
+        """
+        # Default classification
+        classification = "UNKNOWN"
+        reset_time = 0.0
+        try:
+            # If response is a dict or has .json() method
+            if hasattr(response, 'json'):
+                data = response.json()
+            elif isinstance(response, dict):
+                data = response
+            else:
+                data = {}
+        except Exception:
+            data = {}
+
+        # Helper to parse error.details
+        error = data.get('error', {})
+        if not isinstance(error, dict):
+            error = {}
+        status = error.get('status', '')
+        message = error.get('message', '')
+        details = error.get('details', [])
+        if not isinstance(details, list):
+            details = []
+
+        # Look for QuotaFailure or ErrorInfo in details
+        for detail in details:
+            if not isinstance(detail, dict):
+                continue
+            detail_type = detail.get('@type', '')
+            if 'QuotaFailure' in detail_type:
+                # QuotaFailure has 'violations' list
+                violations = detail.get('violations', [])
+                if not isinstance(violations, list):
+                    violations = []
+                for v in violations:
+                    subject = v.get('subject', '')
+                    description = v.get('description', '')
+                    combined = f"{subject} {description}".lower()
+                    if 'per minute' in combined or 'rpm' in combined:
+                        classification = "RPM_LIMIT"
+                    elif 'per day' in combined or 'rpd' in combined:
+                        classification = "RPD_LIMIT"
+                        reset_time = GeminiRateManager._get_next_midnight_pacific()
+                    elif 'token' in combined or 'tpm' in combined:
+                        classification = "TPM_LIMIT"
+                    else:
+                        # If we see QuotaFailure but can't determine, treat as RPM? Better UNKNOWN
+                        pass
+                    break  # first violation
+            elif 'ErrorInfo' in detail_type:
+                # ErrorInfo has 'reason' and 'domain'
+                reason = detail.get('reason', '')
+                domain = detail.get('domain', '')
+                combined = f"{reason} {domain}".lower()
+                if 'rate_limit' in combined or 'quota' in combined:
+                    if 'per minute' in combined or 'rpm' in combined:
+                        classification = "RPM_LIMIT"
+                    elif 'per day' in combined or 'rpd' in combined:
+                        classification = "RPD_LIMIT"
+                        reset_time = GeminiRateManager._get_next_midnight_pacific()
+                    elif 'token' in combined or 'tpm' in combined:
+                        classification = "TPM_LIMIT"
+                    else:
+                        # Could be general quota, assume RPM? Better UNKNOWN
+                        pass
+            elif 'Help' in detail_type:
+                # Help links may contain quota information, but we'll ignore
+                pass
+
+        # If still UNKNOWN, fallback to status and message but do NOT default to RPM
+        if classification == "UNKNOWN":
+            combined = f"{status} {message}".lower()
+            if 'rate_limit' in combined or 'quota' in combined:
+                if 'per minute' in combined or 'rpm' in combined:
+                    classification = "RPM_LIMIT"
+                elif 'per day' in combined or 'rpd' in combined:
+                    classification = "RPD_LIMIT"
+                    reset_time = GeminiRateManager._get_next_midnight_pacific()
+                elif 'token' in combined or 'tpm' in combined:
+                    classification = "TPM_LIMIT"
+                else:
+                    # Still unknown, leave as UNKNOWN
+                    pass
+            elif 'capacity' in combined or 'overloaded' in combined:
+                classification = "MODEL_CAPACITY"
+            elif 'retry' in combined or 'temporary' in combined or 'transient' in combined:
+                classification = "TRANSIENT"
+
+        # Do NOT default to RPM; leave UNKNOWN if not matched
+        return classification, reset_time
+
+    @staticmethod
+    def _get_next_midnight_pacific() -> float:
+        """
+        Returns Unix timestamp of next midnight (00:00) Pacific time.
+        Uses zoneinfo (Python 3.9+ standard library).
+        """
+        tz_str = os.getenv("GEMINI_RESET_TIMEZONE", "America/Los_Angeles")
+        try:
+            tz = ZoneInfo(tz_str)
+            now = datetime.now(tz)
+            midnight = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=tz)
+            if now >= midnight:
+                midnight += timedelta(days=1)
+            return midnight.timestamp()
+        except Exception as e:
+            logger.warning(f"Failed to compute midnight for {tz_str}: {e}. Falling back to UTC+24h.")
+            return time.time() + 86400
+
+    def get_recommended_batch_size(self) -> int:
+        """
+        Dynamically recommend a batch size based on failure streak and recent success count.
+        Returns an integer between min_batch_size and max_batch_size.
+        """
+        streak = self._get_value("failure_streak", 0)
+        success_since_last_failure = self._local_state.get("success_count_since_last_failure", 0)
+
+        # Start with max
+        batch = self.max_batch_size
+
+        # Reduce based on streak
+        if streak >= 5:
+            batch = self.min_batch_size
+        elif streak >= 3:
+            batch = max(self.min_batch_size, int(self.max_batch_size * 0.5))
+        elif streak >= 1:
+            batch = max(self.min_batch_size, int(self.max_batch_size * 0.75))
+
+        # Increase based on successive successes after a failure
+        if success_since_last_failure >= self.success_recovery_threshold:
+            # Gradually increase
+            increment = min(2, success_since_last_failure // self.success_recovery_threshold)
+            batch = min(self.max_batch_size, batch + increment)
+
+        # Ensure within bounds
+        return max(self.min_batch_size, min(self.max_batch_size, batch))
+
+    # ---- Upload URI Cache ----
+    def cache_upload(self, pdf_hash: str, file_uri: str, ttl_seconds: Optional[float] = None,
+                     model: Optional[str] = None, prompt_hash: Optional[str] = None,
+                     system_prompt_hash: Optional[str] = None,
+                     generation_config_hash: Optional[str] = None) -> bool:
+        """
+        Cache the uploaded file URI for a given PDF hash and optional context.
+        Returns True if stored successfully.
+        """
+        if ttl_seconds is None:
+            ttl_seconds = self.upload_cache_ttl
+        # Build cache key including optional context
+        key_parts = [pdf_hash]
+        if model:
+            key_parts.append(f"model:{model}")
+        if prompt_hash:
+            key_parts.append(f"prompt:{prompt_hash}")
+        if system_prompt_hash:
+            key_parts.append(f"system:{system_prompt_hash}")
+        if generation_config_hash:
+            key_parts.append(f"gencfg:{generation_config_hash}")
+        cache_key = "_".join(key_parts)
+        key = self._get_key(f"upload_cache:{cache_key}")
+
+        data = {
+            "uri": file_uri,
+            "timestamp": time.time(),
+            "expiration": time.time() + ttl_seconds
+        }
+        try:
+            if self._ensure_redis():
+                self.redis_client.setex(key, int(ttl_seconds), json.dumps(data))
+                return True
+            else:
+                # local fallback
+                with self._local_lock:
+                    self._local_state[f"upload_cache_{cache_key}"] = data
+                return True
+        except Exception as e:
+            logger.error(f"Failed to cache upload for {cache_key}: {e}")
+            return False
+
+    def lookup_upload(self, pdf_hash: str, model: Optional[str] = None,
+                      prompt_hash: Optional[str] = None,
+                      system_prompt_hash: Optional[str] = None,
+                      generation_config_hash: Optional[str] = None) -> Optional[str]:
+        """
+        Look up a cached file URI for a given PDF hash and optional context.
+        Returns the URI if found and not expired, else None.
+        Also updates cache hit/miss metrics.
+        """
+        key_parts = [pdf_hash]
+        if model:
+            key_parts.append(f"model:{model}")
+        if prompt_hash:
+            key_parts.append(f"prompt:{prompt_hash}")
+        if system_prompt_hash:
+            key_parts.append(f"system:{system_prompt_hash}")
+        if generation_config_hash:
+            key_parts.append(f"gencfg:{generation_config_hash}")
+        cache_key = "_".join(key_parts)
+        key = self._get_key(f"upload_cache:{cache_key}")
+
+        try:
+            if self._ensure_redis():
+                raw = self.redis_client.get(key)
+                if raw:
+                    data = json.loads(raw)
+                    if data.get("expiration", 0) > time.time():
+                        self._incr_value("upload_cache_hits", 1)
+                        return data.get("uri")
+                    else:
+                        # expired, delete
+                        self.redis_client.delete(key)
+                        self._incr_value("upload_cache_misses", 1)
+                        return None
+                else:
+                    self._incr_value("upload_cache_misses", 1)
+                    return None
+            else:
+                # local fallback
+                with self._local_lock:
+                    data = self._local_state.get(f"upload_cache_{cache_key}")
+                    if data and data.get("expiration", 0) > time.time():
+                        self._incr_value("upload_cache_hits", 1)
+                        return data.get("uri")
+                    else:
+                        self._incr_value("upload_cache_misses", 1)
+                        return None
+        except Exception as e:
+            logger.error(f"Failed to lookup upload for {cache_key}: {e}")
+            return None
+
+    def invalidate_upload(self, pdf_hash: str, model: Optional[str] = None,
+                          prompt_hash: Optional[str] = None,
+                          system_prompt_hash: Optional[str] = None,
+                          generation_config_hash: Optional[str] = None) -> bool:
+        """
+        Invalidate the cached upload for a given PDF hash and optional context.
+        Returns True if removed.
+        """
+        key_parts = [pdf_hash]
+        if model:
+            key_parts.append(f"model:{model}")
+        if prompt_hash:
+            key_parts.append(f"prompt:{prompt_hash}")
+        if system_prompt_hash:
+            key_parts.append(f"system:{system_prompt_hash}")
+        if generation_config_hash:
+            key_parts.append(f"gencfg:{generation_config_hash}")
+        cache_key = "_".join(key_parts)
+        key = self._get_key(f"upload_cache:{cache_key}")
+
+        try:
+            if self._ensure_redis():
+                self.redis_client.delete(key)
+                return True
+            else:
+                with self._local_lock:
+                    if f"upload_cache_{cache_key}" in self._local_state:
+                        del self._local_state[f"upload_cache_{cache_key}"]
+                return True
+        except Exception as e:
+            logger.error(f"Failed to invalidate upload for {cache_key}: {e}")
+            return False
+
+    # ----------------------------------------------------------------------
+    # Internal helper methods for extended features
+    # ----------------------------------------------------------------------
+
+    def _compute_backoff_from_streak(self, streak: int) -> float:
+        """
+        Compute exponential backoff based on failure streak.
+        Uses base_backoff * (multiplier ** (streak-1)) with full jitter.
+        Capped at max_backoff.
+        """
+        if streak <= 0:
+            return 0.0
+        base = self.base_backoff * (self.backoff_multiplier ** (streak - 1))
+        jitter = random.uniform(0.5, 2.0)
+        backoff = min(self.max_backoff, base * jitter)
+        return max(0.0, backoff)
+
+    def _get_breaker_state_full(self) -> Tuple[str, float, float, bool]:
+        """Returns (state, opened_at, next_probe, probe_sent_bool)."""
+        if self._ensure_redis() and self._lua_breaker_get_state is not None:
+            try:
+                keys = [
+                    self._get_key("breaker_state"),
+                    self._get_key("breaker_opened_at"),
+                    self._get_key("breaker_next_probe"),
+                    self._get_key("breaker_probe_sent")
+                ]
+                result = self._lua_breaker_get_state(keys=keys)
+                state = result[0]
+                opened_at = float(result[1])
+                next_probe = float(result[2])
+                probe_sent = int(result[3]) == 1
+                return state, opened_at, next_probe, probe_sent
+            except Exception:
+                self._load_lua_scripts()
+                if self._lua_breaker_get_state is not None:
+                    try:
+                        keys = [
+                            self._get_key("breaker_state"),
+                            self._get_key("breaker_opened_at"),
+                            self._get_key("breaker_next_probe"),
+                            self._get_key("breaker_probe_sent")
+                        ]
+                        result = self._lua_breaker_get_state(keys=keys)
+                        state = result[0]
+                        opened_at = float(result[1])
+                        next_probe = float(result[2])
+                        probe_sent = int(result[3]) == 1
+                        return state, opened_at, next_probe, probe_sent
+                    except Exception:
+                        pass
+        # Fallback to local
+        with self._local_lock:
+            state = self._local_state.get("breaker_state", "CLOSED")
+            opened_at = self._local_state.get("breaker_opened_at", 0.0)
+            next_probe = self._local_state.get("breaker_next_probe", 0.0)
+            probe_sent = self._local_state.get("breaker_probe_sent", 0) == 1
+            return state, opened_at, next_probe, probe_sent
+
+    def _get_breaker_state(self) -> str:
+        state, _, _, _ = self._get_breaker_state_full()
+        return state
+
+    def _attempt_probe(self) -> bool:
+        """
+        Attempt to acquire a probe token for circuit breaker.
+        Returns True if this request is allowed as a probe.
+        Uses Lua script for atomicity.
+        """
+        if self._ensure_redis() and self._lua_breaker_attempt_probe is not None:
+            try:
+                keys = [
+                    self._get_key("breaker_state"),
+                    self._get_key("breaker_opened_at"),
+                    self._get_key("breaker_next_probe"),
+                    self._get_key("breaker_probe_sent")
+                ]
+                args = [str(time.time()), str(self.circuit_breaker_timeout)]
+                result = self._lua_breaker_attempt_probe(keys=keys, args=args)
+                if int(result) == 1:
+                    return True
+                else:
+                    return False
+            except Exception:
+                self._load_lua_scripts()
+                if self._lua_breaker_attempt_probe is not None:
+                    try:
+                        keys = [
+                            self._get_key("breaker_state"),
+                            self._get_key("breaker_opened_at"),
+                            self._get_key("breaker_next_probe"),
+                            self._get_key("breaker_probe_sent")
+                        ]
+                        args = [str(time.time()), str(self.circuit_breaker_timeout)]
+                        result = self._lua_breaker_attempt_probe(keys=keys, args=args)
+                        if int(result) == 1:
+                            return True
+                        else:
+                            return False
+                    except Exception as e:
+                        logger.error(f"Error in _attempt_probe: {e}")
+        # Fallback: local logic with locking
+        with self._local_lock:
+            state = self._local_state.get("breaker_state", "CLOSED")
+            if state == "OPEN":
+                next_probe = self._local_state.get("breaker_next_probe", 0.0)
+                if time.time() >= next_probe:
+                    self._local_state["breaker_state"] = "HALF_OPEN"
+                    self._local_state["breaker_probe_sent"] = 1
+                    return True
+                else:
+                    return False
+            elif state == "HALF_OPEN":
+                if self._local_state.get("breaker_probe_sent", 0) == 0:
+                    self._local_state["breaker_probe_sent"] = 1
+                    return True
+                else:
+                    return False
+            else:
+                return False
+
+    def _open_circuit_breaker(self, next_probe_time: Optional[float] = None):
+        """
+        Open the circuit breaker: set state OPEN, timestamps, clear probe_sent.
+        If next_probe_time is provided, use it as the time when probe is allowed.
+        Otherwise, use now + circuit_breaker_timeout.
+        """
+        now = time.time()
+        if next_probe_time is None:
+            next_probe_time = now + self.circuit_breaker_timeout
+        else:
+            # Ensure next_probe_time is in the future
+            next_probe_time = max(next_probe_time, now + 1.0)
+
+        if self._ensure_redis() and self._lua_breaker_open is not None:
+            try:
+                keys = [
+                    self._get_key("breaker_state"),
+                    self._get_key("breaker_opened_at"),
+                    self._get_key("breaker_next_probe"),
+                    self._get_key("breaker_probe_sent")
+                ]
+                args = [str(now), str(next_probe_time)]
+                self._lua_breaker_open(keys=keys, args=args)
+                return
+            except Exception:
+                self._load_lua_scripts()
+                if self._lua_breaker_open is not None:
+                    try:
+                        keys = [
+                            self._get_key("breaker_state"),
+                            self._get_key("breaker_opened_at"),
+                            self._get_key("breaker_next_probe"),
+                            self._get_key("breaker_probe_sent")
+                        ]
+                        args = [str(now), str(next_probe_time)]
+                        self._lua_breaker_open(keys=keys, args=args)
+                        return
+                    except Exception as e:
+                        logger.error(f"Error opening breaker via Lua: {e}")
+        # Fallback local
+        with self._local_lock:
+            self._local_state["breaker_state"] = "OPEN"
+            self._local_state["breaker_opened_at"] = now
+            self._local_state["breaker_next_probe"] = next_probe_time
+            self._local_state["breaker_probe_sent"] = 0
+
+    def _close_circuit_breaker(self):
+        """Close the circuit breaker: set state CLOSED, clear timestamps and probe_sent."""
+        if self._ensure_redis() and self._lua_breaker_close is not None:
+            try:
+                keys = [
+                    self._get_key("breaker_state"),
+                    self._get_key("breaker_opened_at"),
+                    self._get_key("breaker_next_probe"),
+                    self._get_key("breaker_probe_sent")
+                ]
+                self._lua_breaker_close(keys=keys)
+                return
+            except Exception:
+                self._load_lua_scripts()
+                if self._lua_breaker_close is not None:
+                    try:
+                        keys = [
+                            self._get_key("breaker_state"),
+                            self._get_key("breaker_opened_at"),
+                            self._get_key("breaker_next_probe"),
+                            self._get_key("breaker_probe_sent")
+                        ]
+                        self._lua_breaker_close(keys=keys)
+                        return
+                    except Exception as e:
+                        logger.error(f"Error closing breaker via Lua: {e}")
+        # Fallback local
+        with self._local_lock:
+            self._local_state["breaker_state"] = "CLOSED"
+            self._local_state["breaker_opened_at"] = 0.0
+            self._local_state["breaker_next_probe"] = 0.0
+            self._local_state["breaker_probe_sent"] = 0
+
+    # ----------------------------------------------------------------------
+    # Internal helper methods (existing)
     # ----------------------------------------------------------------------
 
     def _parse_retry_after(self, header: Optional[str]) -> float:
@@ -866,16 +1612,3 @@ class GeminiRateManager:
             pass
         # Fallback
         return self.retry_after_fallback
-
-    def _compute_backoff(self, level: int) -> float:
-        """
-        Compute exponential backoff with provider-aware jitter.
-        Returns a float between 0 and max_backoff.
-        """
-        base = self.base_backoff * (self.backoff_multiplier ** (level - 1))
-        jitter = random.uniform(0.5, 2.0)
-        backoff = min(self.max_backoff, base * jitter)
-        if backoff < 0:
-            backoff = 0.0
-        logger.debug(f"Backoff computed: level={level}, base={base}, jitter={jitter:.2f}, actual={backoff:.2f}")
-        return backoff
