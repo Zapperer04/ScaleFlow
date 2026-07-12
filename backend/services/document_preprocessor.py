@@ -32,6 +32,8 @@ import config
 
 from pdf2image import convert_from_path
 
+# Version for the extraction prompt – change this when prompt changes significantly
+PROMPT_VERSION = "1.0"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Persistent Graph Storage (production artifact system)
@@ -576,6 +578,7 @@ def _call_gemini_with_pdf(
     prompt: str,
     gemini_model: str,
     api_key: str,
+    rate_mgr: GeminiRateManager,
     trace_fn: Optional[Callable] = None,
     max_retries: int = 3,
 ) -> Dict[str, Any]:
@@ -661,6 +664,11 @@ def _call_gemini_with_pdf(
                 parsed["_retries"] = retry_count
                 return parsed
             elif resp.status_code in (429, 503) or "quota" in resp.text.lower() or "rate limit" in resp.text.lower():
+                # Register the 429 with the rate manager, passing full response and Retry-After
+                rate_mgr.register_429(
+                    retry_after_header=resp.headers.get("Retry-After"),
+                    response=resp
+                )
                 retry_after = 60.0
                 try:
                     retry_after = float(resp.headers.get("Retry-After", 60.0))
@@ -712,7 +720,7 @@ def _call_gemini_with_pdf(
 
 MAX_PAGES_WHOLE = 30
 MAX_FILE_SIZE_WHOLE = 20 * 1024 * 1024
-# Use configurable batch size; default to 8 for better response size management
+# Legacy static batch size – will be overridden by dynamic batch from rate manager
 MAX_PAGES_PER_BATCH = getattr(config, "MAX_VLM_BATCH_PAGES", 8)
 
 def _estimate_tokens_from_pdf(file_path: str, pages: List[int]) -> int:
@@ -735,7 +743,10 @@ def _adaptive_plan(
         if estimated_tokens < 700000:
             return {"strategy": "whole", "page_list": pages_to_transcribe}
 
-    batch_size = MAX_PAGES_PER_BATCH
+    # Use dynamic batch size from rate manager
+    rate_mgr = GeminiRateManager()
+    recommended = rate_mgr.get_recommended_batch_size()
+    batch_size = recommended
     if is_scanned:
         batch_size = min(batch_size, 6)  # scanned docs may be heavier
 
@@ -758,7 +769,7 @@ def _adaptive_plan(
             chunk_end = min(i + batch_size - 1, seg_end)
             batches.append(list(range(i, chunk_end + 1)))
 
-    return {"strategy": "batch", "batches": batches}
+    return {"strategy": "batch", "batches": batches, "recommended_batch_size": recommended, "actual_batch_size": batch_size}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -824,11 +835,8 @@ def _execute_adaptive_transcription(
     # Compute file hash once for this session
     session_hash = _get_content_hash(file_path)
 
-    # Session-local caches for temp files and Gemini uploads
-    # key: (file_hash, start_page, end_page) -> temp_file_path
+    # Session-local cache for temp files (chunks) – cleaned up at end
     temp_chunk_cache = {}
-    # key: (file_hash, start_page, end_page) -> (file_uri, file_name)
-    upload_cache = {}
     cache_lock = threading.Lock()
 
     def _get_temp_chunk(pages: List[int]) -> str:
@@ -863,25 +871,10 @@ def _execute_adaptive_transcription(
                     pass
             temp_chunk_cache.clear()
 
-    def _get_upload(pages: List[int]) -> Optional[Tuple[str, str]]:
-        """Get previously uploaded file for this page range, if any."""
-        start = pages[0]
-        end = pages[-1]
-        key = (session_hash, start, end)
-        with cache_lock:
-            return upload_cache.get(key)
-
-    def _set_upload(pages: List[int], file_uri: str, file_name: str):
-        start = pages[0]
-        end = pages[-1]
-        key = (session_hash, start, end)
-        with cache_lock:
-            upload_cache[key] = (file_uri, file_name)
-
-    # Track uploaded file names to delete at the end
+    # Track uploaded file names to delete at the end (only those newly created)
     uploaded_files = set()
 
-    def _delete_all_uploads():
+    def _delete_only_new_uploads():
         for name in uploaded_files:
             _delete_gemini_file(name, trace_fn)
         uploaded_files.clear()
@@ -889,7 +882,9 @@ def _execute_adaptive_transcription(
     api_key, model = _get_gemini_api_key_and_model()
     plan = _adaptive_plan(file_path, pages_to_transcribe, report)
     strategy = plan["strategy"]
-    _t(f"[ADAPTIVE] Strategy: {strategy} for {len(pages_to_transcribe)} pages")
+    recommended_batch = plan.get("recommended_batch_size", 0)
+    actual_batch = plan.get("actual_batch_size", 0)
+    _t(f"[ADAPTIVE] Strategy: {strategy} for {len(pages_to_transcribe)} pages (recommended batch={recommended_batch}, actual={actual_batch})")
 
     rate_mgr = GeminiRateManager()
     result: Dict[int, str] = {}
@@ -918,49 +913,78 @@ def _execute_adaptive_transcription(
         timings = {}
         file_uri = None
         file_name = None
+        slot = None
 
         try:
-            # Check if we already have an upload for this page range
-            cached_upload = _get_upload(pages_in_chunk)
-            if cached_upload:
-                file_uri, file_name = cached_upload
+            # Check decision before acquiring slot
+            decision = rate_mgr.get_decision()
+            if not decision.allowed:
+                raise RateLimitPauseRequired(
+                    resume_at=decision.resume_at,
+                    reason=decision.reason,
+                    retry_after=decision.retry_after
+                )
+            # Acquire a single slot for the entire upload+generate cycle
+            slot = rate_mgr.acquire_request_slot()
+            if slot is None:
+                raise RateLimitPauseRequired(resume_at=time.time() + 30, reason="no_slot_available")
+
+            # Compute the prompt to get its hash (includes prompt version)
+            prompt = _build_graph_extraction_prompt(pages_in_chunk, is_whole)
+            prompt_hash = hashlib.sha256(f"{PROMPT_VERSION}:{prompt}".encode('utf-8')).hexdigest()
+            gen_config = {"temperature": 0.0, "responseMimeType": "application/json"}
+            gen_config_hash = hashlib.sha256(json.dumps(gen_config).encode()).hexdigest()
+
+            start_page = pages_in_chunk[0]
+            end_page = pages_in_chunk[-1]
+
+            # Look up in rate manager cache (includes page range)
+            cached_uri = rate_mgr.lookup_upload(
+                pdf_hash=session_hash,
+                page_start=start_page,
+                page_end=end_page,
+                model=model,
+                prompt_hash=prompt_hash,
+                generation_config_hash=gen_config_hash
+            )
+            if cached_uri:
+                # Cache hit – reuse URI
+                file_uri = cached_uri
+                file_name = None  # not tracked for deletion
                 upload_reuse_count += 1
-                timings["upload_secs"] = 0.0  # no upload cost
-                _t(f"[ADAPTIVE] Reusing upload for pages {pages_in_chunk[0]}-{pages_in_chunk[-1]}")
+                timings["upload_secs"] = 0.0
+                timings["cache_hit"] = True
+                _t(f"[ADAPTIVE] Cache HIT for pages {start_page}-{end_page}")
             else:
-                # Need to upload
+                # Cache miss – we need to upload
+                timings["cache_hit"] = False
+                # Create temp chunk and upload
                 upload_start = time.perf_counter()
-                slot = rate_mgr.acquire_request_slot()
-                if slot is None:
-                    raise RateLimitPauseRequired(resume_at=time.time() + 30, reason="no_slot_available")
-                try:
-                    # Get temp chunk
-                    chunk_path = _get_temp_chunk(pages_in_chunk)
-                    upload_count += 1
-                    file_uri, file_name = _upload_pdf_to_gemini_resumable(chunk_path, trace_fn)
-                    # Cache the upload
-                    _set_upload(pages_in_chunk, file_uri, file_name)
+                chunk_path = _get_temp_chunk(pages_in_chunk)
+                upload_count += 1  # count as a cache miss / new upload
+                file_uri, file_name = _upload_pdf_to_gemini_resumable(chunk_path, trace_fn)
+                # Cache the upload
+                rate_mgr.cache_upload(
+                    pdf_hash=session_hash,
+                    page_start=start_page,
+                    page_end=end_page,
+                    file_uri=file_uri,
+                    model=model,
+                    prompt_hash=prompt_hash,
+                    generation_config_hash=gen_config_hash
+                )
+                if file_name:
                     uploaded_files.add(file_name)
-                finally:
-                    if slot:
-                        rate_mgr.release_request_slot(slot)
                 timings["upload_secs"] = time.perf_counter() - upload_start
 
-            prompt = _build_graph_extraction_prompt(pages_in_chunk, is_whole)
-
-            # GenerateContent timing
+            # GenerateContent – reuse the same slot
             generate_start = time.perf_counter()
-            slot2 = rate_mgr.acquire_request_slot()
-            if slot2 is None:
-                raise RateLimitPauseRequired(resume_at=time.time() + 30, reason="no_slot_available")
-            try:
-                parsed = _call_gemini_with_pdf(file_uri, prompt, model, api_key, trace_fn)
-                retries = parsed.get("_retries", 0)
-                nonlocal total_retries
-                total_retries += retries
-            finally:
-                if slot2:
-                    rate_mgr.release_request_slot(slot2)
+            parsed = _call_gemini_with_pdf(file_uri, prompt, model, api_key, rate_mgr, trace_fn)
+            retries = parsed.get("_retries", 0)
+            nonlocal total_retries
+            total_retries += retries
+            # Register success after successful parsing
+            rate_mgr.register_success()
             timings["generate_secs"] = time.perf_counter() - generate_start
 
             # JSON parsing timing
@@ -981,7 +1005,10 @@ def _execute_adaptive_transcription(
         except Exception as e:
             _t(f"[ADAPTIVE] PDF processing failed: {e}")
             raise
-        # Do not delete upload here; will be deleted at end of session
+        finally:
+            # Always release the slot if we acquired it
+            if slot is not None:
+                rate_mgr.release_request_slot(slot)
 
         return local_text, local_graph, timings
 
@@ -1078,11 +1105,12 @@ def _execute_adaptive_transcription(
                     "upload_secs": timings.get("upload_secs", 0),
                     "generate_secs": timings.get("generate_secs", 0),
                     "parse_secs": timings.get("parse_secs", 0),
+                    "cache_hit": timings.get("cache_hit", False),
                 }
                 batch_history.append(batch_entry)
 
                 for k, v in timings.items():
-                    if k != "batch_pages_requested":
+                    if k not in ("batch_pages_requested", "cache_hit"):
                         overall_timings.setdefault(k, 0.0)
                         overall_timings[k] += v
                 overall_timings[f"batch_{batch_size}_pages"] = timings.get("generate_secs", 0)
@@ -1166,9 +1194,10 @@ def _execute_adaptive_transcription(
                     _t(f"[ADAPTIVE] Page {p} fallback error: {e}")
 
     finally:
-        # Clean up temporary chunk files and Gemini uploads
+        # Clean up temporary chunk files
         _cleanup_temp_chunks()
-        _delete_all_uploads()
+        # Delete only uploads that were created during this execution (not cached ones)
+        _delete_only_new_uploads()
 
     # Determine parser used
     unique_parsers = set(page_parser_map.values())
@@ -1195,6 +1224,14 @@ def _execute_adaptive_transcription(
         overall_timings["total_rate_limits"] = total_rate_limits
         overall_timings["upload_count"] = upload_count
         overall_timings["upload_reuse_count"] = upload_reuse_count
+        # Cache miss is upload_count (each upload is a miss; if upload fails before completion, still counted as miss)
+        overall_timings["cache_hits"] = upload_reuse_count
+        overall_timings["cache_misses"] = upload_count
+        overall_timings["uploads_saved"] = upload_reuse_count
+        overall_timings["recommended_batch_size"] = recommended_batch
+        overall_timings["actual_batch_size"] = actual_batch
+        overall_timings["429_classification"] = rate_mgr.get_last_429_classification()
+
         _store_graph(file_path, pages_to_transcribe, all_graph_pages, parser=parser_used, timings=overall_timings)
         _t(f"[ADAPTIVE] Full graph artifact persisted for {len(all_graph_pages)} pages with parser {parser_used}")
 
@@ -1278,7 +1315,7 @@ def _transcribe_single_page_fallback(
             )
             return text
         finally:
-            if slot:
+            if slot is not None:
                 rate_mgr.release_request_slot(slot)
     except Exception as e:
         _t(f"[FALLBACK] Page {page_num} error: {e}")
@@ -1361,12 +1398,15 @@ def _transcribe_single_page(
                 rate_mgr.register_success()
                 return page_idx, page_text
             elif res.status_code in (429, 503) or "quota" in res.text.lower() or "rate limit" in res.text.lower():
+                rate_mgr.register_429(
+                    retry_after_header=res.headers.get("Retry-After"),
+                    response=res
+                )
                 retry_after = 60.0
                 try:
                     retry_after = float(res.headers.get("Retry-After", 60.0))
                 except:
                     pass
-                rate_mgr.register_429(retry_after_header=res.headers.get("Retry-After"))
                 raise RateLimitPauseRequired(resume_at=time.time() + retry_after, reason="rate_limit", retry_after=retry_after)
             else:
                 if res.status_code in (500, 502, 504):
