@@ -52,23 +52,24 @@ try:
 except Exception as e:
     logger.warning(f"Could not create graph storage directory {GRAPH_VERSION_SUBDIR}: {e}")
 
-# Bounded in-memory cache (LRU) – max size configurable
-GRAPH_CACHE_MAX_SIZE = getattr(config, 'GRAPH_CACHE_MAX_SIZE', 1000)
+# In-memory LRU cache for graph artifacts
+GRAPH_CACHE_MAX_ENTRIES = getattr(config, 'GRAPH_CACHE_MAX_ENTRIES', 100)
 _GRAPH_CACHE = OrderedDict()  # key: (content_hash, page_range_tuple) -> artifact dict
 
-def _cache_put(key, artifact):
-    """Put artifact in cache, evict oldest if over size."""
-    _GRAPH_CACHE[key] = artifact
-    _GRAPH_CACHE.move_to_end(key)
-    if len(_GRAPH_CACHE) > GRAPH_CACHE_MAX_SIZE:
-        _GRAPH_CACHE.popitem(last=False)
-
 def _cache_get(key):
-    """Get artifact from cache, moving to end."""
+    """Get from cache, moving to end if exists."""
     if key in _GRAPH_CACHE:
         _GRAPH_CACHE.move_to_end(key)
         return _GRAPH_CACHE[key]
     return None
+
+def _cache_set(key, value):
+    """Set cache with LRU eviction."""
+    if key in _GRAPH_CACHE:
+        _GRAPH_CACHE.move_to_end(key)
+    _GRAPH_CACHE[key] = value
+    if len(_GRAPH_CACHE) > GRAPH_CACHE_MAX_ENTRIES:
+        _GRAPH_CACHE.popitem(last=False)
 
 def _get_content_hash(file_path: str) -> str:
     """
@@ -88,188 +89,18 @@ def _get_graph_storage_path(content_hash: str) -> str:
     """
     return os.path.join(GRAPH_VERSION_SUBDIR, f"{content_hash}.json")
 
-# ------------------------------------------------------------------------------
-# Normalisation and validation helpers for graph pages
-# ------------------------------------------------------------------------------
-
-def _normalize_bbox(bbox: Any) -> Dict[str, float]:
-    """
-    Normalise bounding box to a dict with x1, y1, x2, y2 keys.
-    Supports both {'x1': ..., 'y1': ..., 'x2': ..., 'y2': ...} and [x1, y1, x2, y2].
-    """
-    if not bbox:
-        return {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0}
-    if isinstance(bbox, dict):
-        # Ensure all keys exist
-        return {
-            "x1": float(bbox.get("x1", 0.0)),
-            "y1": float(bbox.get("y1", 0.0)),
-            "x2": float(bbox.get("x2", 1.0)),
-            "y2": float(bbox.get("y2", 1.0)),
-        }
-    if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
-        return {
-            "x1": float(bbox[0]),
-            "y1": float(bbox[1]),
-            "x2": float(bbox[2]),
-            "y2": float(bbox[3]),
-        }
-    return {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0}
-
-def _ensure_block_id(block: Dict[str, Any], page_num: int, idx: int) -> str:
-    """Ensure block has an id; generate one if missing."""
-    if "id" in block and block["id"]:
-        return block["id"]
-    # Generate deterministic ID from page and reading_order if available
-    if "reading_order" in block:
-        roi = block["reading_order"]
-        block_id = f"p{page_num}_b{roi}"
-    else:
-        block_id = f"p{page_num}_b{idx}"
-    block["id"] = block_id
-    return block_id
-
-def _ensure_table_id(table: Dict[str, Any], page_num: int, idx: int) -> str:
-    """Ensure table has an id; generate one if missing."""
-    if "id" in table and table["id"]:
-        return table["id"]
-    if "reading_order" in table:
-        roi = table["reading_order"]
-        table_id = f"p{page_num}_t{roi}"
-    else:
-        table_id = f"p{page_num}_t{idx}"
-    table["id"] = table_id
-    return table_id
-
-def _normalize_graph_pages(
-    graph_pages: List[Dict[str, Any]],
-    page_parser_map: Dict[int, str],
-    default_parser: str = "gemini_vlm"
-) -> List[Dict[str, Any]]:
-    """
-    Normalize each page:
-    - Add parser field from map
-    - Ensure blocks have id, bbox normalised, sorted by reading_order
-    - Ensure tables have id, bbox normalised, sorted by reading_order
-    - Preserve all existing fields (unknown fields automatically kept)
-    - Validate no duplicate page numbers; if duplicates, renumber sequentially.
-    - Validate reading_order presence; if missing, assign sequential.
-    """
-    if not graph_pages:
-        return []
-
-    # First pass: collect page numbers, detect duplicates
-    page_nums = [p.get("page") for p in graph_pages if p.get("page") is not None]
-    seen = set()
-    duplicates = []
-    for p in page_nums:
-        if p in seen:
-            duplicates.append(p)
-        else:
-            seen.add(p)
-
-    # If duplicates, we need to renumber pages sequentially
-    if duplicates:
-        logger.warning(f"Duplicate page numbers found: {duplicates}. Renumbering pages sequentially.")
-        # Sort pages by current page number (to keep order)
-        graph_pages.sort(key=lambda p: p.get("page", 0))
-        for idx, page in enumerate(graph_pages, start=1):
-            page["page"] = idx
-
-    # Now process each page
-    normalized = []
-    for idx, page in enumerate(graph_pages, start=1):
-        # Ensure page number is set
-        if "page" not in page or page["page"] is None:
-            page["page"] = idx
-        pnum = page["page"]
-
-        # Add parser from map, fallback to default
-        parser = page_parser_map.get(pnum, default_parser)
-        page["parser"] = parser
-
-        # Blocks
-        blocks = page.get("blocks", [])
-        if blocks:
-            # Ensure each block has id, normalize bbox
-            for b_idx, block in enumerate(blocks):
-                _ensure_block_id(block, pnum, b_idx)
-                if "bbox" in block:
-                    block["bbox"] = _normalize_bbox(block["bbox"])
-                else:
-                    block["bbox"] = {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0}
-                # Ensure reading_order
-                if "reading_order" not in block:
-                    block["reading_order"] = b_idx + 1
-                # Preserve children and parent as is
-            # Sort blocks by reading_order
-            blocks.sort(key=lambda b: b.get("reading_order", 0))
-            page["blocks"] = blocks
-
-        # Tables
-        tables = page.get("tables", [])
-        if tables:
-            for t_idx, table in enumerate(tables):
-                _ensure_table_id(table, pnum, t_idx)
-                if "bbox" in table:
-                    table["bbox"] = _normalize_bbox(table["bbox"])
-                else:
-                    table["bbox"] = {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0}
-                if "reading_order" not in table:
-                    table["reading_order"] = (len(blocks) if blocks else 0) + t_idx + 1
-            tables.sort(key=lambda t: t.get("reading_order", 0))
-            page["tables"] = tables
-
-        # Ensure reading_order list if present is sorted
-        if "reading_order" in page and isinstance(page["reading_order"], list):
-            page["reading_order"].sort()
-
-        normalized.append(page)
-
-    # Final validation: page numbers should be sequential
-    page_nums_after = [p["page"] for p in normalized]
-    if page_nums_after != list(range(1, len(page_nums_after)+1)):
-        # Renumber just in case
-        for i, page in enumerate(normalized, start=1):
-            page["page"] = i
-
-    return normalized
-
-def _validate_artifact_pages(graph_pages: List[Dict[str, Any]]) -> None:
-    """
-    Validate artifact pages: no duplicate page numbers, page numbers sequential.
-    Raises ValueError if validation fails beyond repair.
-    """
-    page_nums = [p.get("page") for p in graph_pages if p.get("page") is not None]
-    if len(set(page_nums)) != len(page_nums):
-        raise ValueError("Duplicate page numbers found in artifact pages.")
-    if sorted(page_nums) != list(range(1, len(page_nums)+1)):
-        raise ValueError("Page numbers are not sequential.")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Graph storage functions (enhanced)
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _store_graph(
     file_path: str,
     pages: List[int],
     graph_pages: List[Dict[str, Any]],
     parser: str = "gemini_vlm",
     version: str = GRAPH_SCHEMA_VERSION,
-    preprocessing_duration: Optional[float] = None,
+    timings: Optional[Dict[str, Any]] = None
 ) -> None:
     """
     Persist the rich document graph as a first-class artifact.
     The graph is stored in a versioned subdirectory, keyed by content hash.
-    Also updates the bounded in-memory cache.
-
-    This version adds:
-    - per-page parser metadata
-    - normalized bboxes
-    - stable block IDs
-    - forward compatibility (preserves unknown fields)
-    - enhanced metadata (parser summary, duration, model_used, etc.)
+    Also updates the in-memory cache for speed.
     """
     if not graph_pages:
         return
@@ -277,32 +108,15 @@ def _store_graph(
     content_hash = _get_content_hash(file_path)
     cache_key = (content_hash, tuple(sorted(pages)))
 
-    # Ensure validation before storing
-    try:
-        _validate_artifact_pages(graph_pages)
-    except ValueError as e:
-        # Attempt repair by renumbering pages sequentially
-        logger.warning(f"Artifact validation failed: {e}. Attempting repair by renumbering pages.")
-        for idx, page in enumerate(sorted(graph_pages, key=lambda p: p.get("page", 0)), start=1):
-            page["page"] = idx
-        # Re-validate
-        _validate_artifact_pages(graph_pages)
-
-    # Compute parser summary from page parser fields
-    parser_counts = {}
-    for page in graph_pages:
-        p_parser = page.get("parser", "unknown")
-        parser_counts[p_parser] = parser_counts.get(p_parser, 0) + 1
-
     # Build the complete graph artifact with rich metadata
     artifact = {
         "document": {
             "content_hash": content_hash,
-            "filename": os.path.basename(file_path),
+            "filename": os.path.basename(file_path),      # only filename, not absolute path
             "pages_requested": pages,
             "timestamp": time.time(),
             "version": version,
-            "parser": parser,  # document-level parser (backward compatibility)
+            "parser": parser,
         },
         "pages": graph_pages,
         "metadata": {
@@ -312,30 +126,28 @@ def _store_graph(
             "schema_version": version,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "model_used": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-            "preprocessing_duration": preprocessing_duration,
-            "parser_summary": parser_counts,  # per-parser page counts
         }
     }
+    if timings:
+        artifact["metadata"]["timings"] = timings
 
-    # Update cache (bounded LRU)
-    _cache_put(cache_key, artifact)
+    # Update in-memory cache
+    _cache_set(cache_key, artifact)
 
     # Write to persistent storage
     storage_path = _get_graph_storage_path(content_hash)
     try:
         with open(storage_path, 'w', encoding='utf-8') as f:
             json.dump(artifact, f, ensure_ascii=False, indent=2)
-        logger.info(f"Graph artifact persisted to {storage_path} (version {version}, {len(graph_pages)} pages)")
+        logger.info(f"Graph artifact persisted to {storage_path}")
     except Exception as e:
         logger.error(f"Failed to persist graph artifact: {e}")
         raise RuntimeError(f"Graph artifact persistence failed: {e}")
 
 def _get_graph_artifact(content_hash: str) -> Optional[Dict[str, Any]]:
     """
-    Retrieve the full graph artifact by content hash, using bounded cache.
+    Retrieve the full graph artifact by content hash.
     """
-    # Try cache first
-    # We don't have a specific page range, so we'll use a key with empty tuple? Better to load from disk and cache with pages_requested.
     storage_path = _get_graph_storage_path(content_hash)
     if not os.path.exists(storage_path):
         return None
@@ -343,11 +155,9 @@ def _get_graph_artifact(content_hash: str) -> Optional[Dict[str, Any]]:
     try:
         with open(storage_path, 'r', encoding='utf-8') as f:
             artifact = json.load(f)
-        # Update cache with the actual pages_requested
-        pages_requested = artifact.get("document", {}).get("pages_requested")
-        if pages_requested:
-            cache_key = (content_hash, tuple(sorted(pages_requested)))
-            _cache_put(cache_key, artifact)
+        # Update cache
+        cache_key = (content_hash, tuple(sorted(artifact["document"]["pages_requested"])))
+        _cache_set(cache_key, artifact)
         return artifact
     except Exception as e:
         logger.error(f"Failed to load graph artifact: {e}")
@@ -367,7 +177,7 @@ def _get_graph(file_path: str, pages: List[int]) -> Optional[List[Dict[str, Any]
     if artifact is None:
         artifact = _get_graph_artifact(content_hash)
         if artifact:
-            _cache_put(cache_key, artifact)
+            _cache_set(cache_key, artifact)
 
     if not artifact:
         return None
@@ -378,6 +188,7 @@ def _get_graph(file_path: str, pages: List[int]) -> Optional[List[Dict[str, Any]
     filtered = [p for p in stored_pages if p.get("page") in requested_set]
     # Verify that we have exactly all requested pages
     if len(filtered) != len(requested_set):
+        # Some pages are missing; return None to indicate incomplete graph
         return None
     return filtered if filtered else None
 
@@ -613,11 +424,11 @@ class DocumentPreprocessor:
         if is_text_sufficient and is_text_coherent and has_few_empty_pages:
             report.document_type    = "DIGITAL"
             report.routing_action   = "DIRECT_PARSE"
-            report.parse_method_hint = "gemini"
+            report.parse_method_hint = "pypdf"
             report.overall_quality_score = text_coherence_score
             report.overall_quality       = text_coherence_score
             report.routing_confidence    = 1.0
-            _t(f"[PREPROCESS] Route: DIGITAL → Gemini VLM (coherence={text_coherence_score:.1f})")
+            _t(f"[PREPROCESS] Document classified as DIGITAL. Pipeline architecture: Gemini VLM-first (coherence={text_coherence_score:.1f})")
         else:
             report.document_type    = "SCANNED"
             report.routing_action = "VLM_ENHANCE_ROUTE"
@@ -633,7 +444,7 @@ class DocumentPreprocessor:
                 reasons.append(f"incoherent text (score={text_coherence_score:.1f})")
             if not has_few_empty_pages:
                 reasons.append(f"too many empty pages ({empty_pages}/{sample_limit})")
-            _t(f"[PREPROCESS] Route: VLM — reasons: {', '.join(reasons)}")
+            _t(f"[PREPROCESS] Document classified as SCANNED. Pipeline architecture: Gemini VLM-first — reasons: {', '.join(reasons)}")
 
         report.timings["total_preprocess_secs"] = round(time.perf_counter() - t_start, 3)
         _t(f"[PREPROCESS] Done in {report.timings['total_preprocess_secs']}s")
@@ -699,9 +510,10 @@ def _upload_pdf_to_gemini_resumable(file_path: str, trace_fn: Optional[Callable]
         }
     }
     _t("[GEMINI] Initiating resumable upload...")
-    resp = requests.post(upload_url, headers=headers, json=metadata, timeout=30)
+    upload_init_timeout = getattr(config, "GEMINI_UPLOAD_INIT_TIMEOUT", 30)
+    resp = requests.post(upload_url, headers=headers, json=metadata, timeout=upload_init_timeout)
     if resp.status_code != 200:
-        _t(f"[GEMINI] Upload init failed: {resp.status_code} {resp.text[:200]}")
+        _t(f"[GEMINI] Upload init failed: {resp.status_code}")
         raise RuntimeError(f"Gemini upload init failed: {resp.text}")
     upload_session_url = resp.headers.get("X-Goog-Upload-URL")
     if not upload_session_url:
@@ -709,9 +521,7 @@ def _upload_pdf_to_gemini_resumable(file_path: str, trace_fn: Optional[Callable]
             upload_session_url = resp.json()["uploadUrl"]
         else:
             raise RuntimeError("No upload session URL returned")
-    import re
-    masked_url = re.sub(r"key=[^&]+", "key=REDACTED", upload_session_url) if upload_session_url else ""
-    _t(f"[GEMINI] Upload session URL: {masked_url}")
+    _t("[GEMINI] Resumable upload session created.")
 
     with open(file_path, "rb") as f:
         file_content = f.read()
@@ -720,9 +530,10 @@ def _upload_pdf_to_gemini_resumable(file_path: str, trace_fn: Optional[Callable]
         "X-Goog-Upload-Command": "upload, finalize",
         "X-Goog-Upload-Offset": "0",
     }
-    resp2 = requests.post(upload_session_url, headers=headers, data=file_content, timeout=120)
+    upload_content_timeout = getattr(config, "GEMINI_UPLOAD_CONTENT_TIMEOUT", 120)
+    resp2 = requests.post(upload_session_url, headers=headers, data=file_content, timeout=upload_content_timeout)
     if resp2.status_code != 200:
-        _t(f"[GEMINI] Upload content failed: {resp2.status_code} {resp2.text[:200]}")
+        _t(f"[GEMINI] Upload content failed: {resp2.status_code}")
         raise RuntimeError(f"Gemini upload content failed: {resp2.text}")
     result = resp2.json()
     file_uri = result.get("file", {}).get("uri")
@@ -734,7 +545,7 @@ def _upload_pdf_to_gemini_resumable(file_path: str, trace_fn: Optional[Callable]
 
 
 def _delete_gemini_file(file_name: str, trace_fn: Optional[Callable] = None) -> None:
-    """Delete a file from Gemini Files API."""
+    """Delete a file from Gemini Files API. 404 is treated as success."""
     def _t(msg: str):
         if trace_fn:
             try:
@@ -746,13 +557,14 @@ def _delete_gemini_file(file_name: str, trace_fn: Optional[Callable] = None) -> 
     try:
         resp = requests.delete(url, timeout=30)
         if resp.status_code == 404:
-            _t("[GEMINI] Remote file already unavailable")
-        elif resp.status_code not in (200, 204):
-            _t(f"[GEMINI] Cleanup failed with status: {resp.status_code}")
+            _t("[GEMINI] Temporary file already removed.")
+            return
+        if resp.status_code not in (200, 204):
+            _t(f"[GEMINI] Delete file failed: {resp.status_code}")
         else:
-            _t("[GEMINI] Cleanup completed successfully.")
+            _t("[GEMINI] Temporary file deleted.")
     except Exception as e:
-        _t(f"[GEMINI] Cleanup failed: {e}")
+        _t(f"[GEMINI] Error deleting file: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -793,44 +605,15 @@ def _call_gemini_with_pdf(
         }
     }
 
+    timeout_seconds = getattr(config, "GEMINI_GENERATE_TIMEOUT", 240)
+
     last_error = None
+    retry_count = 0
     for attempt in range(max_retries):
         try:
-            start_req = time.time()
-            _t(f"[GEMINI] Request started at {start_req:.2f}")
-            first_byte_time = None
-            timeout_stage = "before_response"
-            try:
-                resp = requests.post(url, headers={"Content-Type": "application/json"}, json=payload, timeout=120, stream=True)
-                first_byte_time = time.time()
-                latency = first_byte_time - start_req
-                _t(f"[GEMINI] First byte received at {first_byte_time:.2f} (latency: {latency:.2f}s)")
-                
-                timeout_stage = "during_streaming"
-                content_chunks = []
-                for chunk in resp.iter_content(chunk_size=8192):
-                    content_chunks.append(chunk)
-                last_byte_time = time.time()
-                download_time = last_byte_time - first_byte_time
-                total_response_time = last_byte_time - start_req
-                _t(f"[GEMINI] Last byte received at {last_byte_time:.2f} (download: {download_time:.2f}s, total: {total_response_time:.2f}s)")
-                
-                resp._content = b"".join(content_chunks)
-                timeout_stage = "after_response"
-            except (requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as timeout_exc:
-                elapsed = time.time() - start_req
-                _t(f"[GEMINI] Timeout occurred after {elapsed:.2f}s during stage '{timeout_stage}'")
-                raise
-            
+            resp = requests.post(url, headers={"Content-Type": "application/json"}, json=payload, timeout=timeout_seconds)
             if resp.status_code == 200:
-                json_start = time.time()
                 data = resp.json()
-                json_duration = time.time() - json_start
-                logger.debug(
-                    f"[TELEMETRY] Latency: {latency:.2f}s, Download: {download_time:.2f}s, "
-                    f"Total: {total_response_time:.2f}s, JSON parse: {json_duration:.3f}s"
-                )
-                
                 candidates = data.get("candidates", [])
                 if not candidates:
                     raise ValueError("No candidates in response")
@@ -870,8 +653,12 @@ def _call_gemini_with_pdf(
                 if not isinstance(parsed["pages"], list):
                     raise ValueError("'pages' is not a list")
                 for p in parsed["pages"]:
-                    if "page" not in p or "text" not in p:
-                        raise ValueError("Page object missing 'page' or 'text'")
+                    if "page" not in p:
+                        raise ValueError("Page object missing 'page'")
+                    if "text" not in p and "blocks" not in p:
+                        raise ValueError("Page object missing 'text' or 'blocks'")
+                # Success: return parsed with retry count
+                parsed["_retries"] = retry_count
                 return parsed
             elif resp.status_code in (429, 503) or "quota" in resp.text.lower() or "rate limit" in resp.text.lower():
                 retry_after = 60.0
@@ -879,23 +666,39 @@ def _call_gemini_with_pdf(
                     retry_after = float(resp.headers.get("Retry-After", 60.0))
                 except:
                     pass
-                from services.gemini_rate_manager import GeminiRateManager
-                GeminiRateManager().register_429(retry_after_header=resp.headers.get("Retry-After"))
+                _t(f"[GEMINI] Rate limit hit. Retry after {retry_after}s")
                 raise RateLimitPauseRequired(resume_at=time.time() + retry_after, reason="rate_limit", retry_after=retry_after)
             else:
                 if resp.status_code in (500, 502, 504):
                     sleep_time = 2 ** attempt
-                    _t(f"[GEMINI] HTTP {resp.status_code}. Retrying in {sleep_time}s...")
+                    _t(f"[GEMINI] Server error {resp.status_code}. Retrying in {sleep_time}s...")
                     time.sleep(sleep_time)
                     continue
                 else:
-                    _t(f"[GEMINI] HTTP error: {resp.status_code} {resp.text[:200]}")
+                    _t(f"[GEMINI] HTTP error: {resp.status_code}")
                     raise RuntimeError(f"Gemini API error: {resp.status_code}")
         except RateLimitPauseRequired:
             raise
+        except requests.exceptions.Timeout as e:
+            _t(f"[GEMINI] Request timeout. Retry attempt {attempt+1}/{max_retries}")
+            last_error = e
+            retry_count += 1
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+            else:
+                raise
+        except requests.exceptions.ConnectionError as e:
+            _t(f"[GEMINI] Connection error. Retry attempt {attempt+1}/{max_retries}")
+            last_error = e
+            retry_count += 1
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+            else:
+                raise
         except Exception as e:
             last_error = e
             _t(f"[GEMINI] Call failed: {e}. Retry attempt {attempt+1}/{max_retries}")
+            retry_count += 1
             if attempt < max_retries - 1:
                 time.sleep(2 ** attempt)
             else:
@@ -909,7 +712,8 @@ def _call_gemini_with_pdf(
 
 MAX_PAGES_WHOLE = 30
 MAX_FILE_SIZE_WHOLE = 20 * 1024 * 1024
-MAX_PAGES_PER_BATCH = 15
+# Use configurable batch size; default to 8 for better response size management
+MAX_PAGES_PER_BATCH = getattr(config, "MAX_VLM_BATCH_PAGES", 8)
 
 def _estimate_tokens_from_pdf(file_path: str, pages: List[int]) -> int:
     size = os.path.getsize(file_path)
@@ -933,7 +737,7 @@ def _adaptive_plan(
 
     batch_size = MAX_PAGES_PER_BATCH
     if is_scanned:
-        batch_size = min(batch_size, 8)
+        batch_size = min(batch_size, 6)  # scanned docs may be heavier
 
     pages_sorted = sorted(pages_to_transcribe)
     segments = []
@@ -957,17 +761,36 @@ def _adaptive_plan(
     return {"strategy": "batch", "batches": batches}
 
 
-def _split_pdf_to_temp_chunk(file_path: str, start_page: int, end_page: int) -> str:
-    with open(file_path, "rb") as f:
-        reader = pypdf.PdfReader(f)
-        writer = pypdf.PdfWriter()
-        for p in range(start_page-1, end_page):
-            writer.add_page(reader.pages[p])
-        fd, out_path = tempfile.mkstemp(suffix=".pdf", prefix="chunk_")
-        os.close(fd)
-        with open(out_path, "wb") as fw:
-            writer.write(fw)
-    return out_path
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper to determine if an exception is a batch-size failure (should trigger subdivision)
+# ─────────────────────────────────────────────────────────────────────────────
+def _is_batch_size_failure(exc: Exception) -> bool:
+    """
+    Return True if the exception indicates the batch was too large and should be split.
+    Only genuine batch-size or response-size related errors trigger subdivision.
+    Transient network errors, safety blocks, etc. do not.
+    """
+    # Timeout (client or server) can be due to large payload/response
+    if isinstance(exc, requests.exceptions.Timeout):
+        return True
+    # Connection errors that look like read timeout
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        error_str = str(exc).lower()
+        if "timeout" in error_str or "read timed out" in error_str:
+            return True
+    # Value errors with specific messages
+    if isinstance(exc, ValueError):
+        msg = str(exc).lower()
+        # Safety/recitation blocks are content issues, not batch-size
+        if "safety" in msg or "recitation" in msg:
+            return False
+        if "max_tokens" in msg or "payload too large" in msg or "response too large" in msg:
+            return True
+    # Generic timeout in error string
+    error_str = str(exc).lower()
+    if "timeout" in error_str or "read timed out" in error_str:
+        return True
+    return False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -986,7 +809,7 @@ def _execute_adaptive_transcription(
     Raises RateLimitPauseRequired if rate limit encountered.
     All uploaded files are deleted after use to prevent leaks.
     The full graph (blocks, tables, bbox, etc.) is persisted as a first‑class
-    artifact in the shared storage, keyed by content hash, with per-page parser metadata.
+    artifact in the shared storage, keyed by content hash.
     """
     def _t(msg: str):
         if trace_fn:
@@ -998,6 +821,71 @@ def _execute_adaptive_transcription(
     if not pages_to_transcribe:
         return {}
 
+    # Compute file hash once for this session
+    session_hash = _get_content_hash(file_path)
+
+    # Session-local caches for temp files and Gemini uploads
+    # key: (file_hash, start_page, end_page) -> temp_file_path
+    temp_chunk_cache = {}
+    # key: (file_hash, start_page, end_page) -> (file_uri, file_name)
+    upload_cache = {}
+    cache_lock = threading.Lock()
+
+    def _get_temp_chunk(pages: List[int]) -> str:
+        """Get or create a temporary PDF chunk for the given page range."""
+        start = pages[0]
+        end = pages[-1]
+        key = (session_hash, start, end)
+        with cache_lock:
+            if key in temp_chunk_cache:
+                return temp_chunk_cache[key]
+            # Create a new chunk
+            with open(file_path, "rb") as f:
+                reader = pypdf.PdfReader(f)
+                writer = pypdf.PdfWriter()
+                for p in range(start-1, end):
+                    writer.add_page(reader.pages[p])
+                fd, out_path = tempfile.mkstemp(suffix=".pdf", prefix="chunk_")
+                os.close(fd)
+                with open(out_path, "wb") as fw:
+                    writer.write(fw)
+            temp_chunk_cache[key] = out_path
+            return out_path
+
+    def _cleanup_temp_chunks():
+        """Delete all temporary chunk files created in this session."""
+        with cache_lock:
+            for path in temp_chunk_cache.values():
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                except Exception:
+                    pass
+            temp_chunk_cache.clear()
+
+    def _get_upload(pages: List[int]) -> Optional[Tuple[str, str]]:
+        """Get previously uploaded file for this page range, if any."""
+        start = pages[0]
+        end = pages[-1]
+        key = (session_hash, start, end)
+        with cache_lock:
+            return upload_cache.get(key)
+
+    def _set_upload(pages: List[int], file_uri: str, file_name: str):
+        start = pages[0]
+        end = pages[-1]
+        key = (session_hash, start, end)
+        with cache_lock:
+            upload_cache[key] = (file_uri, file_name)
+
+    # Track uploaded file names to delete at the end
+    uploaded_files = set()
+
+    def _delete_all_uploads():
+        for name in uploaded_files:
+            _delete_gemini_file(name, trace_fn)
+        uploaded_files.clear()
+
     api_key, model = _get_gemini_api_key_and_model()
     plan = _adaptive_plan(file_path, pages_to_transcribe, report)
     strategy = plan["strategy"]
@@ -1006,141 +894,259 @@ def _execute_adaptive_transcription(
     rate_mgr = GeminiRateManager()
     result: Dict[int, str] = {}
     all_graph_pages = []  # accumulate graph data for caching
-    # Track which parser was used for each page
     page_parser_map: Dict[int, str] = {}  # page -> parser
-    start_preprocessing = time.time()
+    overall_timings = {}  # collect timings for the whole transcription
+    start_time = time.perf_counter()
 
-    # Helper to upload, call, delete, and store graph
-    def _process_pdf_file(pdf_path: str, pages_in_chunk: List[int], is_whole: bool, parser_name: str = "gemini_vlm") -> Tuple[Dict[int, str], List[Dict[str, Any]]]:
+    # Telemetry counters
+    total_batches_attempted = 0
+    max_batch_size_attempted = 0
+    min_batch_size_attempted = float('inf')
+    batch_history = []  # list of dicts with size, upload, generate, parse
+    total_retries = 0
+    total_subdivisions = 0
+    total_timeouts = 0
+    total_rate_limits = 0
+    upload_count = 0
+    upload_reuse_count = 0
+
+    # Helper to process a PDF file (whole or batch) with timing
+    def _process_pdf_file(pages_in_chunk: List[int], is_whole: bool, parser_name: str = "gemini_vlm") -> Tuple[Dict[int, str], List[Dict[str, Any]], Dict[str, float]]:
+        nonlocal upload_count, upload_reuse_count
         local_text = {}
         local_graph = []
+        timings = {}
         file_uri = None
         file_name = None
-        try:
-            # Check rate limit decision first
-            decision = rate_mgr.get_decision()
-            if not decision.allowed:
-                raise RateLimitPauseRequired(
-                    resume_at=decision.resume_at,
-                    reason=decision.reason,
-                    retry_after=decision.retry_after
-                )
 
-            slot = rate_mgr.acquire_request_slot()
-            if slot is None:
-                raise RateLimitPauseRequired(resume_at=time.time() + 30, reason="no_slot_available")
-            try:
-                file_uri, file_name = _upload_pdf_to_gemini_resumable(pdf_path, trace_fn)
-            finally:
-                if slot:
-                    rate_mgr.release_request_slot(slot)
+        try:
+            # Check if we already have an upload for this page range
+            cached_upload = _get_upload(pages_in_chunk)
+            if cached_upload:
+                file_uri, file_name = cached_upload
+                upload_reuse_count += 1
+                timings["upload_secs"] = 0.0  # no upload cost
+                _t(f"[ADAPTIVE] Reusing upload for pages {pages_in_chunk[0]}-{pages_in_chunk[-1]}")
+            else:
+                # Need to upload
+                upload_start = time.perf_counter()
+                slot = rate_mgr.acquire_request_slot()
+                if slot is None:
+                    raise RateLimitPauseRequired(resume_at=time.time() + 30, reason="no_slot_available")
+                try:
+                    # Get temp chunk
+                    chunk_path = _get_temp_chunk(pages_in_chunk)
+                    upload_count += 1
+                    file_uri, file_name = _upload_pdf_to_gemini_resumable(chunk_path, trace_fn)
+                    # Cache the upload
+                    _set_upload(pages_in_chunk, file_uri, file_name)
+                    uploaded_files.add(file_name)
+                finally:
+                    if slot:
+                        rate_mgr.release_request_slot(slot)
+                timings["upload_secs"] = time.perf_counter() - upload_start
 
             prompt = _build_graph_extraction_prompt(pages_in_chunk, is_whole)
 
+            # GenerateContent timing
+            generate_start = time.perf_counter()
             slot2 = rate_mgr.acquire_request_slot()
             if slot2 is None:
                 raise RateLimitPauseRequired(resume_at=time.time() + 30, reason="no_slot_available")
             try:
                 parsed = _call_gemini_with_pdf(file_uri, prompt, model, api_key, trace_fn)
-                for pobj in parsed["pages"]:
-                    pnum = pobj["page"]
-                    if pnum in pages_in_chunk:
-                        local_text[pnum] = pobj["text"]
-                        # Add parser info to the page object (preserve all existing fields)
-                        pobj["parser"] = parser_name
-                        local_graph.append(pobj)
-                        page_parser_map[pnum] = parser_name
-                    else:
-                        _t(f"[ADAPTIVE] Received page {pnum} not in requested list; ignoring")
+                retries = parsed.get("_retries", 0)
+                nonlocal total_retries
+                total_retries += retries
             finally:
                 if slot2:
                     rate_mgr.release_request_slot(slot2)
+            timings["generate_secs"] = time.perf_counter() - generate_start
+
+            # JSON parsing timing
+            parse_start = time.perf_counter()
+            for pobj in parsed["pages"]:
+                pnum = pobj["page"]
+                if pnum in pages_in_chunk:
+                    page_graph = _transform_to_graph_page(pnum, pobj)
+                    local_text[pnum] = page_graph["text"]
+                    local_graph.append(page_graph)
+                    page_parser_map[pnum] = parser_name
+                else:
+                    _t(f"[ADAPTIVE] Received page {pnum} not in requested list; ignoring")
+            timings["parse_secs"] = time.perf_counter() - parse_start
+            timings["batch_pages_requested"] = len(pages_in_chunk)
         except RateLimitPauseRequired:
             raise
         except Exception as e:
             _t(f"[ADAPTIVE] PDF processing failed: {e}")
             raise
-        finally:
-            if file_name:
-                _delete_gemini_file(file_name, trace_fn)
-        return local_text, local_graph
+        # Do not delete upload here; will be deleted at end of session
 
-    def _process_batch_adaptive(batch: List[int], batch_idx: int = 1) -> Tuple[Dict[int, str], List[Dict[str, Any]]]:
-        chunk_path = None
+        return local_text, local_graph, timings
+
+    def _transform_to_graph_page(page_num: int, raw_page: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert simplified page schema to full graph page format with defaults."""
+        text = raw_page.get("text", "")
+        raw_blocks = raw_page.get("blocks", [])
+        raw_tables = raw_page.get("tables", [])
+
+        blocks = []
+        for idx, rb in enumerate(raw_blocks):
+            block_type = rb.get("type", "paragraph")
+            block_text = rb.get("text", "")
+            blocks.append({
+                "type": block_type,
+                "text": block_text,
+                "bbox": [0.0, 0.0, 1.0, 1.0],
+                "reading_order": idx,
+                "confidence": 0.9,
+                "children": []
+            })
+
+        tables = []
+        for rt in raw_tables:
+            tables.append({
+                "caption": rt.get("caption", ""),
+                "headers": rt.get("headers", []),
+                "rows": rt.get("rows", []),
+                "bbox": [0.0, 0.0, 1.0, 1.0]
+            })
+
+        reading_order = list(range(len(blocks)))
+
+        return {
+            "page": page_num,
+            "text": text,
+            "blocks": blocks,
+            "tables": tables,
+            "reading_order": reading_order
+        }
+
+    # Recursive batch processing with adaptive subdivision
+    recursion_depth = 0
+    subdivision_count = 0
+
+    def _process_batch_recursive(batch_pages: List[int], depth: int = 0) -> None:
+        nonlocal recursion_depth, subdivision_count
+        nonlocal total_batches_attempted, max_batch_size_attempted, min_batch_size_attempted, batch_history
+        nonlocal total_subdivisions, total_timeouts, total_rate_limits
+        recursion_depth = max(recursion_depth, depth)
+        if not batch_pages:
+            return
+        if len(batch_pages) == 1:
+            # Single page fallback (last resort after all subdivision)
+            p = batch_pages[0]
+            _t(f"[ADAPTIVE] Processing single page {p} via image fallback")
+            page_text = _transcribe_single_page_fallback(file_path, p, trace_fn, rate_mgr)
+            if page_text:
+                result[p] = page_text
+                minimal_page = {
+                    "page": p,
+                    "text": page_text,
+                    "blocks": [
+                        {
+                            "type": "paragraph",
+                            "text": page_text,
+                            "bbox": [0.0, 0.0, 1.0, 1.0],
+                            "reading_order": 1,
+                            "confidence": 0.8,
+                            "children": []
+                        }
+                    ],
+                    "tables": [],
+                    "reading_order": [0]
+                }
+                all_graph_pages.append(minimal_page)
+                page_parser_map[p] = "tesseract_ocr"
+            return
+
+        # Attempt to process as a batch (contiguous range)
         try:
-            if len(batch) > 1 and batch == list(range(batch[0], batch[-1]+1)):
-                chunk_path = _split_pdf_to_temp_chunk(file_path, batch[0], batch[-1])
-                
-                upload_start = time.time()
-                file_uri, file_name = _upload_pdf_to_gemini_resumable(chunk_path, trace_fn)
-                upload_duration = time.time() - upload_start
-                
-                generate_start = time.time()
-                prompt = _build_graph_extraction_prompt(batch, is_whole=False)
-                parsed = _call_gemini_with_pdf(file_uri, prompt, model, api_key, trace_fn)
-                generate_duration = time.time() - generate_start
-                
-                if file_name:
-                    _delete_gemini_file(file_name, trace_fn)
-                
-                local_text = {}
-                local_graph = []
-                for pobj in parsed["pages"]:
-                    pnum = pobj["page"]
-                    if pnum in batch:
-                        local_text[pnum] = pobj["text"]
-                        pobj["parser"] = "gemini_vlm"
-                        local_graph.append(pobj)
-                        page_parser_map[pnum] = "gemini_vlm"
-                
-                total_duration = time.time() - upload_start
-                logger.debug(
-                    f"[TELEMETRY] Batch {batch_idx} ({batch[0]}-{batch[-1]}): upload={upload_duration:.2f}s, "
-                    f"generate={generate_duration:.2f}s, total={total_duration:.2f}s, pages={len(batch)}"
-                )
-                return local_text, local_graph
-            elif len(batch) == 1:
-                p = batch[0]
+            if batch_pages == list(range(batch_pages[0], batch_pages[-1]+1)):
+                total_batches_attempted += 1
+                batch_size = len(batch_pages)
+                max_batch_size_attempted = max(max_batch_size_attempted, batch_size)
+                min_batch_size_attempted = min(min_batch_size_attempted, batch_size)
+
+                text_dict, graph_list, timings = _process_pdf_file(batch_pages, is_whole=False, parser_name="gemini_vlm")
+                result.update(text_dict)
+                all_graph_pages.extend(graph_list)
+
+                batch_entry = {
+                    "size": batch_size,
+                    "upload_secs": timings.get("upload_secs", 0),
+                    "generate_secs": timings.get("generate_secs", 0),
+                    "parse_secs": timings.get("parse_secs", 0),
+                }
+                batch_history.append(batch_entry)
+
+                for k, v in timings.items():
+                    if k != "batch_pages_requested":
+                        overall_timings.setdefault(k, 0.0)
+                        overall_timings[k] += v
+                overall_timings[f"batch_{batch_size}_pages"] = timings.get("generate_secs", 0)
+                _t(f"[ADAPTIVE] Batch of {batch_size} pages succeeded.")
+                return
+            else:
+                _t(f"[ADAPTIVE] Batch {batch_pages} not contiguous; splitting.")
+        except RateLimitPauseRequired:
+            total_rate_limits += 1
+            raise  # Never split on rate limits
+        except Exception as e:
+            # Only split if it's a batch-size failure
+            if _is_batch_size_failure(e):
+                _t(f"[ADAPTIVE] Batch of {len(batch_pages)} pages failed (batch-size issue): {e}. Splitting.")
+                if isinstance(e, requests.exceptions.Timeout):
+                    total_timeouts += 1
+            else:
+                _t(f"[ADAPTIVE] Batch of {len(batch_pages)} pages failed with non-recoverable error: {e}. Raising.")
+                raise
+
+        # Split into two halves and recurse
+        mid = len(batch_pages) // 2
+        left = batch_pages[:mid]
+        right = batch_pages[mid:]
+        subdivision_count += 1
+        total_subdivisions += 1
+        _t(f"[ADAPTIVE] Subdividing {len(batch_pages)} → {len(left)} + {len(right)} (subdivision #{subdivision_count})")
+        _process_batch_recursive(left, depth+1)
+        _process_batch_recursive(right, depth+1)
+
+    try:
+        if strategy == "whole":
+            try:
+                text_dict, graph_list, timings = _process_pdf_file(pages_to_transcribe, is_whole=True, parser_name="gemini_vlm")
+                result.update(text_dict)
+                all_graph_pages.extend(graph_list)
+                overall_timings.update(timings)
+                _t(f"[ADAPTIVE] Whole document parsed, got {len(result)} pages")
+            except RateLimitPauseRequired:
+                raise
+            except Exception as e:
+                _t(f"[ADAPTIVE] Whole document failed: {e}. Falling back to batch mode.")
+                plan = {"strategy": "batch", "batches": [sorted(pages_to_transcribe)]}
+
+        if strategy == "batch" or (strategy == "whole" and not result):
+            batches = plan.get("batches", [])
+            if not batches:
+                batches = [sorted(pages_to_transcribe)]
+            _t(f"[ADAPTIVE] Batch mode: {len(batches)} batches")
+            for batch in batches:
+                _process_batch_recursive(batch)
+
+        # Fallback for any missing pages
+        missing = set(pages_to_transcribe) - set(result.keys())
+        if missing:
+            _t(f"[ADAPTIVE] Missing pages: {missing}; falling back to single-page fallback")
+            for p in sorted(missing):
                 try:
-                    chunk_path = _split_pdf_to_temp_chunk(file_path, p, p)
-                    upload_start = time.time()
-                    file_uri, file_name = _upload_pdf_to_gemini_resumable(chunk_path, trace_fn)
-                    upload_duration = time.time() - upload_start
-                    
-                    generate_start = time.time()
-                    prompt = _build_graph_extraction_prompt([p], is_whole=False)
-                    parsed = _call_gemini_with_pdf(file_uri, prompt, model, api_key, trace_fn)
-                    generate_duration = time.time() - generate_start
-                    
-                    if file_name:
-                        _delete_gemini_file(file_name, trace_fn)
-                    
-                    local_text = {}
-                    local_graph = []
-                    for pobj in parsed["pages"]:
-                        pnum = pobj["page"]
-                        if pnum == p:
-                            local_text[p] = pobj["text"]
-                            pobj["parser"] = "gemini_vlm"
-                            local_graph.append(pobj)
-                            page_parser_map[p] = "gemini_vlm"
-                    
-                    total_duration = time.time() - upload_start
-                    logger.debug(
-                        f"[TELEMETRY] Single-page Batch {batch_idx} (page {p}): upload={upload_duration:.2f}s, "
-                        f"generate={generate_duration:.2f}s, total={total_duration:.2f}s"
-                    )
-                    return local_text, local_graph
-                except RateLimitPauseRequired:
-                    raise
-                except Exception as single_err:
-                    _t(f"[ADAPTIVE] Single page {p} VLM chunk failed: {single_err}. Using OCR fallback.")
                     page_text = _transcribe_single_page_fallback(file_path, p, trace_fn, rate_mgr)
                     if page_text:
+                        result[p] = page_text
                         minimal_page = {
                             "page": p,
                             "text": page_text,
-                            "parser": "tesseract_ocr",
                             "blocks": [
                                 {
                                     "type": "paragraph",
@@ -1154,90 +1160,17 @@ def _execute_adaptive_transcription(
                             "tables": [],
                             "reading_order": [0]
                         }
+                        all_graph_pages.append(minimal_page)
                         page_parser_map[p] = "tesseract_ocr"
-                        return {p: page_text}, [minimal_page]
-                    return {}, []
-            else:
-                raise ValueError("Empty or non-contiguous batch")
-        except RateLimitPauseRequired:
-            raise
-        except Exception as e:
-            if len(batch) > 1:
-                mid = len(batch) // 2
-                left_batch = batch[:mid]
-                right_batch = batch[mid:]
-                _t(f"[ADAPTIVE] Batch {batch} failed ({e}). Splitting into: {left_batch} and {right_batch}")
-                
-                left_text, left_graph = _process_batch_adaptive(left_batch, batch_idx * 2)
-                right_text, right_graph = _process_batch_adaptive(right_batch, batch_idx * 2 + 1)
-                
-                return {**left_text, **right_text}, left_graph + right_graph
-            else:
-                raise
-        finally:
-            if chunk_path and os.path.exists(chunk_path):
-                try:
-                    os.remove(chunk_path)
-                except:
-                    pass
+                except Exception as e:
+                    _t(f"[ADAPTIVE] Page {p} fallback error: {e}")
 
-    if strategy == "whole":
-        try:
-            text_dict, graph_list = _process_pdf_file(file_path, pages_to_transcribe, is_whole=True, parser_name="gemini_vlm")
-            result.update(text_dict)
-            all_graph_pages.extend(graph_list)
-            _t(f"[ADAPTIVE] Whole document parsed, got {len(result)} pages")
-        except Exception as e:
-            _t(f"[ADAPTIVE] Whole document failed: {e}. Falling back to batch mode.")
-            plan = {"strategy": "batch", "batches": [sorted(pages_to_transcribe)]}
+    finally:
+        # Clean up temporary chunk files and Gemini uploads
+        _cleanup_temp_chunks()
+        _delete_all_uploads()
 
-    if strategy == "batch" or (strategy == "whole" and not result):
-        batches = plan.get("batches", [])
-        if not batches:
-            batches = [sorted(pages_to_transcribe)]
-        _t(f"[ADAPTIVE] Batch mode: {len(batches)} batches")
-        for idx, batch in enumerate(batches, 1):
-            try:
-                text_dict, graph_list = _process_batch_adaptive(batch, idx)
-                result.update(text_dict)
-                all_graph_pages.extend(graph_list)
-            except RateLimitPauseRequired:
-                raise
-            except Exception as batch_err:
-                _t(f"[ADAPTIVE] Batch {idx} failed completely: {batch_err}")
-
-    # Fallback for any missing pages (if still missing)
-    missing = set(pages_to_transcribe) - set(result.keys())
-    if missing:
-        _t(f"[ADAPTIVE] Missing pages: {missing}; falling back to page mode")
-        for p in sorted(missing):
-            try:
-                page_text = _transcribe_single_page_fallback(file_path, p, trace_fn, rate_mgr)
-                if page_text:
-                    result[p] = page_text
-                    minimal_page = {
-                        "page": p,
-                        "text": page_text,
-                        "parser": "tesseract_ocr",
-                        "blocks": [
-                            {
-                                "type": "paragraph",
-                                "text": page_text,
-                                "bbox": [0.0, 0.0, 1.0, 1.0],
-                                "reading_order": 1,
-                                "confidence": 0.8,
-                                "children": []
-                            }
-                        ],
-                        "tables": [],
-                        "reading_order": [0]
-                    }
-                    all_graph_pages.append(minimal_page)
-                    page_parser_map[p] = "tesseract_ocr"
-            except Exception as e:
-                _t(f"[ADAPTIVE] Page {p} fallback error: {e}")
-
-    # Determine overall parser string
+    # Determine parser used
     unique_parsers = set(page_parser_map.values())
     if not unique_parsers:
         parser_used = "none"
@@ -1246,73 +1179,55 @@ def _execute_adaptive_transcription(
     else:
         parser_used = "mixed"
 
-    # Normalize graph pages: add parser per page, ensure block IDs, normalise bbox, sort, validate
+    # Persist graph artifact
     if all_graph_pages:
-        try:
-            normalized_pages = _normalize_graph_pages(all_graph_pages, page_parser_map, default_parser=parser_used)
-            # Compute preprocessing duration
-            duration = time.time() - start_preprocessing
-            _store_graph(
-                file_path,
-                pages_to_transcribe,
-                normalized_pages,
-                parser=parser_used,
-                preprocessing_duration=duration
-            )
-            _t(f"[ADAPTIVE] Full graph artifact persisted for {len(normalized_pages)} pages with parser {parser_used}")
-        except Exception as e:
-            _t(f"[ADAPTIVE] Failed to normalize and store graph: {e}")
-            # Continue without storing graph; we still return text result
-            # Log error but don't fail the transcription
-            logger.error(f"Graph storage failed: {e}")
+        overall_timings["total_transcription_secs"] = time.perf_counter() - start_time
+        overall_timings["recursion_depth"] = recursion_depth
+        overall_timings["subdivision_count"] = subdivision_count
+        overall_timings["pages_requested"] = len(pages_to_transcribe)
+        overall_timings["total_batches_attempted"] = total_batches_attempted
+        overall_timings["max_batch_size_attempted"] = max_batch_size_attempted if max_batch_size_attempted > 0 else 0
+        overall_timings["min_batch_size_attempted"] = min_batch_size_attempted if min_batch_size_attempted != float('inf') else 0
+        overall_timings["batch_history"] = batch_history
+        overall_timings["total_retries"] = total_retries
+        overall_timings["total_subdivisions"] = total_subdivisions
+        overall_timings["total_timeouts"] = total_timeouts
+        overall_timings["total_rate_limits"] = total_rate_limits
+        overall_timings["upload_count"] = upload_count
+        overall_timings["upload_reuse_count"] = upload_reuse_count
+        _store_graph(file_path, pages_to_transcribe, all_graph_pages, parser=parser_used, timings=overall_timings)
+        _t(f"[ADAPTIVE] Full graph artifact persisted for {len(all_graph_pages)} pages with parser {parser_used}")
 
     return result
 
 
 def _build_graph_extraction_prompt(pages: List[int], is_whole: bool) -> str:
-    """Build a prompt that requests structured document graph."""
     page_list = sorted(pages)
     prompt = (
-        "You are a document understanding engine. You will receive a PDF document.\n"
-        "Extract the full document graph: all text, structure, layout, and reading order.\n"
-        "For each requested page, output a JSON object with the following structure:\n"
+        "You are a document understanding engine. Extract the text and basic structure from the PDF.\n"
+        "For each requested page, output a JSON object with the following minimal structure:\n"
         "{\n"
         "  \"pages\": [\n"
         "    {\n"
         "      \"page\": <integer, 1-indexed page number>,\n"
         "      \"text\": \"<full raw text of the page>\",\n"
         "      \"blocks\": [\n"
-        "        {\n"
-        "          \"type\": \"heading|paragraph|list_item|table|equation|figure\",\n"
-        "          \"text\": \"<text content>\",\n"
-        "          \"bbox\": [x1, y1, x2, y2],\n"
-        "          \"reading_order\": <integer>,\n"
-        "          \"confidence\": <float 0-1>,\n"
-        "          \"children\": []\n"
-        "        }\n"
+        "        {\"type\": \"heading|paragraph|list_item|table|equation|figure\", \"text\": \"<content>\"}\n"
         "      ],\n"
         "      \"tables\": [\n"
-        "        {\n"
-        "          \"caption\": \"...\",\n"
-        "          \"headers\": [\"col1\", \"col2\"],\n"
-        "          \"rows\": [[\"cell1\", \"cell2\"], ...],\n"
-        "          \"bbox\": [x1, y1, x2, y2]\n"
-        "        }\n"
-        "      ],\n"
-        "      \"reading_order\": [<list of block indices in order>]\n"
+        "        {\"caption\": \"<caption>\", \"headers\": [\"col1\", ...], \"rows\": [[\"cell1\", ...], ...]}\n"
+        "      ]\n"
         "    }\n"
         "  ]\n"
         "}\n"
-        "If a page contains tables, extract them into the 'tables' array with headers and rows.\n"
-        "Preserve all text exactly as it appears, including equations (use LaTeX where appropriate).\n"
+        "Preserve all text exactly, including equations using LaTeX where appropriate.\n"
         "Do not summarize or skip any content.\n"
-        "The response must be valid JSON only, no other text.\n"
+        "Only output valid JSON, no other text.\n"
     )
     if not is_whole:
-        prompt += f"Only include pages: {page_list}. Return their original page numbers as they appear in the document.\n"
+        prompt += f"Only include pages: {page_list}. Return their original page numbers.\n"
     else:
         prompt += f"The document has pages 1..{max(page_list)}. Return all requested pages.\n"
-    prompt += "Ensure page numbers are the original document page numbers, not the chunk page numbers."
     return prompt
 
 
@@ -1398,10 +1313,8 @@ def _transcribe_single_page(
             _, buffer = cv2.imencode(".png", cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR))
             base64_image = base64.b64encode(buffer).decode("utf-8")
             prompt = (
-                "You are a document understanding engine. Extract the full document graph from this page.\n"
-                "Output JSON with blocks (type, text, bbox, reading_order, confidence).\n"
-                "Include tables if present.\n"
-                "Response must be valid JSON: {\"page\": <number>, \"blocks\": [...], \"tables\": [...]}"
+                "Extract the full document graph from this page. Output JSON with blocks (type, text). "
+                "Include tables if present. Response: {\"page\": <number>, \"blocks\": [...], \"tables\": [...]}"
             )
             payload = {
                 "contents": [{
@@ -1413,7 +1326,8 @@ def _transcribe_single_page(
                 "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
             }
 
-            res = requests.post(gemini_endpoint, headers={"Content-Type": "application/json"}, json=payload, timeout=60)
+            timeout_seconds = getattr(config, "GEMINI_GENERATE_TIMEOUT", 240)
+            res = requests.post(gemini_endpoint, headers={"Content-Type": "application/json"}, json=payload, timeout=timeout_seconds)
             if res.status_code == 200:
                 data = res.json()
                 candidates = data.get("candidates", [])
@@ -1434,14 +1348,11 @@ def _transcribe_single_page(
                 if not parts:
                     return page_idx, None
                 page_text = parts[0].get("text", "")
-                # Try to parse JSON to extract text, and also store graph
                 try:
                     parsed = json.loads(page_text)
                     if "blocks" in parsed:
                         text_parts = [b.get("text", "") for b in parsed["blocks"]]
                         page_text = "\n".join(text_parts)
-                        # Store graph for this page if possible (for future use)
-                        # We don't have a global store here; we'll just return text.
                     elif "text" in parsed:
                         page_text = parsed["text"]
                 except:
@@ -1464,17 +1375,17 @@ def _transcribe_single_page(
                     time.sleep(sleep_time)
                     continue
                 else:
-                    _t(f"[VLM] Page {page_idx+1} failed: HTTP {res.status_code} — {res.text[:200]}")
+                    _t(f"[VLM] Page {page_idx+1} failed: HTTP {res.status_code}")
                     return page_idx, None
         except RateLimitPauseRequired:
             raise
-        except requests.exceptions.Timeout:
+        except requests.exceptions.Timeout as e:
             last_error = "timeout"
             sleep_time = 2 ** attempt
             _t(f"[VLM] Page {page_idx+1} timeout. Retrying in {sleep_time}s...")
             time.sleep(sleep_time)
             continue
-        except requests.exceptions.ConnectionError:
+        except requests.exceptions.ConnectionError as e:
             last_error = "connection_error"
             sleep_time = 2 ** attempt
             _t(f"[VLM] Page {page_idx+1} connection error. Retrying in {sleep_time}s...")
@@ -1538,35 +1449,8 @@ def execute_vlm_extraction_step(
         except RateLimitPauseRequired:
             raise
         except Exception as e:
-            _t(f"[VLM] Adaptive transcription failed: {e}. Falling back to page-by-page.")
-            api_key, model = _get_gemini_api_key_and_model()
-            endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-            rate_mgr = GeminiRateManager()
-            for p in sorted(remaining_pages):
-                try:
-                    decision = rate_mgr.get_decision()
-                    if not decision.allowed:
-                        raise RateLimitPauseRequired(resume_at=decision.resume_at, reason=decision.reason, retry_after=decision.retry_after)
-                    slot = rate_mgr.acquire_request_slot()
-                    if slot is None:
-                        raise RateLimitPauseRequired(resume_at=time.time() + 30, reason="no_slot_available")
-                    try:
-                        images = convert_from_path(file_path, first_page=p, last_page=p, dpi=150)
-                        if images:
-                            _, text = _transcribe_single_page(
-                                p-1, np.array(images[0]), endpoint, rate_mgr, trace_fn, 3
-                            )
-                            if text is not None:
-                                new_transcriptions[p] = text
-                                if on_page_completed:
-                                    on_page_completed(p, {"text": text, "source": "gemini"})
-                    finally:
-                        if slot:
-                            rate_mgr.release_request_slot(slot)
-                except RateLimitPauseRequired:
-                    raise
-                except Exception as e2:
-                    _t(f"[VLM] Fallback page {p} error: {e2}")
+            _t(f"[VLM] Adaptive transcription failed: {e}. Returning empty.")
+            return ""
 
     if on_page_completed:
         for page_num, text in new_transcriptions.items():
