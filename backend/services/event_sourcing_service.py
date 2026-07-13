@@ -1,15 +1,21 @@
 import json
 import gzip
 import logging
+import hashlib
+import uuid
 from collections import deque
 from datetime import datetime, timedelta
 from sqlalchemy import text, and_, or_
-from models import OrchestrationEvent, OrchestrationSnapshot, Pipeline, Task, Artifact
+from sqlalchemy.exc import IntegrityError
+
+from models import OrchestrationEvent, OrchestrationSnapshot, Pipeline
 
 logger = logging.getLogger(__name__)
 
-# Canonical Categorization Map
-EVENT_CATEGORIES = {
+# ---------------------------------------------------------------------------
+# Canonical Categorization Map (event_type -> category)
+# ---------------------------------------------------------------------------
+EVENT_CATEGORY_MAP = {
     # Critical: Key lifecycle changes
     "PIPELINE_CREATED": "critical",
     "PIPELINE_COMPLETED": "critical",
@@ -18,7 +24,7 @@ EVENT_CATEGORIES = {
     "TASK_COMPLETED": "critical",
     "TASK_FAILED": "critical",
     "PIPELINE_OWNERSHIP_TAKEN_OVER": "critical",
-    
+
     # Operational: Execution state changes, lease management, and recoveries
     "TASK_QUEUED": "operational",
     "TASK_CLAIMED": "operational",
@@ -29,20 +35,29 @@ EVENT_CATEGORIES = {
     "TASK_BLOCKED": "operational",
     "TASK_RELEASED": "operational",
     "BACKPRESSURE_DEFERRED": "operational",
-    
+
     # Telemetry: Queue forecasts, metrics updates
     "QUEUE_PRESSURE_UPDATE": "telemetry",
     "THROUGHPUT_UPDATE": "telemetry",
-    
+
     # Debug: Verbose system diagnostics
     "STALE_WORKER_UPDATE_REJECTED": "debug",
     "PRIORITY_ESCALATED": "debug",
     "ARTIFACT_CREATED": "debug",
     "DEPENDENCY_RELEASED": "debug",
     "DEPENDENCY_BLOCKED": "debug",
-    
+
     # Transient: One-off network notifications
     "WORKER_HEARTBEAT": "transient"
+}
+
+# Telemetry event types that do not require full schema validation
+TELEMETRY_EVENT_TYPES = {
+    "TASK_TRACE",
+    "WORKER_HEARTBEAT",
+    "QUEUE_PRESSURE_UPDATE",
+    "THROUGHPUT_UPDATE",
+    "STALE_WORKER_UPDATE_REJECTED",
 }
 
 # Strict Event Schemas
@@ -248,12 +263,10 @@ EVENT_SCHEMAS = {
     }
 }
 
-# Telemetry event categories that pass validation without full schema checks
-EVENT_CATEGORIES = {"TASK_TRACE", "WORKER_HEARTBEAT"}
-
 # Event versioning constants
 CURRENT_EVENT_VERSION = 1
 CURRENT_SCHEMA_VERSION = "2.0"
+MAX_EVENT_PAYLOAD_SIZE = 1_048_576  # 1 MB
 
 def validate_event_payload(event_type, payload):
     """
@@ -262,15 +275,15 @@ def validate_event_payload(event_type, payload):
     """
     event_type = event_type.upper()
     if event_type not in EVENT_SCHEMAS:
-        # If event type doesn't have a schema, check if it's transient/telemetry and allow empty schema
-        if event_type in EVENT_CATEGORIES:
+        # If event type doesn't have a schema, treat as telemetry if in telemetry set, else unknown
+        if event_type in TELEMETRY_EVENT_TYPES:
             return
         raise ValueError(f"Unknown event type: {event_type}")
-        
+
     schema = EVENT_SCHEMAS[event_type]
     req = schema["required"]
     opt = schema["optional"]
-    
+
     # Check required fields
     for field, expected_type in req.items():
         if field not in payload:
@@ -278,8 +291,8 @@ def validate_event_payload(event_type, payload):
         val = payload[field]
         if not isinstance(val, expected_type):
             raise ValueError(f"Event {event_type} field '{field}' expects type {expected_type}, got {type(val)}")
-            
-    # Check optional fields
+
+    # Check optional fields (if present, validate type)
     for field, expected_type in opt.items():
         if field in payload:
             val = payload[field]
@@ -295,20 +308,33 @@ def validate_event_payload(event_type, payload):
             elif not res:
                 raise ValueError(f"Event {event_type} payload validation failed")
 
-def publish_event(db, event_type, pipeline_id=None, task_id=None, message=None, worker_id=None, lease_token=None, correlation_id=None, payload=None, segment_index=0):
+def publish_event(db, event_type, pipeline_id=None, task_id=None, message=None, worker_id=None,
+                  lease_token=None, correlation_id=None, payload=None, segment_index=0,
+                  idempotency_key=None):
     """
     Validates, categorizes, and logs an orchestration event into the database.
+    Supports idempotency via idempotency_key using a nested transaction (savepoint)
+    so that on conflict, only the event insert is rolled back, not the outer transaction.
     """
     event_type = event_type.upper()
     payload = payload or {}
-    
+
+    # 1. Generate idempotency key if not provided
+    if idempotency_key is None:
+        idempotency_key = str(uuid.uuid4())
+
+    # 2. Validate payload size and prepare JSON string (deterministic, unicode-safe)
+    payload_json_str = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    if len(payload_json_str) > MAX_EVENT_PAYLOAD_SIZE:
+        raise ValueError(f"Payload size {len(payload_json_str)} exceeds max allowed {MAX_EVENT_PAYLOAD_SIZE}")
+
+    # 3. Determine segment index using pipeline's segment_counter if available
     if pipeline_id and segment_index == 0:
-        latest_evt = db.query(OrchestrationEvent).filter(
-            OrchestrationEvent.pipeline_id == pipeline_id
-        ).order_by(OrchestrationEvent.id.desc()).first()
-        if latest_evt:
-            segment_index = latest_evt.segment_index or 0
-    
+        # Read pipeline's current segment_counter (without locking; advance_pipeline_segment uses FOR UPDATE)
+        pipeline = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
+        if pipeline:
+            segment_index = pipeline.segment_counter or 0
+
     # Fallback mappings for old event names
     mapping = {
         "TASK_TIMED_OUT": "LEASE_EXPIRED",
@@ -323,148 +349,189 @@ def publish_event(db, event_type, pipeline_id=None, task_id=None, message=None, 
         "MAX_RETRIES_EXCEEDED_AFTER_LEASE_EXPIRY": "TASK_FAILED",
         "INPUT_ARTIFACT_RECEIVED": "ARTIFACT_CREATED"
     }
-    
+
     event_type = mapping.get(event_type, event_type)
-    
-    # 1. Validate payload
+
+    # 4. Validate payload
     validate_event_payload(event_type, payload)
-    
-    # 2. Categorize
-    category = "telemetry" if event_type in EVENT_CATEGORIES else "operational"
-    
-    # 3. Write to DB
-    evt = OrchestrationEvent(
-        pipeline_id=pipeline_id,
-        task_id=task_id,
-        event_type=event_type,
-        event_category=category,
-        message=message,
-        worker_id=worker_id,
-        lease_token=lease_token,
-        correlation_id=correlation_id,
-        payload_json=json.dumps(payload),
-        segment_index=segment_index,
-        event_version=CURRENT_EVENT_VERSION,
-        schema_version=CURRENT_SCHEMA_VERSION
-    )
-    db.add(evt)
-    db.flush() # populate ID
-    
-    # Automatically trigger periodic snapshot generation for critical paths (avoid race condition)
-    if pipeline_id and category == "critical" and evt.id % 10 == 0:
-        try:
-            create_pipeline_snapshot(db, pipeline_id)
-        except Exception as e:
-            logger.warning(f"Failed to generate auto-snapshot for pipeline {pipeline_id}: {e}")
-            
+
+    # 5. Determine category
+    if event_type in EVENT_CATEGORY_MAP:
+        category = EVENT_CATEGORY_MAP[event_type]
+    elif event_type in TELEMETRY_EVENT_TYPES:
+        category = "telemetry"
+    else:
+        category = "operational"
+
+    # 6. Attempt to insert with idempotency key using a nested transaction (savepoint)
+    #    to ensure that on conflict, only the event insert is rolled back.
+    evt = None
+    try:
+        with db.begin_nested():
+            evt = OrchestrationEvent(
+                pipeline_id=pipeline_id,
+                task_id=task_id,
+                event_type=event_type,
+                event_category=category,
+                message=message,
+                worker_id=worker_id,
+                lease_token=lease_token,
+                correlation_id=correlation_id,
+                payload_json=payload_json_str,
+                segment_index=segment_index,
+                event_version=CURRENT_EVENT_VERSION,
+                schema_version=CURRENT_SCHEMA_VERSION,
+                idempotency_key=idempotency_key
+            )
+            db.add(evt)
+            # flush() will raise IntegrityError if duplicate key
+            db.flush()
+    except IntegrityError as e:
+        # The duplicate key violation occurred; the nested transaction is rolled back automatically.
+        # Now retrieve the existing event.
+        logger.info(f"IntegrityError for idempotency_key {idempotency_key}: duplicate event. Retrieving existing.")
+        existing = db.query(OrchestrationEvent).filter(
+            OrchestrationEvent.idempotency_key == idempotency_key
+        ).first()
+        if existing:
+            return existing
+        else:
+            # Unexpected: we got an IntegrityError but no existing event with that key.
+            logger.error(f"IntegrityError without existing event for key {idempotency_key}")
+            raise
+
+    # If we reach here, evt is the newly created event.
     return evt
 
 def create_pipeline_snapshot(db, pipeline_id):
     """
     Creates a snapshot of the pipeline state up to the current last event.
+    This function does NOT commit; the caller owns the transaction.
     """
-    # 1. Get the last event ID
+    # Get the last event ID
     last_event = db.query(OrchestrationEvent).filter(
         OrchestrationEvent.pipeline_id == pipeline_id
     ).order_by(OrchestrationEvent.id.desc()).first()
-    
+
     if not last_event:
         return None
-        
+
     last_event_id = last_event.id
-    
-    # 2. Reconstruct state up to last_event_id (isolated replay)
+
+    # Reconstruct state up to last_event_id (isolated replay)
     state = reconstruct_pipeline_state(db, pipeline_id, target_event_id=last_event_id, skip_snapshot=True)
-    
-    # Remove critical path from snapshot data as it is a derived metric calculated at runtime
+
+    # Remove critical path from snapshot data (derived metric)
     if "critical_path" in state:
         state.pop("critical_path")
-        
-    # Compress snapshot data
-    snapshot_data = gzip.compress(json.dumps(state).encode())
-    
-    # 3. Create snapshot
+
+    # Serialize and compress (checksum on uncompressed JSON)
+    json_str = json.dumps(state, sort_keys=True, ensure_ascii=False)
+    json_bytes = json_str.encode('utf-8')
+    checksum = hashlib.sha256(json_bytes).hexdigest()
+    snapshot_data = gzip.compress(json_bytes)
+
+    # Create snapshot
     snapshot = OrchestrationSnapshot(
         pipeline_id=pipeline_id,
         last_event_id=last_event_id,
-        snapshot_data=snapshot_data
+        snapshot_data=snapshot_data,
+        checksum=checksum
     )
     db.add(snapshot)
-    db.commit()
+    db.flush()  # get ID if needed
     return snapshot
 
 def create_segmented_snapshot(db, pipeline_id, segment_index):
     """
     Creates a snapshot of the pipeline state up to the end of the given segment_index.
+    This function does NOT commit; the caller owns the transaction.
     """
     last_event = db.query(OrchestrationEvent).filter(
         OrchestrationEvent.pipeline_id == pipeline_id,
         OrchestrationEvent.segment_index == segment_index
     ).order_by(OrchestrationEvent.id.desc()).first()
-    
+
     if not last_event:
         return None
-        
+
     last_event_id = last_event.id
     state = reconstruct_pipeline_state(db, pipeline_id, target_event_id=last_event_id, skip_snapshot=True)
-    
+
     if "critical_path" in state:
         state.pop("critical_path")
-        
-    snapshot_data = gzip.compress(json.dumps(state).encode())
-    
+
+    json_str = json.dumps(state, sort_keys=True, ensure_ascii=False)
+    json_bytes = json_str.encode('utf-8')
+    checksum = hashlib.sha256(json_bytes).hexdigest()
+    snapshot_data = gzip.compress(json_bytes)
+
     existing = db.query(OrchestrationSnapshot).filter(
         OrchestrationSnapshot.pipeline_id == pipeline_id,
         OrchestrationSnapshot.segment_index == segment_index
     ).first()
-    
+
     if existing:
         existing.last_event_id = last_event_id
         existing.snapshot_data = snapshot_data
+        existing.checksum = checksum
         snapshot = existing
     else:
         snapshot = OrchestrationSnapshot(
             pipeline_id=pipeline_id,
             last_event_id=last_event_id,
             snapshot_data=snapshot_data,
-            segment_index=segment_index
+            segment_index=segment_index,
+            checksum=checksum
         )
         db.add(snapshot)
-    
-    db.commit()
+
+    db.flush()
     return snapshot
 
 def advance_pipeline_segment(db, pipeline_id):
     """
     Increments the current segment index of a pipeline by creating a snapshot of the current state,
-    and returns the new segment index.
+    and returns the new segment index. All operations are atomic within a single transaction.
+    This function does NOT commit; the caller owns the transaction.
     """
-    current_segment = 0
+    # Lock the pipeline row for update to avoid concurrent segment advancement races
+    pipeline = db.query(Pipeline).filter(Pipeline.id == pipeline_id).with_for_update().first()
+    if not pipeline:
+        raise ValueError(f"Pipeline {pipeline_id} not found")
+
+    # Atomically increment segment_counter on pipeline
+    pipeline.segment_counter = (pipeline.segment_counter or 0) + 1
+    new_segment = pipeline.segment_counter
+
+    # Determine current segment (before advance)
     latest_evt = db.query(OrchestrationEvent).filter(
         OrchestrationEvent.pipeline_id == pipeline_id
     ).order_by(OrchestrationEvent.id.desc()).first()
-    if latest_evt:
-        current_segment = latest_evt.segment_index or 0
-        
-    next_segment = current_segment + 1
-    
+    current_segment = latest_evt.segment_index if latest_evt else 0
+
+    # Create a snapshot for the current segment (which is being closed)
     create_segmented_snapshot(db, pipeline_id, current_segment)
-    
-    publish_event(
+
+    # Now publish an event that signals the segment advancement.
+    # This event will have segment_index = new_segment.
+    evt = publish_event(
         db=db,
         event_type="PIPELINE_OWNERSHIP_TAKEN_OVER",
         pipeline_id=pipeline_id,
-        message=f"Advanced pipeline segment to {next_segment}",
-        payload={"instance_id": "system", "ownership_version": next_segment},
-        segment_index=next_segment
+        message=f"Advanced pipeline segment to {new_segment}",
+        payload={"instance_id": "system", "ownership_version": new_segment},
+        segment_index=new_segment
     )
-    
-    return next_segment
+    # Note: publish_event does not commit, so the transaction is still open.
+    # Caller must commit.
+    return new_segment
 
 def compact_completed_pipeline_segments(db):
     """
     Finds completed segments of pipelines and compacts them by ensuring they have snapshots
     and deleting raw telemetry/debug events.
+    This function is intended to be called as a top-level maintenance job and thus commits its own transaction.
     """
     pipelines = db.query(Pipeline).all()
     for pipe in pipelines:
@@ -474,19 +541,20 @@ def compact_completed_pipeline_segments(db):
         if not latest_evt:
             continue
         max_segment = latest_evt.segment_index or 0
-        
+
         is_finished = pipe.status in ('completed', 'failed', 'blocked', 'cancelled')
         completed_segments = list(range(max_segment + 1)) if is_finished else list(range(max_segment))
-        
+
         for S in completed_segments:
             snapshot = db.query(OrchestrationSnapshot).filter(
                 OrchestrationSnapshot.pipeline_id == pipe.id,
                 OrchestrationSnapshot.segment_index == S
             ).first()
-            
+
             if not snapshot:
-                snapshot = create_segmented_snapshot(db, pipe.id, S)
-                
+                # No snapshot exists for this segment; create one using the segment's last event.
+                create_segmented_snapshot(db, pipe.id, S)
+
             if snapshot:
                 stmt = text(
                     "DELETE FROM orchestration_events "
@@ -518,13 +586,13 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
         },
         "tasks": {},
         "artifacts": [],
-        "dependencies": {}, # task_id -> list of depends_on_ids
-        "dependency_releases": {} # child_task_id -> {parent_task_id: bool}
+        "dependencies": {},  # task_id -> list of depends_on_ids
+        "dependency_releases": {}  # child_task_id -> {parent_task_id: bool}
     }
-    
+
     start_event_id = 0
     snapshot_segment = -1  # segment index of the snapshot we base on
-    
+
     # 1. Determine target segment
     if target_event_id is not None:
         target_evt = db.query(OrchestrationEvent).filter(OrchestrationEvent.id == target_event_id).first()
@@ -541,35 +609,70 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
         snapshot_query = db.query(OrchestrationSnapshot).filter(OrchestrationSnapshot.pipeline_id == pipeline_id)
         if target_event_id is not None:
             snapshot_query = snapshot_query.filter(OrchestrationSnapshot.last_event_id <= target_event_id)
-        
+
         snapshot = snapshot_query.filter(OrchestrationSnapshot.segment_index <= target_segment)\
                                  .order_by(OrchestrationSnapshot.segment_index.desc(), OrchestrationSnapshot.last_event_id.desc())\
                                  .first()
-        
+
         if snapshot:
-            # Load state from snapshot (decompress if needed)
-            snapshot_data = snapshot.snapshot_data
-            # Defensive: encode to bytes if DB driver returned a str (causes
-            # "string argument without an encoding" inside gzip.decompress)
-            if isinstance(snapshot_data, str):
-                snapshot_data = snapshot_data.encode('utf-8')
-            if isinstance(snapshot_data, bytes):
-                try:
-                    snapshot_data = gzip.decompress(snapshot_data)
-                except gzip.BadGzipFile:
-                    # Already uncompressed or legacy plain JSON bytes
-                    pass
-            if isinstance(snapshot_data, bytes):
-                snapshot_data = snapshot_data.decode('utf-8')
-            state = json.loads(snapshot_data)
-            start_event_id = snapshot.last_event_id
-            snapshot_segment = snapshot.segment_index or 0
-            
+            # Load state from snapshot with checksum verification and corruption handling
+            try:
+                snapshot_data = snapshot.snapshot_data
+                if isinstance(snapshot_data, str):
+                    snapshot_data = snapshot_data.encode('utf-8')
+                if isinstance(snapshot_data, bytes):
+                    # First, decompress
+                    try:
+                        decompressed = gzip.decompress(snapshot_data)
+                    except (gzip.BadGzipFile, EOFError) as e:
+                        logger.warning(f"Snapshot {snapshot.id} gzip corruption: {e}. Falling back to replay.")
+                        raise  # handled below
+                    # Verify checksum on the uncompressed bytes
+                    stored_checksum = getattr(snapshot, 'checksum', None)
+                    if stored_checksum:
+                        actual_checksum = hashlib.sha256(decompressed).hexdigest()
+                        if actual_checksum != stored_checksum:
+                            raise ValueError(f"Snapshot checksum mismatch for snapshot {snapshot.id}")
+                    # Decode
+                    try:
+                        json_str = decompressed.decode('utf-8')
+                    except UnicodeDecodeError as e:
+                        logger.warning(f"Snapshot {snapshot.id} Unicode decode error: {e}. Falling back to replay.")
+                        raise
+                    # Parse JSON
+                    try:
+                        state = json.loads(json_str)
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Snapshot {snapshot.id} JSON parse error: {e}. Falling back to replay.")
+                        raise
+                    # Success
+                    start_event_id = snapshot.last_event_id
+                    snapshot_segment = snapshot.segment_index or 0
+            except (gzip.BadGzipFile, EOFError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as e:
+                logger.warning(f"Snapshot {snapshot.id} failed to load: {e}. Ignoring snapshot and replaying from events.")
+                # Reset state to empty and continue with events only
+                state = {
+                    "pipeline": {
+                        "id": pipeline_id,
+                        "name": "",
+                        "pipeline_type": "",
+                        "status": "created",
+                        "created_at": None,
+                        "started_at": None,
+                        "completed_at": None,
+                        "error_message": None,
+                        "owner_instance_id": None,
+                        "ownership_version": 0
+                    },
+                    "tasks": {},
+                    "artifacts": [],
+                    "dependencies": {},
+                    "dependency_releases": {}
+                }
+                start_event_id = 0
+                snapshot_segment = -1
+
     # 3. Retrieve events after the snapshot (or all if no snapshot)
-    # We need all events that happened after the snapshot's last_event_id,
-    # but still within the target segment boundaries, including events from
-    # later segments up to target_segment.
-    # Condition: (segment == snapshot_segment AND id > start_event_id) OR (segment > snapshot_segment AND segment <= target_segment)
     event_query = db.query(OrchestrationEvent).filter(
         OrchestrationEvent.pipeline_id == pipeline_id
     )
@@ -588,7 +691,7 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
         )
     else:
         event_query = event_query.filter(OrchestrationEvent.segment_index <= target_segment)
-    
+
     if target_event_id is not None:
         event_query = event_query.filter(OrchestrationEvent.id <= target_event_id)
     if target_time is not None:
@@ -599,39 +702,43 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
                 pass
         if isinstance(target_time, datetime):
             event_query = event_query.filter(OrchestrationEvent.created_at <= target_time)
-            
+
     events = event_query.order_by(OrchestrationEvent.id.asc()).all()
-    
+
     # Keep track of task queue events to compute queue wait time during replay
     task_queued_times = {}
-    
+
     # Apply events sequentially to state (Deterministic Replay)
     for evt in events:
         event_type = evt.event_type.upper()
-        payload = json.loads(evt.payload_json) if evt.payload_json else {}
+        try:
+            payload = json.loads(evt.payload_json) if evt.payload_json else {}
+        except json.JSONDecodeError as e:
+            logger.warning(f"Event {evt.id} has invalid JSON payload: {e}. Skipping this event.")
+            continue
         tid = str(evt.task_id) if evt.task_id else None
-        
+
         evt_created_str = evt.created_at.isoformat() if evt.created_at else None
-        
+
         if event_type == "PIPELINE_CREATED":
             state["pipeline"]["name"] = payload.get("name", "")
             state["pipeline"]["pipeline_type"] = payload.get("pipeline_type", "")
             state["pipeline"]["status"] = "created"
             state["pipeline"]["created_at"] = evt_created_str
-            
+
         elif event_type == "PIPELINE_COMPLETED":
             state["pipeline"]["status"] = "completed"
             state["pipeline"]["completed_at"] = evt_created_str
-            
+
         elif event_type == "PIPELINE_FAILED":
             state["pipeline"]["status"] = "failed"
             state["pipeline"]["completed_at"] = evt_created_str
             state["pipeline"]["error_message"] = payload.get("error_message")
-            
+
         elif event_type == "PIPELINE_OWNERSHIP_TAKEN_OVER":
             state["pipeline"]["owner_instance_id"] = payload.get("instance_id")
             state["pipeline"]["ownership_version"] = payload.get("ownership_version")
-            
+
         elif event_type == "TASK_CREATED":
             if tid:
                 state["tasks"][tid] = {
@@ -659,18 +766,17 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
                 }
                 # Initialize dependencies
                 state["dependencies"][tid] = payload.get("dependencies", [])
-                
+
         elif event_type == "TASK_QUEUED":
             if tid and tid in state["tasks"]:
                 state["tasks"][tid]["status"] = "pending"
                 task_queued_times[tid] = evt.created_at
-                
+
         elif event_type == "TASK_CLAIMED":
             if tid and tid in state["tasks"]:
                 t_state = state["tasks"][tid]
                 t_state["status"] = "running"
                 t_state["started_at"] = evt_created_str
-                # Use payload or fallback to event columns
                 t_state["assigned_worker_id"] = payload.get("worker_id") or evt.worker_id
                 t_state["lease_token"] = payload.get("lease_token") or evt.lease_token
                 duration = payload.get("lease_duration", 30)
@@ -683,7 +789,7 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
                     t_state["queue_wait_duration"] = round(
                         (evt.created_at - task_queued_times[tid]).total_seconds(), 2
                     )
-                
+
         elif event_type == "LEASE_RENEWED":
             if tid and tid in state["tasks"]:
                 t_state = state["tasks"][tid]
@@ -691,14 +797,14 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
                 duration = payload.get("lease_duration", 30)
                 if evt.created_at:
                     t_state["lease_expires_at"] = (evt.created_at + timedelta(seconds=duration)).isoformat()
-                    
+
         elif event_type == "LEASE_EXPIRED":
             if tid and tid in state["tasks"]:
                 t_state = state["tasks"][tid]
                 t_state["status"] = "pending"
                 t_state["lease_token"] = None
                 t_state["assigned_worker_id"] = None
-                
+
         elif event_type == "TASK_STARTED":
             if tid and tid in state["tasks"]:
                 t_state = state["tasks"][tid]
@@ -713,7 +819,7 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
                     t_state["queue_wait_duration"] = round(
                         (evt.created_at - task_queued_times[tid]).total_seconds(), 2
                     )
-                    
+
         elif event_type == "TASK_COMPLETED":
             if tid and tid in state["tasks"]:
                 t_state = state["tasks"][tid]
@@ -725,14 +831,14 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
                         (evt.created_at - st_dt).total_seconds(), 2
                     )
                 t_state["output_artifact_ids"] = payload.get("output_artifact_ids", [])
-                
+
         elif event_type == "TASK_FAILED":
             if tid and tid in state["tasks"]:
                 t_state = state["tasks"][tid]
                 t_state["status"] = "failed"
                 t_state["error_message"] = payload.get("error_message")
                 t_state["retry_count"] += 1
-                
+
         elif event_type == "TASK_RECOVERED":
             if tid and tid in state["tasks"]:
                 t_state = state["tasks"][tid]
@@ -742,26 +848,26 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
                 t_state["assigned_worker_id"] = None
                 if state["pipeline"]["status"] == "running":
                     state["pipeline"]["status"] = "recovering"
-                
+
         elif event_type in ("TASK_BLOCKED", "DEPENDENCY_BLOCKED"):
             if tid and tid in state["tasks"]:
                 state["tasks"][tid]["status"] = "blocked"
                 state["tasks"][tid]["blocked_reason"] = payload.get("blocked_reason")
-                
+
         elif event_type in ("TASK_RELEASED", "DEPENDENCY_RELEASED"):
             if tid and tid in state["tasks"]:
                 state["tasks"][tid]["status"] = "pending"
                 state["tasks"][tid]["blocked_reason"] = None
-                
+
         elif event_type == "BACKPRESSURE_DEFERRED":
             if tid and tid in state["tasks"]:
                 state["tasks"][tid]["status"] = "deferred"
                 state["tasks"][tid]["deferred_at"] = evt_created_str
-                
+
         elif event_type == "PRIORITY_ESCALATED":
             if tid and tid in state["tasks"]:
                 state["tasks"][tid]["priority"] = payload.get("new_priority", "medium")
-                
+
         elif event_type == "ARTIFACT_CREATED":
             art = {
                 "id": payload.get("artifact_id"),
@@ -776,14 +882,14 @@ def reconstruct_pipeline_state(db, pipeline_id, target_event_id=None, target_tim
                 art_id = payload.get("artifact_id")
                 if art_id not in state["tasks"][tid]["output_artifact_ids"]:
                     state["tasks"][tid]["output_artifact_ids"].append(art_id)
-                    
+
         elif event_type == "DEPENDENCY_RELEASED":
             parent = str(payload.get("parent_task_id"))
             child = str(payload.get("child_task_id"))
             if child not in state["dependency_releases"]:
                 state["dependency_releases"][child] = {}
             state["dependency_releases"][child][parent] = True
-            
+
         elif event_type == "DEPENDENCY_BLOCKED":
             parent = str(payload.get("parent_task_id"))
             child = str(payload.get("child_task_id"))
@@ -804,13 +910,13 @@ def compute_critical_path(state):
     tasks = state.get("tasks", {})
     if not tasks:
         return []
-        
+
     # Build adjacency list: node -> list of children
     adj = {tid: [] for tid in tasks}
     in_degree = {tid: 0 for tid in tasks}
-    
+
     deps = state.get("dependencies", {})
-    
+
     for child, parents in deps.items():
         child_str = str(child)
         for parent in parents:
@@ -818,7 +924,7 @@ def compute_critical_path(state):
             if parent_str in adj:
                 adj[parent_str].append(child_str)
                 in_degree[child_str] += 1
-                
+
     weights = {}
     for tid, tdata in tasks.items():
         w = tdata.get("queue_wait_duration", 0.0) + tdata.get("execution_duration", 0.0)
@@ -828,7 +934,7 @@ def compute_critical_path(state):
     topo_order = []
     zero_in = deque([tid for tid in tasks if in_degree[tid] == 0])
     in_deg_temp = dict(in_degree)
-    
+
     while zero_in:
         curr = zero_in.popleft()
         topo_order.append(curr)
@@ -836,15 +942,15 @@ def compute_critical_path(state):
             in_deg_temp[child] -= 1
             if in_deg_temp[child] == 0:
                 zero_in.append(child)
-                
+
     if len(topo_order) != len(tasks):
         # Fallback in case of cycle (should not happen)
         topo_order = list(tasks.keys())
-        
+
     dist = {}
     for tid in tasks:
         dist[tid] = (weights[tid], [int(tid)])
-        
+
     for node in topo_order:
         curr_dist, curr_path = dist[node]
         for child in adj[node]:
@@ -852,14 +958,14 @@ def compute_critical_path(state):
             new_dist = curr_dist + child_weight
             if child not in dist or new_dist > dist[child][0]:
                 dist[child] = (new_dist, curr_path + [int(child)])
-                
+
     max_tid = None
     max_val = -1.0
     for tid, (val, path) in dist.items():
         if val > max_val:
             max_val = val
             max_tid = tid
-            
+
     if max_tid is not None:
         return dist[max_tid][1]
     return []
