@@ -1,12 +1,39 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, ForeignKey, Boolean, LargeBinary
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-from sqlalchemy.types import TypeDecorator
-from datetime import datetime
+# database.py — ScaleFlow database models with production hardening
+
+import base64
 import gzip
 import json
 import logging
 import os
+import sys
+import time
+from datetime import datetime
+from enum import Enum as PyEnum
 
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    String,
+    DateTime,
+    Text,
+    ForeignKey,
+    Boolean,
+    Enum,
+    JSON,
+    Index,
+    UniqueConstraint,
+    event,
+    inspect,
+    text,
+)
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.types import TypeDecorator
+
+# ------------------------------------------------------------------------------
+# Environment & DB config
+# ------------------------------------------------------------------------------
 def load_env():
     for path in ['.env', 'backend/.env', '../backend/.env']:
         try:
@@ -23,8 +50,7 @@ def load_env():
 
 load_env()
 
-import sys
-import time
+logger = logging.getLogger(__name__)
 
 DB_MODE = os.environ.get("DB_MODE", "postgres").lower()
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/task_schedular")
@@ -67,14 +93,40 @@ else:
         raise e
 
 ACTIVE_DATABASE_URL = DATABASE_URL
-# Make sure SQLite URL has check_same_thread=False
 ACTIVE_DB_MODE = DB_MODE
 
+# Determine JSON type per dialect (PostgreSQL: JSONB, SQLite: JSON)
+def _get_json_type():
+    if DATABASE_URL.startswith("sqlite"):
+        return JSON
+    # PostgreSQL: use JSONB for better indexing
+    try:
+        from sqlalchemy.dialects.postgresql import JSONB
+        return JSONB
+    except ImportError:
+        return JSON
+
+JSON_TYPE = _get_json_type()
+
+# Connection pool config
+POOL_SIZE = 15
+MAX_OVERFLOW = 25
+POOL_RECYCLE = 300
+POOL_TIMEOUT = 30
+POOL_USE_LIFO = True
+
 if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-    
-    # Enable WAL journal mode and set high busy_timeout to resolve lock conflicts
-    from sqlalchemy import event
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        pool_size=POOL_SIZE,
+        max_overflow=MAX_OVERFLOW,
+        pool_recycle=POOL_RECYCLE,
+        pool_timeout=POOL_TIMEOUT,
+        pool_use_lifo=POOL_USE_LIFO,
+        pool_pre_ping=True,
+    )
+    # Enable WAL journal mode and high busy_timeout
     @event.listens_for(engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
@@ -84,18 +136,20 @@ if DATABASE_URL.startswith("sqlite"):
 else:
     engine = create_engine(
         DATABASE_URL,
-        pool_size=15,
-        max_overflow=25,
-        pool_recycle=300,
-        pool_pre_ping=True
+        pool_size=POOL_SIZE,
+        max_overflow=MAX_OVERFLOW,
+        pool_recycle=POOL_RECYCLE,
+        pool_timeout=POOL_TIMEOUT,
+        pool_use_lifo=POOL_USE_LIFO,
+        pool_pre_ping=True,
     )
 
 Base = declarative_base()
 SessionLocal = sessionmaker(bind=engine)
-logger = logging.getLogger(__name__)
 
-import base64
-
+# ------------------------------------------------------------------------------
+# Custom Type: GzippedBinary (for snapshots)
+# ------------------------------------------------------------------------------
 class GzippedBinary(TypeDecorator):
     impl = Text
     cache_ok = True
@@ -105,18 +159,14 @@ class GzippedBinary(TypeDecorator):
             return None
         if isinstance(value, str):
             value = value.encode("utf-8")
-        # value is bytes (compressed). Base64 encode to safe text representation.
         return base64.b64encode(value).decode("utf-8")
 
     def process_result_value(self, value, dialect):
         if value is None:
             return None
-
-        # Value can be base64 encoded string, raw string, or bytes
         try:
             if isinstance(value, bytes):
                 value = value.decode("utf-8")
-            # Try decoding base64
             return base64.b64decode(value.encode("utf-8"))
         except Exception:
             logger.debug(
@@ -131,153 +181,194 @@ class GzippedBinary(TypeDecorator):
                 return value.encode("utf-8")
             return bytes(value)
 
-class Pipeline(Base):
+# ------------------------------------------------------------------------------
+# Enum definitions
+# ------------------------------------------------------------------------------
+class PipelineStatus(PyEnum):
+    created = "created"
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+    cancelled = "cancelled"
+    blocked = "blocked"
+
+class TaskStatus(PyEnum):
+    pending = "pending"
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+    cancelled = "cancelled"
+    blocked = "blocked"
+    deferred = "deferred"
+
+class TaskPriority(PyEnum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
+
+class ArtifactType(PyEnum):
+    document = "document"
+    graph = "graph"
+    chunk = "chunk"
+    embedding = "embedding"
+    bm25 = "bm25"
+    report = "report"
+
+class EventCategory(PyEnum):
+    critical = "critical"
+    operational = "operational"
+    telemetry = "telemetry"
+    debug = "debug"
+    transient = "transient"
+
+class FileStatus(PyEnum):
+    uploaded = "uploaded"
+    processing = "processing"
+    processed = "processed"
+    failed = "failed"
+
+class WorkerStatus(PyEnum):
+    active = "active"
+    draining = "draining"
+    offline = "offline"
+
+# ------------------------------------------------------------------------------
+# Mixins
+# ------------------------------------------------------------------------------
+class TimestampMixin:
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+class VersionMixin:
+    version = Column(Integer, default=0, nullable=False)
+
+# ------------------------------------------------------------------------------
+# Models
+# ------------------------------------------------------------------------------
+class Pipeline(Base, TimestampMixin, VersionMixin):
     __tablename__ = 'pipelines'
-    
+    __table_args__ = (
+        Index('idx_pipelines_status', 'status'),
+        Index('idx_pipelines_owner_instance_id', 'owner_instance_id'),
+        Index('idx_pipelines_created_at', 'created_at'),
+    )
+    __mapper_args__ = {
+        "version_id_col": "version"  # string name is supported and reliable
+    }
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100), nullable=False)
     pipeline_type = Column(String(50), nullable=False)
-    status = Column(String(20), default='created') # created, running, completed, failed, cancelled, blocked
-    created_at = Column(DateTime, default=datetime.utcnow)
+    status = Column(Enum(PipelineStatus), default=PipelineStatus.created, nullable=False)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
-    
-    # Phase 8 Active/Active locks & fencing tokens
+
     owner_instance_id = Column(String(100), nullable=True)
     owner_lease_expires_at = Column(DateTime, nullable=True)
     ownership_version = Column(Integer, default=0)
     is_critical = Column(Boolean, default=False)
+
+    # Relationships
+    tasks = relationship('Task', backref='pipeline', cascade='all, delete-orphan')
+    artifacts = relationship('Artifact', backref='pipeline', cascade='all, delete-orphan')
+    events = relationship('OrchestrationEvent', backref='pipeline', cascade='all, delete-orphan')
+    snapshots = relationship('OrchestrationSnapshot', backref='pipeline', cascade='all, delete-orphan')
+    files = relationship('FileRecord', backref='pipeline', cascade='all, delete-orphan')
 
     def to_dict(self):
         return {
             'id': self.id,
             'name': self.name,
             'pipeline_type': self.pipeline_type,
-            'status': self.status,
+            'status': self.status.value if self.status else None,
             'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() + 'Z' if self.updated_at else None,
             'started_at': self.started_at.isoformat() + 'Z' if self.started_at else None,
             'completed_at': self.completed_at.isoformat() + 'Z' if self.completed_at else None,
             'error_message': self.error_message,
             'owner_instance_id': self.owner_instance_id,
             'owner_lease_expires_at': self.owner_lease_expires_at.isoformat() + 'Z' if self.owner_lease_expires_at else None,
             'ownership_version': self.ownership_version,
-            'is_critical': self.is_critical
+            'is_critical': self.is_critical,
+            'version': self.version,
         }
 
-class Artifact(Base):
-    __tablename__ = 'artifacts'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), index=True)
-    task_id = Column(Integer, ForeignKey('tasks.id'), nullable=True, index=True)
-    artifact_type = Column(String(50), nullable=False)
-    storage_uri = Column(Text, nullable=False)
-    metadata_json = Column(Text, nullable=True)
-    checksum = Column(String(64), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'pipeline_id': self.pipeline_id,
-            'task_id': self.task_id,
-            'artifact_type': self.artifact_type,
-            'storage_uri': self.storage_uri,
-            'metadata_json': json.loads(self.metadata_json) if self.metadata_json else None,
-            'checksum': self.checksum,
-            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None
-        }
-
-class TaskDependency(Base):
-    __tablename__ = 'task_dependencies'
-    task_id = Column(Integer, ForeignKey('tasks.id'), primary_key=True)
-    depends_on_id = Column(Integer, ForeignKey('tasks.id'), primary_key=True)
-
-class TaskLog(Base):
-    __tablename__ = 'task_logs'
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    task_id = Column(Integer, ForeignKey('tasks.id'), index=True)
-    event_type = Column(String(50), nullable=False)
-    message = Column(Text, nullable=True)
-    worker_id = Column(String(100), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'task_id': self.task_id,
-            'event_type': self.event_type,
-            'message': self.message,
-            'worker_id': self.worker_id,
-            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None
-        }
-
-class Task(Base):
+class Task(Base, TimestampMixin, VersionMixin):
     __tablename__ = 'tasks'
-    
+    __table_args__ = (
+        Index('idx_tasks_status', 'status'),
+        Index('idx_tasks_priority', 'priority'),
+        Index('idx_tasks_status_priority', 'status', 'priority'),
+        Index('idx_tasks_lease_expires_at', 'lease_expires_at'),
+        Index('idx_tasks_assigned_worker_id', 'assigned_worker_id'),
+        Index('idx_tasks_pipeline_id', 'pipeline_id'),
+        Index('idx_tasks_created_at', 'created_at'),
+    )
+    __mapper_args__ = {
+        "version_id_col": "version"  # string name is supported and reliable
+    }
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     type = Column(String(50), nullable=False)
-    data = Column(Text, nullable=False)
-    status = Column(String(20), default='pending')
-    priority = Column(String(10), default='medium')  
-    dependencies = Column(Text, nullable=True) # Legacy
+    data = Column(Text, nullable=False)  # Large JSON, kept as Text for compatibility
+    status = Column(Enum(TaskStatus), default=TaskStatus.pending, nullable=False)
+    priority = Column(Enum(TaskPriority), default=TaskPriority.medium, nullable=False)
+    dependencies = Column(Text, nullable=True)  # Legacy JSON list
     retry_count = Column(Integer, default=0)
     max_retries = Column(Integer, default=3)
     error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
-    
+
     assigned_worker_id = Column(String(100), nullable=True)
     lease_token = Column(String(100), nullable=True)
     lease_expires_at = Column(DateTime, nullable=True)
     recovered_count = Column(Integer, default=0)
     lease_renewal_count = Column(Integer, default=0)
-    
+
     last_progress_at = Column(DateTime, nullable=True)
-    progress_json = Column(Text, nullable=True)
-    
-    # Phase 2 columns
-    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True, index=True)
-    input_artifact_ids = Column(Text, nullable=True) # JSON list
+    progress_json = Column(JSON_TYPE, nullable=True)  # JSONB on Postgres, JSON on SQLite
+
+    pipeline_id = Column(Integer, ForeignKey('pipelines.id', ondelete='CASCADE'), nullable=True, index=True)
+    input_artifact_ids = Column(Text, nullable=True)  # JSON list (keeping Text for backward compatibility)
     output_artifact_ids = Column(Text, nullable=True) # JSON list
     blocked_reason = Column(Text, nullable=True)
     deferred_at = Column(DateTime, nullable=True)
-    
+
+    # Relationships
     dependent_on = relationship(
         'Task',
         secondary='task_dependencies',
         primaryjoin=id==TaskDependency.task_id,
         secondaryjoin=id==TaskDependency.depends_on_id,
-        backref="required_by"
+        backref="required_by",
+        # No cascade; let the association table manage dependencies explicitly
     )
-    
-    logs = relationship('TaskLog', backref='task', order_by='TaskLog.created_at')
-    
+    logs = relationship('TaskLog', backref='task', cascade='all, delete-orphan')
+    artifacts = relationship('Artifact', backref='task', cascade='all, delete-orphan')
+
     def to_dict(self):
         legacy_deps = json.loads(self.dependencies) if self.dependencies else []
         new_deps = [t.id for t in self.dependent_on] if hasattr(self, 'dependent_on') else []
         all_deps = list(set(legacy_deps + new_deps))
-        
+
         try:
             input_ids = json.loads(self.input_artifact_ids) if self.input_artifact_ids else []
         except Exception:
             input_ids = []
-            
         try:
             output_ids = json.loads(self.output_artifact_ids) if self.output_artifact_ids else []
         except Exception:
             output_ids = []
-            
-        # Compute queue wait duration and execution duration
+
         queue_wait = 0
         execution = 0
         if self.started_at and self.created_at:
             queue_wait = (self.started_at - self.created_at).total_seconds()
         elif self.created_at:
             queue_wait = (datetime.utcnow() - self.created_at).total_seconds()
-            
         if self.completed_at and self.started_at:
             execution = (self.completed_at - self.started_at).total_seconds()
         elif self.started_at:
@@ -287,13 +378,14 @@ class Task(Base):
             'id': self.id,
             'type': self.type,
             'data': json.loads(self.data),
-            'status': self.status,
-            'priority': self.priority,
+            'status': self.status.value if self.status else None,
+            'priority': self.priority.value if self.priority else None,
             'dependencies': all_deps,
             'retry_count': self.retry_count,
             'max_retries': self.max_retries,
             'error_message': self.error_message,
             'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() + 'Z' if self.updated_at else None,
             'started_at': self.started_at.isoformat() + 'Z' if self.started_at else None,
             'completed_at': self.completed_at.isoformat() + 'Z' if self.completed_at else None,
             'assigned_worker_id': self.assigned_worker_id,
@@ -309,20 +401,90 @@ class Task(Base):
             'queue_wait_duration': round(queue_wait, 2),
             'execution_duration': round(execution, 2),
             'last_progress_at': self.last_progress_at.isoformat() + 'Z' if self.last_progress_at else None,
-            'progress_json': json.loads(self.progress_json) if self.progress_json else None
+            'progress_json': self.progress_json,
+            'version': self.version,
         }
 
-class FileRecord(Base):
+class Artifact(Base, TimestampMixin):
+    __tablename__ = 'artifacts'
+    __table_args__ = (
+        Index('idx_artifacts_pipeline_id', 'pipeline_id'),
+        Index('idx_artifacts_task_id', 'task_id'),
+        Index('idx_artifacts_artifact_type', 'artifact_type'),
+        Index('idx_artifacts_created_at', 'created_at'),
+        UniqueConstraint('checksum', name='uq_artifacts_checksum'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pipeline_id = Column(Integer, ForeignKey('pipelines.id', ondelete='CASCADE'), index=True)
+    task_id = Column(Integer, ForeignKey('tasks.id', ondelete='CASCADE'), nullable=True, index=True)
+    artifact_type = Column(Enum(ArtifactType), nullable=False)
+    storage_uri = Column(Text, nullable=False)
+    metadata_json = Column(JSON_TYPE, nullable=True)  # JSONB / JSON
+    checksum = Column(String(64), nullable=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'pipeline_id': self.pipeline_id,
+            'task_id': self.task_id,
+            'artifact_type': self.artifact_type.value if self.artifact_type else None,
+            'storage_uri': self.storage_uri,
+            'metadata_json': self.metadata_json,
+            'checksum': self.checksum,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() + 'Z' if self.updated_at else None,
+        }
+
+class TaskDependency(Base):
+    __tablename__ = 'task_dependencies'
+    __table_args__ = (
+        Index('idx_task_deps_task_id', 'task_id'),
+        Index('idx_task_deps_depends_on_id', 'depends_on_id'),
+    )
+    task_id = Column(Integer, ForeignKey('tasks.id', ondelete='CASCADE'), primary_key=True)
+    depends_on_id = Column(Integer, ForeignKey('tasks.id', ondelete='CASCADE'), primary_key=True)
+
+class TaskLog(Base, TimestampMixin):
+    __tablename__ = 'task_logs'
+    __table_args__ = (
+        Index('idx_task_logs_task_id', 'task_id'),
+        Index('idx_task_logs_event_type', 'event_type'),
+        Index('idx_task_logs_created_at', 'created_at'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(Integer, ForeignKey('tasks.id', ondelete='CASCADE'), index=True)
+    event_type = Column(String(50), nullable=False)
+    message = Column(Text, nullable=True)
+    worker_id = Column(String(100), nullable=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'task_id': self.task_id,
+            'event_type': self.event_type,
+            'message': self.message,
+            'worker_id': self.worker_id,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() + 'Z' if self.updated_at else None,
+        }
+
+class FileRecord(Base, TimestampMixin):
     __tablename__ = 'file_records'
-    
+    __table_args__ = (
+        Index('idx_file_records_pipeline_id', 'pipeline_id'),
+        Index('idx_file_records_status', 'status'),
+        Index('idx_file_records_created_at', 'created_at'),
+    )
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     original_filename = Column(String(255), nullable=False)
     file_type = Column(String(50), nullable=False)
     storage_uri = Column(Text, nullable=False)
     size_bytes = Column(Integer, nullable=False)
-    status = Column(String(20), default='uploaded') # uploaded, processing, processed, failed
-    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    status = Column(Enum(FileStatus), default=FileStatus.uploaded, nullable=False)
+    pipeline_id = Column(Integer, ForeignKey('pipelines.id', ondelete='CASCADE'), nullable=True, index=True)
     error_message = Column(Text, nullable=True)
 
     def to_dict(self):
@@ -332,28 +494,35 @@ class FileRecord(Base):
             'file_type': self.file_type,
             'storage_uri': self.storage_uri,
             'size_bytes': self.size_bytes,
-            'status': self.status,
+            'status': self.status.value if self.status else None,
             'pipeline_id': self.pipeline_id,
             'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
-            'error_message': self.error_message
+            'updated_at': self.updated_at.isoformat() + 'Z' if self.updated_at else None,
+            'error_message': self.error_message,
         }
 
-class OrchestrationEvent(Base):
+class OrchestrationEvent(Base, TimestampMixin):
     __tablename__ = 'orchestration_events'
-    
+    __table_args__ = (
+        Index('idx_orchestration_events_pipeline_id', 'pipeline_id'),
+        Index('idx_orchestration_events_task_id', 'task_id'),
+        Index('idx_orchestration_events_event_type', 'event_type'),
+        Index('idx_orchestration_events_event_category', 'event_category'),
+        Index('idx_orchestration_events_created_at', 'created_at'),
+        Index('idx_orchestration_events_correlation_id', 'correlation_id'),
+    )
+
     id = Column(Integer, primary_key=True, autoincrement=True)
-    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True, index=True)
-    task_id = Column(Integer, ForeignKey('tasks.id'), nullable=True, index=True)
+    pipeline_id = Column(Integer, ForeignKey('pipelines.id', ondelete='CASCADE'), nullable=True, index=True)
+    task_id = Column(Integer, ForeignKey('tasks.id', ondelete='CASCADE'), nullable=True, index=True)
     event_type = Column(String(50), nullable=False)
-    event_category = Column(String(20), nullable=False)  # critical, operational, telemetry, debug, transient
+    event_category = Column(Enum(EventCategory), nullable=False)
     message = Column(Text, nullable=True)
     worker_id = Column(String(100), nullable=True)
     lease_token = Column(String(100), nullable=True)
     correlation_id = Column(String(100), nullable=True)
-    payload_json = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    payload_json = Column(JSON_TYPE, nullable=False)  # JSONB / JSON
     segment_index = Column(Integer, default=0)
-    # Event versioning for schema evolution
     event_version = Column(Integer, default=1)
     schema_version = Column(String(20), default="1.0")
 
@@ -363,78 +532,87 @@ class OrchestrationEvent(Base):
             'pipeline_id': self.pipeline_id,
             'task_id': self.task_id,
             'event_type': self.event_type,
-            'event_category': self.event_category,
+            'event_category': self.event_category.value if self.event_category else None,
             'message': self.message,
             'worker_id': self.worker_id,
             'lease_token': self.lease_token,
             'correlation_id': self.correlation_id,
-            'payload_json': json.loads(self.payload_json) if self.payload_json else {},
+            'payload_json': self.payload_json,
             'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() + 'Z' if self.updated_at else None,
             'segment_index': self.segment_index,
             'event_version': self.event_version,
-            'schema_version': self.schema_version
+            'schema_version': self.schema_version,
         }
 
-class OrchestrationSnapshot(Base):
+class OrchestrationSnapshot(Base, TimestampMixin):
     __tablename__ = 'orchestration_snapshots'
-    
+    __table_args__ = (
+        Index('idx_orchestration_snapshots_pipeline_id', 'pipeline_id'),
+        Index('idx_orchestration_snapshots_last_event_id', 'last_event_id'),
+    )
+
     id = Column(Integer, primary_key=True, autoincrement=True)
-    pipeline_id = Column(Integer, ForeignKey('pipelines.id'), nullable=True, index=True)
+    pipeline_id = Column(Integer, ForeignKey('pipelines.id', ondelete='CASCADE'), nullable=True, index=True)
     last_event_id = Column(Integer, nullable=False)
     snapshot_data = Column(GzippedBinary, nullable=False)  # gzip compressed JSON
-    created_at = Column(DateTime, default=datetime.utcnow)
     segment_index = Column(Integer, default=0)
 
     def to_dict(self):
         snapshot = {}
-
         try:
             if self.snapshot_data:
                 data = self.snapshot_data
-
                 if isinstance(data, str):
                     data = data.encode("utf-8")
-
-                snapshot = json.loads(
-                    gzip.decompress(data).decode("utf-8")
-                )
+                snapshot = json.loads(gzip.decompress(data).decode("utf-8"))
         except Exception:
-            snapshot = {
-                "__error__": "snapshot_decode_failed"
-            }
-
+            snapshot = {"__error__": "snapshot_decode_failed"}
         return {
             "id": self.id,
             "pipeline_id": self.pipeline_id,
             "last_event_id": self.last_event_id,
             "snapshot_data": snapshot,
-            "created_at": self.created_at.isoformat() + "Z"
-            if self.created_at else None,
-            "segment_index": self.segment_index
+            "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() + "Z" if self.updated_at else None,
+            "segment_index": self.segment_index,
         }
 
-class OrchestratorInstance(Base):
+class OrchestratorInstance(Base, TimestampMixin):
     __tablename__ = 'orchestrator_instances'
+    __table_args__ = (
+        Index('idx_orchestrator_instances_is_leader', 'is_leader'),
+        Index('idx_orchestrator_instances_last_heartbeat', 'last_heartbeat'),
+        Index('idx_orchestrator_instances_status', 'status'),
+    )
+
     instance_id = Column(String(100), primary_key=True)
     is_leader = Column(Boolean, default=False)
-    last_heartbeat = Column(DateTime, default=datetime.utcnow)
-    status = Column(String(20), default='active')
+    last_heartbeat = Column(DateTime, default=datetime.utcnow, nullable=False)
+    status = Column(String(20), default='active')  # active, draining, offline
 
     def to_dict(self):
         return {
             'instance_id': self.instance_id,
             'is_leader': self.is_leader,
             'last_heartbeat': self.last_heartbeat.isoformat() + 'Z' if self.last_heartbeat else None,
-            'status': self.status
+            'status': self.status,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() + 'Z' if self.updated_at else None,
         }
 
-class WorkerRegistry(Base):
+class WorkerRegistry(Base, TimestampMixin):
     __tablename__ = 'worker_registry'
+    __table_args__ = (
+        Index('idx_worker_registry_status', 'status'),
+        Index('idx_worker_registry_last_seen', 'last_seen'),
+    )
+
     worker_id = Column(String(100), primary_key=True)
     capabilities = Column(Text, nullable=False)  # JSON array
     resource_limits = Column(Text, nullable=True)  # JSON object
-    last_seen = Column(DateTime, default=datetime.utcnow)
-    status = Column(String(20), default='active')
+    last_seen = Column(DateTime, default=datetime.utcnow, nullable=False)
+    status = Column(String(20), default='active')  # active, draining, offline
 
     def to_dict(self):
         try:
@@ -450,9 +628,14 @@ class WorkerRegistry(Base):
             'capabilities': caps,
             'resource_limits': res_lim,
             'last_seen': self.last_seen.isoformat() + 'Z' if self.last_seen else None,
-            'status': self.status
+            'status': self.status,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() + 'Z' if self.updated_at else None,
         }
 
+# ------------------------------------------------------------------------------
+# Initialization and auto‑migration
+# ------------------------------------------------------------------------------
 def init_db():
     Base.metadata.create_all(engine)
 
@@ -470,6 +653,8 @@ def init_db():
     except Exception:
         existing_columns = {}
 
+    # Add columns if missing (this is for backward compatibility)
+    # For production, use Alembic migrations to handle schema evolutions properly.
     for table, col, ctype in [
         ("tasks", "assigned_worker_id", "VARCHAR(100)"),
         ("tasks", "lease_token", "VARCHAR(100)"),
@@ -482,21 +667,17 @@ def init_db():
         ("tasks", "blocked_reason", "TEXT"),
         ("tasks", "deferred_at", "TIMESTAMP"),
         ("tasks", "last_progress_at", "TIMESTAMP"),
-        ("tasks", "progress_json", "TEXT"),
-        
+        ("tasks", "progress_json", "TEXT"),  # Will remain TEXT in existing DBs
+        ("tasks", "version", "INTEGER DEFAULT 0"),
         ("pipelines", "owner_instance_id", "VARCHAR(100)"),
         ("pipelines", "owner_lease_expires_at", "TIMESTAMP"),
         ("pipelines", "ownership_version", "INTEGER DEFAULT 0"),
         ("pipelines", "is_critical", "BOOLEAN DEFAULT FALSE"),
-        
+        ("pipelines", "version", "INTEGER DEFAULT 0"),
         ("orchestration_events", "segment_index", "INTEGER DEFAULT 0"),
         ("orchestration_events", "event_version", "INTEGER DEFAULT 1"),
         ("orchestration_events", "schema_version", "VARCHAR(20) DEFAULT '1.0'"),
         ("orchestration_snapshots", "segment_index", "INTEGER DEFAULT 0"),
-        # Note: changing snapshot_data from TEXT to LargeBinary is a breaking change.
-        # In a production migration, you'd need to handle conversion; here we assume a fresh DB or manual migration.
-        # For SQLite, we need to alter table; for PostgreSQL we'd use ALTER COLUMN TYPE.
-        # However, we rely on create_all for new DB, and for existing, we'll skip this ALTER as it's complex.
     ]:
         if col not in existing_columns.get(table, []):
             try:
@@ -505,23 +686,59 @@ def init_db():
             except Exception:
                 pass
 
-    # Auto-create indexes for foreign keys if missing
-    for idx_name, table, col in [
-        ("idx_artifacts_pipeline_id", "artifacts", "pipeline_id"),
-        ("idx_artifacts_task_id", "artifacts", "task_id"),
-        ("idx_task_logs_task_id", "task_logs", "task_id"),
-        ("idx_tasks_pipeline_id", "tasks", "pipeline_id"),
-        ("idx_file_records_pipeline_id", "file_records", "pipeline_id"),
-        ("idx_orchestration_events_pipeline_id", "orchestration_events", "pipeline_id"),
-        ("idx_orchestration_events_task_id", "orchestration_events", "task_id"),
-        ("idx_orchestration_snapshots_pipeline_id", "orchestration_snapshots", "pipeline_id"),
+    # Add missing indexes
+    for idx_name, table, cols in [
+        ("idx_tasks_status", "tasks", "status"),
+        ("idx_tasks_priority", "tasks", "priority"),
+        ("idx_tasks_status_priority", "tasks", ("status", "priority")),
+        ("idx_tasks_lease", "tasks", "lease_expires_at"),
+        ("idx_tasks_worker", "tasks", "assigned_worker_id"),
+        ("idx_pipelines_status", "pipelines", "status"),
+        ("idx_pipelines_owner", "pipelines", "owner_instance_id"),
+        ("idx_orchestration_events_category", "orchestration_events", "event_category"),
+        ("idx_orchestration_events_correlation", "orchestration_events", "correlation_id"),
+        ("idx_artifacts_type", "artifacts", "artifact_type"),
+        ("idx_file_records_status", "file_records", "status"),
     ]:
         try:
             with engine.begin() as conn:
-                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({col})"))
+                if isinstance(cols, tuple):
+                    cols_str = ", ".join(cols)
+                else:
+                    cols_str = cols
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({cols_str})"))
         except Exception:
             try:
                 with engine.begin() as conn:
-                    conn.execute(text(f"CREATE INDEX {idx_name} ON {table} ({col})"))
+                    conn.execute(text(f"CREATE INDEX {idx_name} ON {table} ({cols})"))
             except Exception:
                 pass
+
+    logger.info("Database initialization complete. For schema upgrades, please use Alembic migrations.")
+
+# ------------------------------------------------------------------------------
+# Module exports
+# ------------------------------------------------------------------------------
+__all__ = [
+    "Base",
+    "engine",
+    "SessionLocal",
+    "init_db",
+    "Pipeline",
+    "Task",
+    "TaskDependency",
+    "TaskLog",
+    "Artifact",
+    "FileRecord",
+    "OrchestrationEvent",
+    "OrchestrationSnapshot",
+    "OrchestratorInstance",
+    "WorkerRegistry",
+    "PipelineStatus",
+    "TaskStatus",
+    "TaskPriority",
+    "ArtifactType",
+    "EventCategory",
+    "FileStatus",
+    "WorkerStatus",
+]

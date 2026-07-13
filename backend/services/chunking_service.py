@@ -543,12 +543,33 @@ def _merge_cross_page_paragraphs(nodes: List[Dict]) -> List[Dict]:
     return merged
 
 
+def _collapse_identical_headings(nodes: List[Dict]) -> List[Dict]:
+    """Remove consecutive identical heading nodes (keep first)."""
+    if not nodes:
+        return nodes
+    result = []
+    prev_heading_text = None
+    for node in nodes:
+        if node.get("semantic_category") == "heading" or node.get("structural_type") == "heading":
+            text = node.get("text", "").strip()
+            if text == prev_heading_text:
+                continue
+            prev_heading_text = text
+        else:
+            prev_heading_text = None
+        result.append(node)
+    return result
+
+
 def _group_into_sections(nodes: List[Dict], node_map: Dict) -> List[Dict]:
     """
     Group nodes into sections based on heading hierarchy.
     Returns list of dicts with keys: 'heading_path', 'heading_nodes', 'content_nodes'.
     Uses inferred heading levels if not present.
     """
+    # First, collapse duplicate headings
+    nodes = _collapse_identical_headings(nodes)
+
     sections = []
     current_heading_stack = []  # list of heading nodes
     current_content = []
@@ -647,9 +668,100 @@ def _make_metadata(
     if additional:
         # Only add small additional fields
         for k, v in additional.items():
-            if k in ("table_headers", "caption", "row_count", "col_count", "image_reference"):
+            if k in ("table_headers", "caption", "row_count", "col_count", "image_reference", "part_number", "total_parts"):
                 meta[k] = v
     return meta
+
+
+def _split_table(node: Dict, doc_id: str, heading_path: List[str], parent_chunk_id: str, max_rows_per_chunk: int = 50) -> List[Dict]:
+    """
+    Split a table node into multiple chunks if it has many rows.
+    Returns list of chunk dicts (text + metadata) for each table segment.
+    """
+    rows = node.get("rows") or node.get("table_data") or []
+    if not rows:
+        return []
+
+    headers = node.get("headers") or []
+    caption = node.get("caption") or ""
+    total_rows = len(rows)
+    node_id = node.get("node_id") or node.get("id")
+
+    if total_rows <= max_rows_per_chunk:
+        # No split needed – create metadata using _make_metadata()
+        text = node.get("text", "")
+        if caption and not text.startswith(caption):
+            text = f"{caption}\n{text}"
+        meta = _make_metadata(
+            doc_id=doc_id,
+            chunk_id=_create_chunk_id(doc_id, [node_id] if node_id else []),
+            node_ids=[node_id] if node_id else [],
+            heading_path=heading_path,
+            semantic_category=node.get("semantic_category") or "table",
+            structural_type="table",
+            page_start=node.get("page_number", 1),
+            page_end=node.get("page_number", 1),
+            reading_order_start=node.get("reading_order", 0),
+            reading_order_end=node.get("reading_order", 0),
+            bbox=node.get("bounding_box") or node.get("bbox"),
+            confidence=node.get("confidence"),
+            parent_chunk_id=parent_chunk_id,
+            child_chunk_ids=[],
+            edges=node.get("edges", []),
+            additional={
+                "table_headers": headers[:10],
+                "row_count": len(rows),
+                "col_count": len(headers) if headers else (len(rows[0]) if rows else 0),
+                "caption": caption,
+            },
+            embed=True
+        )
+        return [{"text": text, "metadata": meta}]
+
+    # Split rows into chunks
+    chunks = []
+    total_parts = (total_rows + max_rows_per_chunk - 1) // max_rows_per_chunk
+    for i in range(0, total_rows, max_rows_per_chunk):
+        chunk_rows = rows[i:i+max_rows_per_chunk]
+        part_num = i // max_rows_per_chunk + 1
+        # Build text representation
+        lines = []
+        if caption:
+            lines.append(f"Caption: {caption}")
+        if headers:
+            lines.append("| " + " | ".join(headers) + " |")
+        for row in chunk_rows:
+            lines.append("| " + " | ".join(str(cell) for cell in row) + " |")
+        text = "\n".join(lines)
+        chunk_id = _create_chunk_id(doc_id, [f"{node_id}_part_{part_num}"])
+        meta = _make_metadata(
+            doc_id=doc_id,
+            chunk_id=chunk_id,
+            node_ids=[node_id],
+            heading_path=heading_path,
+            semantic_category=node.get("semantic_category") or "table",
+            structural_type="table_part",
+            page_start=node.get("page_number", 1),
+            page_end=node.get("page_number", 1),
+            reading_order_start=node.get("reading_order", 0),
+            reading_order_end=node.get("reading_order", 0),
+            bbox=node.get("bounding_box") or node.get("bbox"),
+            confidence=node.get("confidence"),
+            parent_chunk_id=parent_chunk_id,
+            child_chunk_ids=[],
+            edges=node.get("edges", []),
+            additional={
+                "table_headers": headers[:10],
+                "row_count": len(chunk_rows),
+                "col_count": len(headers) if headers else (len(chunk_rows[0]) if chunk_rows else 0),
+                "caption": caption,
+                "part_number": part_num,
+                "total_parts": total_parts,
+            },
+            embed=True
+        )
+        chunks.append({"text": text, "metadata": meta})
+    return chunks
 
 
 def _process_section(
@@ -659,8 +771,8 @@ def _process_section(
     children_map: Dict
 ) -> List[Dict]:
     """
-    Process a section to produce only child chunks (no duplicate parent text).
-    Parent hierarchy is stored only in metadata (parent_chunk_id) and not as a separate chunk.
+    Process a section to produce child chunks (including table splits).
+    Parent hierarchy is stored in metadata (parent_chunk_id) as a separate metadata-only entry.
     Returns list of chunks (each with text and metadata).
     """
     chunks = []
@@ -714,16 +826,25 @@ def _process_section(
             continue
         node_type = node.get("structural_type") or node.get("type") or "paragraph"
         node_sem_cat = node.get("semantic_category") or "unknown"
+
+        # Check if it's a table that needs splitting
+        if node_type == "table" and node.get("rows") and len(node.get("rows", [])) > 50:
+            table_chunks = _split_table(node, doc_id, heading_path, parent_chunk_id)
+            for tc in table_chunks:
+                child_ids.append(tc["metadata"]["chunk_id"])
+                chunks.append(tc)
+            continue
+
         child_chunk_id = _create_chunk_id(doc_id, [node_id])
         child_ids.append(child_chunk_id)
 
         # Build metadata, keep tables lightweight
         additional = {}
         if node_type == "table":
-            # Store only headers, row count, column count, and caption
+            # If not split, store headers and counts
             headers = node.get("headers") or []
             rows = node.get("rows") or node.get("table_data") or []
-            additional["table_headers"] = headers[:10]  # limit
+            additional["table_headers"] = headers[:10]
             additional["row_count"] = len(rows)
             additional["col_count"] = len(headers) if headers else (len(rows[0]) if rows else 0)
             if node.get("caption"):
@@ -758,17 +879,138 @@ def _process_section(
             "metadata": meta
         })
 
-    # Update parent's child_chunk_ids in metadata (we'll attach it as a separate metadata-only entry)
+    # Update parent's child_chunk_ids and keep it as a metadata-only entry
     if child_ids:
         parent_meta["child_chunk_ids"] = child_ids
-        # We do not create a text chunk for parent; we only store the metadata
-        # to be used for retrieval hierarchy. We'll add it as a separate entry without text.
+        # Add the parent metadata as a separate entry with empty text (embed=False)
         chunks.append({
-            "text": "",  # empty text, will be skipped by embedding
+            "text": "",  # empty text, will be skipped by embedding due to embed=False
             "metadata": parent_meta
         })
 
     return chunks
+
+
+def _progressive_degrade(all_chunks: List[Dict], max_chunks: int, all_nodes: List[Dict], doc_id: str) -> List[Dict]:
+    """
+    Progressive degradation: if chunks exceed limit, merge siblings, drop figures, then fallback to node-level.
+    Returns a reduced list of chunks.
+    """
+    if len(all_chunks) <= max_chunks:
+        return all_chunks
+
+    logger.warning(f"Chunk count {len(all_chunks)} exceeds limit {max_chunks}. Attempting progressive degradation.")
+
+    # Step 1: Merge sibling paragraphs with same parent and same structural_type
+    # Group by (parent_chunk_id, structural_type)
+    grouped = defaultdict(list)
+    for c in all_chunks:
+        meta = c.get("metadata", {})
+        if meta.get("embed") is False:
+            # Keep parent metadata as-is (they are already small in number)
+            continue
+        parent = meta.get("parent_chunk_id")
+        stype = meta.get("structural_type")
+        if parent and stype in ("paragraph", "list", "text"):
+            grouped[(parent, stype)].append(c)
+
+    merged = []
+    for (parent, stype), clist in grouped.items():
+        if len(clist) <= 1:
+            merged.extend(clist)
+            continue
+        # Merge text
+        combined_text = " ".join([c.get("text", "") for c in clist])
+        # Use first chunk's metadata as base
+        first = clist[0].copy()
+        first["text"] = combined_text
+        # Update metadata
+        meta = first["metadata"].copy()
+        # Combine node_ids and sort deterministically
+        all_node_ids = []
+        for c in clist:
+            all_node_ids.extend(c["metadata"].get("node_ids", []))
+        all_node_ids = sorted(set(all_node_ids))
+        meta["node_ids"] = all_node_ids
+        # Generate new chunk_id based on merged node_ids
+        meta["chunk_id"] = _create_chunk_id(doc_id, all_node_ids)
+        # Update page range
+        meta["page_start"] = min(c["metadata"].get("page_start", 1) for c in clist)
+        meta["page_end"] = max(c["metadata"].get("page_end", 1) for c in clist)
+        # Update reading order
+        meta["reading_order_start"] = min(c["metadata"].get("reading_order_start", 0) for c in clist)
+        meta["reading_order_end"] = max(c["metadata"].get("reading_order_end", 0) for c in clist)
+        # Update token count and char count
+        meta["token_count"] = _token_count(combined_text)
+        meta["char_count"] = len(combined_text)
+        # Confidence: average
+        confs = [c["metadata"].get("confidence", 1.0) for c in clist]
+        meta["confidence"] = sum(confs) / len(confs)
+        # Edges: merge and deduplicate
+        edges = []
+        for c in clist:
+            edges.extend(c["metadata"].get("edges", []))
+        # Deduplicate edges by (source, target, type)
+        seen = set()
+        deduped_edges = []
+        for edge in edges:
+            if not isinstance(edge, dict):
+                continue
+            key = (edge.get("source"), edge.get("target"), edge.get("type"))
+            if key not in seen:
+                seen.add(key)
+                deduped_edges.append(edge)
+        if deduped_edges:
+            meta["edges"] = deduped_edges[:10]
+        # Also clear edges if it was set but empty
+        elif "edges" in meta:
+            del meta["edges"]
+        first["metadata"] = meta
+        merged.append(first)
+
+    # Add back chunks not grouped (including parent metadata)
+    for c in all_chunks:
+        meta = c.get("metadata", {})
+        if meta.get("embed") is False:
+            merged.append(c)
+        elif (meta.get("parent_chunk_id"), meta.get("structural_type")) not in grouped:
+            merged.append(c)
+
+    if len(merged) <= max_chunks:
+        logger.info(f"Progressive degradation step 1: reduced to {len(merged)} chunks.")
+        return merged
+
+    # Step 2: Drop figure nodes (they often have captions that may be redundant)
+    filtered = [c for c in merged if c.get("metadata", {}).get("structural_type") != "figure"]
+    if len(filtered) <= max_chunks and filtered:
+        logger.info(f"Progressive degradation step 2: dropped figures, reduced to {len(filtered)} chunks.")
+        return filtered
+
+    # Step 3: Fallback to node-level chunks
+    logger.warning("Progressive degradation failed. Falling back to node-level chunking.")
+    fallback_chunks = []
+    for node in all_nodes:
+        text = node.get("text", "").strip()
+        if not text:
+            continue
+        node_id = node.get("node_id") or node.get("id")
+        chunk_id = _create_chunk_id(doc_id, [node_id] if node_id else [])
+        meta = _make_metadata(
+            doc_id=doc_id,
+            chunk_id=chunk_id,
+            node_ids=[node_id] if node_id else [],
+            heading_path=[],
+            semantic_category=node.get("semantic_category") or "unknown",
+            structural_type=node.get("structural_type") or "paragraph",
+            page_start=node.get("page_number", 1),
+            page_end=node.get("page_number", 1),
+            reading_order_start=node.get("reading_order", 0),
+            reading_order_end=node.get("reading_order", 0),
+            bbox=node.get("bounding_box") or node.get("bbox"),
+            confidence=node.get("confidence")
+        )
+        fallback_chunks.append({"text": text, "metadata": meta})
+    return fallback_chunks
 
 
 def chunk_document_graph(document_graph: dict) -> dict:
@@ -837,36 +1079,22 @@ def chunk_document_graph(document_graph: dict) -> dict:
             )
             all_chunks.append({"text": text, "metadata": meta})
 
-    # Limit chunks to prevent explosion; fallback to node-level if too many
+    # Limit chunks using progressive degradation
     MAX_GRAPH_CHUNKS = getattr(config, 'MAX_GRAPH_CHUNKS', 5000)
     if len(all_chunks) > MAX_GRAPH_CHUNKS:
-        logger.warning(f"Graph chunk count {len(all_chunks)} exceeds limit {MAX_GRAPH_CHUNKS}. Falling back to node-level chunking.")
-        # Revert to simple node-level chunks (each node as a chunk)
-        fallback_chunks = []
-        for node in all_nodes:
-            text = node.get("text", "").strip()
-            if not text:
-                continue
-            node_id = node.get("node_id") or node.get("id")
-            chunk_id = _create_chunk_id(doc_id, [node_id] if node_id else [])
-            meta = _make_metadata(
-                doc_id=doc_id,
-                chunk_id=chunk_id,
-                node_ids=[node_id] if node_id else [],
-                heading_path=[],
-                semantic_category=node.get("semantic_category") or "unknown",
-                structural_type=node.get("structural_type") or "paragraph",
-                page_start=node.get("page_number", 1),
-                page_end=node.get("page_number", 1),
-                reading_order_start=node.get("reading_order", 0),
-                reading_order_end=node.get("reading_order", 0),
-                bbox=node.get("bounding_box") or node.get("bbox"),
-                confidence=node.get("confidence")
-            )
-            fallback_chunks.append({"text": text, "metadata": meta})
-        all_chunks = fallback_chunks
+        all_chunks = _progressive_degrade(all_chunks, MAX_GRAPH_CHUNKS, all_nodes, doc_id)
 
-    # Remove any chunks with empty text (like parent containers) to avoid embedding empty text
-    all_chunks = [c for c in all_chunks if c.get("text", "").strip()]
+    # Final filter: keep chunks that have text OR are structural metadata (embed=False)
+    all_chunks = [c for c in all_chunks if c.get("text", "").strip() or c.get("metadata", {}).get("embed") is False]
+
+    # Ensure that for embedding chunks, we set the text properly and avoid empty texts
+    for c in all_chunks:
+        if "chunk_id" not in c["metadata"]:
+            c["metadata"]["chunk_id"] = _create_chunk_id(doc_id, c["metadata"].get("node_ids", []))
+
+    # Ensure parent metadata chunks have embed=False
+    for c in all_chunks:
+        if not c.get("text", "").strip() and c.get("metadata", {}).get("embed") is not False:
+            c["metadata"]["embed"] = False
 
     return {"chunks": all_chunks}
