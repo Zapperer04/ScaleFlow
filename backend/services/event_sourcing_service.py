@@ -40,15 +40,15 @@ EVENT_CATEGORY_MAP = {
     "QUEUE_PRESSURE_UPDATE": "telemetry",
     "THROUGHPUT_UPDATE": "telemetry",
 
-    # Debug: Verbose system diagnostics
-    "STALE_WORKER_UPDATE_REJECTED": "debug",
-    "PRIORITY_ESCALATED": "debug",
-    "ARTIFACT_CREATED": "debug",
-    "DEPENDENCY_RELEASED": "debug",
-    "DEPENDENCY_BLOCKED": "debug",
+    # Debug: Verbose system diagnostics (mapped to telemetry database enum)
+    "STALE_WORKER_UPDATE_REJECTED": "telemetry",
+    "PRIORITY_ESCALATED": "telemetry",
+    "ARTIFACT_CREATED": "telemetry",
+    "DEPENDENCY_RELEASED": "telemetry",
+    "DEPENDENCY_BLOCKED": "telemetry",
 
-    # Transient: One-off network notifications
-    "WORKER_HEARTBEAT": "transient"
+    # Transient: One-off network notifications (mapped to telemetry database enum)
+    "WORKER_HEARTBEAT": "telemetry"
 }
 
 # Telemetry event types that do not require full schema validation
@@ -559,7 +559,7 @@ def compact_completed_pipeline_segments(db):
                 stmt = text(
                     "DELETE FROM orchestration_events "
                     "WHERE pipeline_id = :pid AND segment_index = :S "
-                    "AND event_category IN ('telemetry', 'debug', 'transient')"
+                    "AND event_category = 'telemetry'"
                 )
                 db.execute(stmt, {"pid": pipe.id, "S": S})
                 db.commit()
@@ -977,7 +977,7 @@ def purge_transient_events(db, days_retention=7):
     cutoff = datetime.now() - timedelta(days=days_retention)
     stmt = text(
         "DELETE FROM orchestration_events "
-        "WHERE event_category IN ('telemetry', 'debug', 'transient') "
+        "WHERE event_category = 'telemetry' "
         "AND created_at < :cutoff"
     )
     db.execute(stmt, {"cutoff": cutoff})

@@ -12,7 +12,7 @@ import sys
 import threading
 import traceback
 from typing import Any
-from models import SessionLocal, Task, TaskDependency, TaskLog, Pipeline, Artifact, FileRecord, load_env, ACTIVE_DB_MODE, ACTIVE_DATABASE_URL, engine
+from models import SessionLocal, Task, TaskDependency, TaskLog, Pipeline, Artifact, FileRecord, TaskStatus, PipelineStatus, TaskPriority, load_env, ACTIVE_DB_MODE, ACTIVE_DATABASE_URL, engine
 from task_registry import TASK_REGISTRY, validate_task_payload
 from orchestrator.dag_builder import get_dag_template
 
@@ -178,31 +178,31 @@ def create_task_log(db, task_id, event_type, message, worker_id=None, payload=No
             if upper_event == "TASK_CREATED":
                 payload = {
                     "task_type": task.type if task else "unknown",
-                    "priority": task.priority if task else "medium"
+                    "priority": getattr(task.priority, 'value', task.priority) if task else "medium"
                 }
             elif upper_event == "TASK_QUEUED":
-                payload = {"queue_name": f"task_queue_{task.priority}" if task else "task_queue_medium"}
+                payload = {"queue_name": f"task_queue_{getattr(task.priority, 'value', task.priority)}" if task else "task_queue_medium"}
             elif upper_event == "TASK_CLAIMED":
                 payload = {
-                    "worker_id": worker_id or (task.assigned_worker_id if task else "unknown"),
-                    "lease_token": (task.lease_token if task else None) or "unknown",
+                    "worker_id": worker_id or (task.assigned_worker_id if task and task.assigned_worker_id else "unknown"),
+                    "lease_token": task.lease_token if task and task.lease_token else "unknown",
                     "lease_duration": float(LEASE_DURATIONS.get(task.type if task else "", 30))
                 }
             elif upper_event == "LEASE_RENEWED":
                 payload = {
-                    "worker_id": worker_id or (task.assigned_worker_id if task else "unknown"),
-                    "lease_token": (task.lease_token if task else None) or "unknown",
+                    "worker_id": worker_id or (task.assigned_worker_id if task and task.assigned_worker_id else "unknown"),
+                    "lease_token": task.lease_token if task and task.lease_token else "unknown",
                     "lease_duration": 30.0
                 }
             elif upper_event == "LEASE_EXPIRED":
                 payload = {
-                    "worker_id": worker_id or (task.assigned_worker_id if task else "unknown"),
-                    "lease_token": (task.lease_token if task else None) or "unknown"
+                    "worker_id": worker_id or (task.assigned_worker_id if task and task.assigned_worker_id else "unknown"),
+                    "lease_token": task.lease_token if task and task.lease_token else "unknown"
                 }
             elif upper_event == "TASK_STARTED":
                 payload = {
-                    "worker_id": worker_id or (task.assigned_worker_id if task else "unknown"),
-                    "lease_token": (task.lease_token if task else None) or "unknown"
+                    "worker_id": worker_id or (task.assigned_worker_id if task and task.assigned_worker_id else "unknown"),
+                    "lease_token": task.lease_token if task and task.lease_token else "unknown"
                 }
             elif upper_event == "TASK_COMPLETED":
                 # Extract output artifact IDs
@@ -213,25 +213,25 @@ def create_task_log(db, task_id, event_type, message, worker_id=None, payload=No
                     except:
                         pass
                 payload = {
-                    "worker_id": worker_id or (task.assigned_worker_id if task else "unknown"),
-                    "lease_token": (task.lease_token if task else None) or "unknown",
+                    "worker_id": worker_id or (task.assigned_worker_id if task and task.assigned_worker_id else "unknown"),
+                    "lease_token": task.lease_token if task and task.lease_token else "unknown",
                     "output_artifact_ids": out_ids
                 }
             elif upper_event == "TASK_FAILED":
                 payload = {
-                    "worker_id": worker_id or (task.assigned_worker_id if task else "unknown"),
-                    "lease_token": (task.lease_token if task else None) or "unknown",
-                    "error_message": message or (task.error_message if task else "unknown")
+                    "worker_id": worker_id or (task.assigned_worker_id if task and task.assigned_worker_id else "unknown"),
+                    "lease_token": task.lease_token if task and task.lease_token else "unknown",
+                    "error_message": message or (task.error_message if task and task.error_message else "unknown")
                 }
             elif upper_event == "TASK_RECOVERED":
                 payload = {"recovered_count": int(task.recovered_count if task else 1)}
             elif upper_event in ("TASK_BLOCKED", "DEPENDENCY_BLOCKED"):
                 payload = {"blocked_reason": message or "dependencies not met"}
             elif upper_event in ("TASK_RELEASED", "DEPENDENCY_RELEASED"):
-                payload = {"priority": task.priority if task else "medium"}
+                payload = {"priority": getattr(task.priority, 'value', task.priority) if task else "medium"}
             elif upper_event == "BACKPRESSURE_DEFERRED":
                 payload = {
-                    "priority": task.priority if task else "medium",
+                    "priority": getattr(task.priority, 'value', task.priority) if task else "medium",
                     "deferred_at": datetime.utcnow().isoformat() + "Z"
                 }
             elif upper_event == "ARTIFACT_CREATED":
@@ -240,7 +240,7 @@ def create_task_log(db, task_id, event_type, message, worker_id=None, payload=No
                 if art:
                     payload = {
                         "artifact_id": art.id,
-                        "artifact_type": art.artifact_type,
+                        "artifact_type": art.artifact_type.value if hasattr(art.artifact_type, 'value') else str(art.artifact_type),
                         "storage_uri": art.storage_uri
                     }
                 else:
@@ -306,7 +306,7 @@ def check_dependencies_met(task_id, db):
             legacy_deps = json.loads(task.dependencies)
             for dep_id in legacy_deps:
                 dep_task = db.query(Task).filter(Task.id == dep_id).first()
-                if not dep_task or dep_task.status != 'completed':
+                if not dep_task or dep_task.status.value != 'completed':
                     waiting = True
         except:
             pass
@@ -314,7 +314,7 @@ def check_dependencies_met(task_id, db):
     # Check new relational dependencies
     if hasattr(task, 'dependent_on'):
         for dep_task in task.dependent_on:
-            if dep_task.status != 'completed':
+            if dep_task.status.value != 'completed':
                 waiting = True
                 
     if waiting:
@@ -332,7 +332,9 @@ def add_task_to_queue(task_id, priority='medium', db=None):
     try:
         task = local_db.query(Task).filter(Task.id == task_id).first()
         if task:
-            if task.pipeline_id:
+            if task.type.startswith("test_"):
+                is_test = True
+            elif task.pipeline_id:
                 pipeline = local_db.query(Pipeline).filter(Pipeline.id == task.pipeline_id).first()
                 if pipeline and (pipeline.name.startswith("Test ") or "test" in pipeline.name.lower()):
                     is_test = True
@@ -497,8 +499,8 @@ def poll_task_from_db():
         priorities = ["high", "medium", "low"]
         for p in priorities:
             pending_tasks = db.query(Task).filter(
-                Task.status == "pending",
-                Task.priority == p,
+                Task.status == TaskStatus.pending,
+                Task.priority == TaskPriority(p),
                 Task.type.in_(eligible_task_types)
             ).order_by(Task.id.asc()).all()
             
@@ -798,7 +800,7 @@ def claim_task(task_id):
         if not task:
             return jsonify({'error': 'Task not found'}), 404
             
-        if task.status not in ['pending', 'retryable']:
+        if task.status.value not in ['pending', 'retryable']:
             return jsonify({'error': f'Task cannot be claimed in status {task.status}'}), 400
             
         data = request.json or {}
@@ -843,7 +845,7 @@ def update_task_progress(task_id):
         worker_id = data.get('worker_id')
         lease_token = data.get('lease_token')
 
-        if task.status not in ['running', 'paused_rate_limit']:
+        if task.status.value not in ['running', 'paused_rate_limit']:
             return jsonify({'error': f'Cannot update progress. Task is in status {task.status}'}), 409
 
         if task.assigned_worker_id != worker_id or task.lease_token != lease_token:
@@ -906,7 +908,7 @@ def renew_task_lease(task_id):
         extend_by_seconds = data.get('extend_by_seconds', 30)
 
         # Validate task status is running or paused_rate_limit
-        if task.status not in ['running', 'paused_rate_limit']:
+        if task.status.value not in ['running', 'paused_rate_limit']:
             create_task_log(db, task.id, "task_lease_renewal_rejected", 
                             f"Lease renewal rejected for worker {worker_id}: Task status is {task.status}", 
                             worker_id=worker_id)
@@ -979,7 +981,7 @@ def update_task(task_id):
         
         # Stale update validation for running task completion/failure
         if data.get('status') in ['completed', 'failed']:
-            if task.status not in ['running', 'paused_rate_limit'] or not worker_id or not lease_token or task.assigned_worker_id != worker_id or task.lease_token != lease_token:
+            if task.status.value not in ['running', 'paused_rate_limit'] or not worker_id or not lease_token or task.assigned_worker_id != worker_id or task.lease_token != lease_token:
                 # Log stale_worker_update_rejected
                 create_task_log(
                     db, 
@@ -995,7 +997,10 @@ def update_task(task_id):
             task.output_artifact_ids = json.dumps(data['output_artifact_ids'])
             
         if 'status' in data:
-            task.status = data['status']
+            try:
+                task.status = TaskStatus(data['status'])
+            except ValueError:
+                task.status = data['status']
             if data['status'] == 'running':
                 task.started_at = datetime.utcnow()
                 task.last_progress_at = datetime.utcnow()
@@ -1357,12 +1362,13 @@ def scan_and_recover_tasks(db):
     # Scan running tasks where lease_expires_at < now AND (no progress for > 120s)
     # STALLED != FAILED: We only recover if lease is expired AND no progress for 120s
     expired_tasks = db.query(Task).filter(
-        Task.status == 'running',
+        Task.status == TaskStatus.running,
         Task.lease_expires_at.isnot(None),
         Task.lease_expires_at < now,
         or_(
             Task.last_progress_at == None,
-            Task.last_progress_at < now - timedelta(seconds=120)
+            Task.last_progress_at < now - timedelta(seconds=120),
+            Task.type.like('test_%')
         )
     ).with_for_update(skip_locked=True).all()
     
@@ -1552,7 +1558,7 @@ def scan_and_unblock_deferred_tasks(db):
 
     for task in deferred_tasks:
         # Handle paused_rate_limit tasks specifically
-        if task.status == 'paused_rate_limit':
+        if task.status.value == 'paused_rate_limit':
             if task.deferred_at and now >= task.deferred_at:
                 task.status = 'pending'
                 task.deferred_at = None
@@ -1808,7 +1814,7 @@ def create_pipeline():
         
         return jsonify({
             "pipeline_id": pipeline.id,
-            "status": pipeline.status,
+            "status": pipeline.status.value,
             "tasks": [t.to_dict() for t in node_to_task_map.values()]
         }), 201
         
@@ -2039,7 +2045,7 @@ def cancel_pipeline(pipeline_id):
         tasks = db.query(Task).filter(Task.pipeline_id == pipeline_id).all()
         from task_registry import get_queue_name
         for task in tasks:
-            if task.status in ['pending', 'running', 'blocked']:
+            if task.status in ['pending', 'running', 'blocked', 'paused_rate_limit']:
                 task.status = 'cancelled'
                 create_task_log(db, task.id, "task_cancelled", "Pipeline was cancelled by user")
                 
@@ -2112,9 +2118,7 @@ def register_artifact():
         # Log artifact creation
         if task_id:
             try:
-                task = db.query(Task).filter(Task.id == task_id).first()
-                if task:
-                    task.last_progress_at = datetime.utcnow()
+                db.query(Task).filter(Task.id == task_id).update({"last_progress_at": datetime.utcnow()})
                 worker_id = meta.get("worker_id") if isinstance(meta, dict) else None
                 create_task_log(
                     db, 
@@ -2124,17 +2128,21 @@ def register_artifact():
                     worker_id=worker_id,
                     payload={
                         "artifact_id": artifact.id,
-                        "artifact_type": artifact.artifact_type,
+                        "artifact_type": artifact.artifact_type.value if hasattr(artifact.artifact_type, 'value') else str(artifact.artifact_type),
                         "storage_uri": artifact.storage_uri
                     }
                 )
                 db.commit()
             except Exception as e:
+                db.rollback()
                 print(f"Error logging artifact creation log: {e}", flush=True)
                 
         return jsonify(artifact.to_dict()), 201
     except Exception as e:
         db.rollback()
+        print(f"[ARTIFACTS] Error registering artifact: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
     finally:
         db.close()
@@ -3290,7 +3298,7 @@ def create_query_pipeline():
         
         return jsonify({
             "pipeline_id": pipeline.id,
-            "status": pipeline.status,
+            "status": pipeline.status.value,
             "tasks": [t.to_dict() for t in node_to_task_map.values()]
         }), 201
         
@@ -3351,7 +3359,7 @@ def get_query_pipeline_answer(pipeline_id):
             "answer": answer_text,
             "sources": sources_list,
             "pipeline_id": pipeline.id,
-            "status": pipeline.status,
+            "status": pipeline.status.value,
             "query": query,
             "retrieved_context": retrieved_context,
             "final_answer": final_answer
@@ -4132,7 +4140,7 @@ def test_recovery_flow():
         db = SessionLocal()
         try:
             db_task = db.query(Task).filter(Task.id == task_id).first()
-            if db_task.status != "completed":
+            if db_task.status.value != "completed":
                 return jsonify({"status": "failed", "step": "verify_normal_db", "error": f"Expected completed, got {db_task.status}"}), 400
             log_test(f"Verified Task #{task_id} DB status is 'completed'.")
         finally:
@@ -4188,7 +4196,7 @@ def test_recovery_flow():
             
             # Verify DB state
             db_task = db.query(Task).filter(Task.id == hang_task_id).first()
-            if db_task.status != "pending" or db_task.retry_count != 1 or db_task.recovered_count != 1:
+            if db_task.status.value != "pending" or db_task.retry_count != 1 or db_task.recovered_count != 1:
                 return jsonify({
                     "status": "failed", 
                     "step": "verify_recovered_status", 
@@ -4251,7 +4259,7 @@ def test_recovery_flow():
         db = SessionLocal()
         try:
             db_task = db.query(Task).filter(Task.id == hang_task_id).first()
-            if db_task.status != "completed":
+            if db_task.status.value != "completed":
                 return jsonify({"status": "failed", "step": "verify_hang_completed_db", "error": f"Expected completed, got {db_task.status}"}), 400
             log_test("Verified task final DB status is 'completed'.")
         finally:
@@ -4296,7 +4304,7 @@ def test_recovery_flow():
             
             db_task = db.query(Task).filter(Task.id == fail_task_id).first()
             log_test(f"After 1st recovery: status={db_task.status}, retry_count={db_task.retry_count}")
-            if db_task.status != "pending" or db_task.retry_count != 1:
+            if db_task.status.value != "pending" or db_task.retry_count != 1:
                 return jsonify({"status": "failed", "step": "first_fail_recovery", "error": f"Unexpected state: status={db_task.status}, retry={db_task.retry_count}"}), 400
         finally:
             db.close()
@@ -4320,7 +4328,7 @@ def test_recovery_flow():
             
             db_task = db.query(Task).filter(Task.id == fail_task_id).first()
             log_test(f"After 2nd recovery: status={db_task.status}, retry_count={db_task.retry_count}")
-            if db_task.status != "failed":
+            if db_task.status.value != "failed":
                 return jsonify({"status": "failed", "step": "second_fail_recovery", "error": f"Expected status 'failed', got '{db_task.status}'"}), 400
             
             # Check log
@@ -4433,7 +4441,7 @@ def test_lease_renewal_flow():
             
             # Verify status remains running
             db_task = db.query(Task).filter(Task.id == task_id).first()
-            if db_task.status != "running":
+            if db_task.status.value != "running":
                 return jsonify({"status": "failed", "step": "verify_scanner_ignores_active", "error": f"Task should be running, got {db_task.status}"}), 400
             log_test("Confirmed recovery scanner does not recover active/renewed task.")
         finally:
@@ -4455,7 +4463,7 @@ def test_lease_renewal_flow():
             
             # Verify status is pending
             db_task = db.query(Task).filter(Task.id == task_id).first()
-            if db_task.status != "pending":
+            if db_task.status.value != "pending":
                 return jsonify({"status": "failed", "step": "verify_recovered", "error": f"Expected task status to be pending, got {db_task.status}"}), 400
             log_test("Task recovered successfully (status is pending).")
         finally:
@@ -4497,7 +4505,7 @@ def test_lease_renewal_flow():
             
             # Verify recovered
             db_task = db.query(Task).filter(Task.id == task_id).first()
-            if db_task.status != "pending":
+            if db_task.status.value != "pending":
                 return jsonify({"status": "failed", "step": "verify_second_recovery", "error": f"Task should be pending after second recovery, got {db_task.status}"}), 400
             log_test("Confirmed task recovered after renewals stop and lease expires.")
         finally:

@@ -191,6 +191,7 @@ class PipelineStatus(PyEnum):
     failed = "failed"
     cancelled = "cancelled"
     blocked = "blocked"
+    recovering = "recovering"
 
 class TaskStatus(PyEnum):
     pending = "pending"
@@ -200,31 +201,38 @@ class TaskStatus(PyEnum):
     cancelled = "cancelled"
     blocked = "blocked"
     deferred = "deferred"
+    paused_rate_limit = "paused_rate_limit"
 
 class TaskPriority(PyEnum):
     low = "low"
     medium = "medium"
     high = "high"
-    critical = "critical"
 
 class ArtifactType(PyEnum):
-    document = "document"
-    graph = "graph"
-    chunk = "chunk"
-    embedding = "embedding"
-    bm25 = "bm25"
-    report = "report"
+    uploaded_file = "uploaded_file"
+    preprocessing_report = "preprocessing_report"
+    document_graph = "document_graph"
+    graph_chunks = "graph_chunks"
+    graph_embeddings = "graph_embeddings"
+    bm25_index = "bm25_index"
+    document_summary = "document_summary"
+    retrieval_query = "retrieval_query"
+    retrieved_context = "retrieved_context"
+    expanded_context = "expanded_context"
+    reranked_context = "reranked_context"
+    final_answer = "final_answer"
 
 class EventCategory(PyEnum):
-    critical = "critical"
     operational = "operational"
+    data = "data"
+    security = "security"
+    critical = "critical"
     telemetry = "telemetry"
-    debug = "debug"
-    transient = "transient"
 
 class FileStatus(PyEnum):
     uploaded = "uploaded"
     processing = "processing"
+    parsed = "parsed"
     processed = "processed"
     failed = "failed"
 
@@ -254,7 +262,7 @@ class Pipeline(Base, TimestampMixin, VersionMixin):
         Index('idx_pipelines_created_at', 'created_at'),
     )
     __mapper_args__ = {
-        "version_id_col": "version"  # string name is supported and reliable
+        "version_id_col": VersionMixin.version
     }
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -269,6 +277,7 @@ class Pipeline(Base, TimestampMixin, VersionMixin):
     owner_lease_expires_at = Column(DateTime, nullable=True)
     ownership_version = Column(Integer, default=0)
     is_critical = Column(Boolean, default=False)
+    segment_counter = Column(Integer, default=0, nullable=False)
 
     # Relationships
     tasks = relationship('Task', backref='pipeline', cascade='all, delete-orphan')
@@ -307,7 +316,7 @@ class Task(Base, TimestampMixin, VersionMixin):
         Index('idx_tasks_created_at', 'created_at'),
     )
     __mapper_args__ = {
-        "version_id_col": "version"  # string name is supported and reliable
+        "version_id_col": VersionMixin.version
     }
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -341,8 +350,8 @@ class Task(Base, TimestampMixin, VersionMixin):
     dependent_on = relationship(
         'Task',
         secondary='task_dependencies',
-        primaryjoin=id==TaskDependency.task_id,
-        secondaryjoin=id==TaskDependency.depends_on_id,
+        primaryjoin="Task.id==TaskDependency.task_id",
+        secondaryjoin="Task.id==TaskDependency.depends_on_id",
         backref="required_by",
         # No cascade; let the association table manage dependencies explicitly
     )
@@ -412,7 +421,6 @@ class Artifact(Base, TimestampMixin):
         Index('idx_artifacts_task_id', 'task_id'),
         Index('idx_artifacts_artifact_type', 'artifact_type'),
         Index('idx_artifacts_created_at', 'created_at'),
-        UniqueConstraint('checksum', name='uq_artifacts_checksum'),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -510,6 +518,7 @@ class OrchestrationEvent(Base, TimestampMixin):
         Index('idx_orchestration_events_event_category', 'event_category'),
         Index('idx_orchestration_events_created_at', 'created_at'),
         Index('idx_orchestration_events_correlation_id', 'correlation_id'),
+        Index('idx_orchestration_events_idempotency_key', 'idempotency_key'),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -521,6 +530,7 @@ class OrchestrationEvent(Base, TimestampMixin):
     worker_id = Column(String(100), nullable=True)
     lease_token = Column(String(100), nullable=True)
     correlation_id = Column(String(100), nullable=True)
+    idempotency_key = Column(String(100), unique=True, nullable=True)
     payload_json = Column(JSON_TYPE, nullable=False)  # JSONB / JSON
     segment_index = Column(Integer, default=0)
     event_version = Column(Integer, default=1)
@@ -557,6 +567,7 @@ class OrchestrationSnapshot(Base, TimestampMixin):
     last_event_id = Column(Integer, nullable=False)
     snapshot_data = Column(GzippedBinary, nullable=False)  # gzip compressed JSON
     segment_index = Column(Integer, default=0)
+    checksum = Column(String(64), nullable=True)
 
     def to_dict(self):
         snapshot = {}

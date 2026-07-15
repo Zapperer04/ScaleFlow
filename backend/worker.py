@@ -359,6 +359,12 @@ def handle_parse_document(payload, input_artifacts):
     task_id = payload.get('_task_id')
     lease_token = payload.get('_lease_token')
     progress_json = payload.get('_progress_json') or {}
+    if isinstance(progress_json, str):
+        try:
+            import json
+            progress_json = json.loads(progress_json)
+        except Exception:
+            progress_json = {}
 
     def _trace(msg: str):
         print(f"[{WORKER_ID}] {msg}", flush=True)
@@ -513,11 +519,15 @@ def handle_parse_document(payload, input_artifacts):
             nonlocal page_counter, last_checkpoint_time
             with checkpoint_lock:
                 # Only update if page is newer than current last
-                if page_number > progress_cache["last_completed_page"]:
+                if page_number > progress_cache.get("last_completed_page", 0):
                     progress_cache["last_completed_page"] = page_number
-                    progress_cache["completed_pages_count"] += 1
+                    progress_cache["completed_pages_count"] = progress_cache.get("completed_pages_count", 0) + 1
                     progress_cache["resume_page"] = page_number + 1
                     progress_cache["remaining_pages"] = max(0, total_pages - progress_cache["completed_pages_count"])
+                    
+                    # Cache page text
+                    completed_texts = progress_cache.setdefault("completed_page_texts", {})
+                    completed_texts[str(page_number)] = page_res.get("text", "")
 
             # Increment page counter for checkpoint frequency
             page_counter += 1
@@ -525,12 +535,8 @@ def handle_parse_document(payload, input_artifacts):
             if page_counter >= CHECKPOINT_INTERVAL_PAGES or (now - last_checkpoint_time) >= CHECKPOINT_INTERVAL_SECONDS:
                 save_checkpoint()
 
-        # Acquire concurrency slot
-        slot_id = rate_mgr.acquire_request_slot()  # non-blocking
-        if slot_id is None:
-            _trace("[PARSER] Could not acquire Gemini concurrency slot; pausing")
-            raise TaskPauseException(resume_at=time.time() + 60, reason="no_slot", progress=progress_cache)
-        _trace(f"[PARSER] Acquired Gemini slot: {slot_id}")
+        # Concurrency slots are managed at the request-level inside the parser
+        slot_id = None
 
         try:
             # Load preprocessing report
@@ -540,8 +546,9 @@ def handle_parse_document(payload, input_artifacts):
             parse_method_hint = prep.get("parse_method_hint", "vlm_document_graph")
             enhanced_pages_path = prep.get("enhanced_pages_path")
 
-            from services.pdf_parser import parse_pdf
-            result = parse_pdf(
+            from services.vlm_provider import get_vlm_provider
+            provider = get_vlm_provider()
+            result = provider.parse_document(
                 filepath=filepath,
                 task_id=task_id,
                 lease_token=lease_token,
@@ -576,7 +583,7 @@ def handle_parse_document(payload, input_artifacts):
             save_checkpoint()
             raise
         except Exception as e:
-            from services.gemini_rate_manager import RateLimitPauseRequired
+            from services.vlm_provider import RateLimitPauseRequired
             if isinstance(e, RateLimitPauseRequired):
                 save_checkpoint()
                 raise TaskPauseException(resume_at=e.resume_at, reason="rate_limit", progress=progress_cache)
@@ -724,7 +731,7 @@ def handle_chunk_text(payload, input_artifacts):
     Graph-native chunking: uses document graph if available, else falls back to text chunking.
     """
     task_id = payload.get('_task_id')
-    raw_input = input_artifacts.get("parsed_text", {})
+    raw_input = input_artifacts.get("document_graph") or input_artifacts.get("parsed_text", {})
     document_graph = raw_input.get("document_graph") if isinstance(raw_input, dict) else None
 
     if document_graph:
@@ -862,7 +869,7 @@ def handle_generate_embeddings(payload, input_artifacts):
         print(f"[{WORKER_ID}] {msg}", flush=True)
         emit_task_trace(task_id, msg)
 
-    raw = input_artifacts.get("text_chunks") or []
+    raw = input_artifacts.get("graph_chunks") or input_artifacts.get("text_chunks") or []
 
     # Graph chunks are list of dicts with 'text' and possibly 'metadata'
     if isinstance(raw, list) and raw and isinstance(raw[0], dict) and "text" in raw[0]:
@@ -1043,24 +1050,24 @@ def handle_generate_embeddings(payload, input_artifacts):
 
 def handle_summarize_document(payload, input_artifacts):
     pipeline_id = payload.get('_pipeline_id')
-    chunks = input_artifacts.get("text_chunks")
+    chunks = input_artifacts.get("graph_chunks") or input_artifacts.get("text_chunks")
     if not chunks:
         if pipeline_id:
-            chunks = get_artifact_content_by_type(pipeline_id, "text_chunks")
+            chunks = get_artifact_content_by_type(pipeline_id, "graph_chunks") or get_artifact_content_by_type(pipeline_id, "text_chunks")
     if not chunks:
-        embeddings = input_artifacts.get("embeddings_mock") or input_artifacts.get("vector_index")
+        embeddings = input_artifacts.get("embeddings_mock") or input_artifacts.get("graph_embeddings") or input_artifacts.get("vector_index")
         if embeddings and isinstance(embeddings, list):
             chunks = [item.get("chunk_preview", "") for item in embeddings if isinstance(item, dict)]
         elif embeddings and isinstance(embeddings, dict) and "chunk_refs" in embeddings:
             chunks = [ref.get("chunk_text", "") for ref in embeddings.get("chunk_refs", []) if isinstance(ref, dict)]
             if not any(chunks) and pipeline_id:
-                chunks = get_artifact_content_by_type(pipeline_id, "text_chunks")
+                chunks = get_artifact_content_by_type(pipeline_id, "graph_chunks") or get_artifact_content_by_type(pipeline_id, "text_chunks")
         else:
-            text = input_artifacts.get("parsed_text", "")
+            text = input_artifacts.get("document_graph") or input_artifacts.get("parsed_text", "")
             if not text and pipeline_id:
-                text = get_artifact_content_by_type(pipeline_id, "parsed_text")
+                text = get_artifact_content_by_type(pipeline_id, "document_graph") or get_artifact_content_by_type(pipeline_id, "parsed_text")
             if isinstance(text, dict):
-                text = text.get("parsed_text", "")
+                text = text.get("document_graph") or text.get("parsed_text", "")
             if text:
                 chunks = [text]
             else:
@@ -1437,12 +1444,12 @@ TASK_HANDLERS = {
 
 OUTPUT_ARTIFACT_TYPES = {
     "preprocess_document": "preprocessing_report",
-    "parse_document": "parsed_text",
+    "parse_document": "document_graph",
     "persist_document_graph": "document_graph",
-    "validate_parse_quality": "parsed_text",
-    "chunk_text": "text_chunks",
-    "generate_embeddings": "vector_index",
-    "summarize_document": "summary",
+    "validate_parse_quality": "document_graph",
+    "chunk_text": "graph_chunks",
+    "generate_embeddings": "graph_embeddings",
+    "summarize_document": "document_summary",
     "parse_logs": "parsed_logs",
     "detect_error_patterns": "error_patterns",
     "summarize_logs": "log_summary",

@@ -1189,20 +1189,20 @@ class GeminiRateManager:
         # If still UNKNOWN, fallback to status and message but do NOT default to RPM
         if classification == "UNKNOWN":
             combined = f"{status} {message}".lower()
-            if 'rate_limit' in combined or 'quota' in combined:
-                if 'per minute' in combined or 'rpm' in combined:
+            normalized = combined.replace('_', ' ')
+            if 'rate limit' in normalized or 'quota' in normalized or 'too many requests' in normalized or 'afford' in normalized or 'balance' in normalized or 'credits' in normalized or 'billing' in normalized:
+                if 'per minute' in normalized or 'rpm' in normalized or 'slow down' in normalized:
                     classification = "RPM_LIMIT"
-                elif 'per day' in combined or 'rpd' in combined:
+                elif 'per day' in normalized or 'rpd' in normalized or 'daily' in normalized or 'credits' in normalized or 'billing' in normalized or 'afford' in normalized or 'balance' in normalized:
                     classification = "RPD_LIMIT"
                     reset_time = GeminiRateManager._get_next_midnight_pacific()
-                elif 'token' in combined or 'tpm' in combined:
+                elif 'token' in normalized or 'tpm' in normalized:
                     classification = "TPM_LIMIT"
                 else:
-                    # Still unknown, leave as UNKNOWN
-                    pass
-            elif 'capacity' in combined or 'overloaded' in combined:
+                    classification = "RPM_LIMIT"
+            elif 'capacity' in normalized or 'overloaded' in normalized:
                 classification = "MODEL_CAPACITY"
-            elif 'retry' in combined or 'temporary' in combined or 'transient' in combined:
+            elif 'retry' in normalized or 'temporary' in normalized or 'transient' in normalized:
                 classification = "TRANSIENT"
 
         # Do NOT default to RPM; leave UNKNOWN if not matched
@@ -1258,7 +1258,9 @@ class GeminiRateManager:
     def cache_upload(self, pdf_hash: str, file_uri: str, ttl_seconds: Optional[float] = None,
                      model: Optional[str] = None, prompt_hash: Optional[str] = None,
                      system_prompt_hash: Optional[str] = None,
-                     generation_config_hash: Optional[str] = None) -> bool:
+                     generation_config_hash: Optional[str] = None,
+                     page_start: Optional[int] = None,
+                     page_end: Optional[int] = None) -> bool:
         """
         Cache the uploaded file URI for a given PDF hash and optional context.
         Returns True if stored successfully.
@@ -1267,6 +1269,8 @@ class GeminiRateManager:
             ttl_seconds = self.upload_cache_ttl
         # Build cache key including optional context
         key_parts = [pdf_hash]
+        if page_start is not None and page_end is not None:
+            key_parts.append(f"pages:{page_start}-{page_end}")
         if model:
             key_parts.append(f"model:{model}")
         if prompt_hash:
@@ -1299,13 +1303,17 @@ class GeminiRateManager:
     def lookup_upload(self, pdf_hash: str, model: Optional[str] = None,
                       prompt_hash: Optional[str] = None,
                       system_prompt_hash: Optional[str] = None,
-                      generation_config_hash: Optional[str] = None) -> Optional[str]:
+                      generation_config_hash: Optional[str] = None,
+                      page_start: Optional[int] = None,
+                      page_end: Optional[int] = None) -> Optional[str]:
         """
         Look up a cached file URI for a given PDF hash and optional context.
         Returns the URI if found and not expired, else None.
         Also updates cache hit/miss metrics.
         """
         key_parts = [pdf_hash]
+        if page_start is not None and page_end is not None:
+            key_parts.append(f"pages:{page_start}-{page_end}")
         if model:
             key_parts.append(f"model:{model}")
         if prompt_hash:

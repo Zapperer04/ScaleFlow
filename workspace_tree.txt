@@ -1,45 +1,19 @@
-﻿D:\Projects\task-schedular/
+d:/Projects/task-schedular/
+  .claude/
+    settings.local.json
   .gitignore
-  check-logs.bat
-  docker_logs.txt
-  docker-compose.yml
-  docker-ps.txt
-  document_preprocessor.py
-  powershell.bat
-  push.bat
-  push-to-github.bat
-  README.md
-  rebuild-docker.bat
-  start-services.bat
-  task_schedular.db
   .vscode/
     settings.json
+  README.md
   backend/
     .dockerignore
     .env
     .env.example
-    app.py
-    cleanup_test_data.py
-    clear_qdrant.py
-    config.py
-    diag_worker.py
-    diagnostic_script.py
-    Dockerfile
-    extract_fn.py
-    models.py
-    redis_mock_server.py
-    requirements.txt
-    run_all_validations.py
-    task_registry.py
-    task_schedular.db
-    test_ocr_quality.py
-    test_orchestration_reliability.py
-    test_preprocessor_smoke.py
-    test_resource_limits.py
-    test_validation.py
-    worker.py
     .vscode/
       settings.json
+    Dockerfile
+    app.py
+    config.py
     context/
       artifact_store.py
       check_db.py
@@ -61,19 +35,19 @@
         snapshots/
           a5beb1e3e68b9ab74eb54cfd186867f64f240e1a/
             .gitattributes
+            1_Pooling/
+              config.json
+            README.md
             config.json
             config_sentence_transformers.json
             model.safetensors
             modules.json
             pytorch_model.bin
-            README.md
             sentence_bert_config.json
             special_tokens_map.json
             tokenizer.json
             tokenizer_config.json
             vocab.txt
-            1_Pooling/
-              config.json
       models--cross-encoder--ms-marco-MiniLM-L-6-v2/
         .no_exist/
           c5ee24cb16019beea0893ab7796b1df96625c6b8/
@@ -90,15 +64,24 @@
             tokenizer.json
             tokenizer_config.json
             vocab.txt
+      version.txt
+    models.py
     orchestrator/
       dag_builder.py
       dependency_resolver.py
+    propagation_audit.py
+    real_retrieval_benchmark.py
+    recreate_tables.py
+    redis_mock_server.py
+    requirements.txt
+    run_all_validations.py
     services/
       bm25_service.py
       chunking_service.py
       document_preprocessor.py
       embedding_service.py
       event_sourcing_service.py
+      gemini_rate_manager.py
       graph_expansion_service.py
       ha_coordinator_service.py
       llm_service.py
@@ -108,14 +91,76 @@
       quality_gate_service.py
       reranker_service.py
       retrieval_service.py
+      semantic_context_builder.py
       test_coherence.py
       vector_store.py
+      vlm_provider.py
     storage/
-      profile_embeddings.py
-      retrieval_scenario_proofs.json
-      run_retrieval_scenarios.py
-      run_specific_queries.py
-      scaleflow.db
+      bm25/
+        pipeline_539/
+          MAIN_WRITELOCK
+          MAIN_ycd5ypdzfibux8hj.seg
+          _MAIN_1.toc
+        pipeline_542/
+          MAIN_WRITELOCK
+          MAIN_yli0wjvbs0sghi46.seg
+          _MAIN_1.toc
+        pipeline_544/
+          MAIN_WRITELOCK
+          MAIN_s91uy65n0byxnllo.seg
+          _MAIN_1.toc
+        pipeline_546/
+          MAIN_WRITELOCK
+          MAIN_jjzic0uim1187ub2.seg
+          _MAIN_1.toc
+        pipeline_549/
+          MAIN_0tsz5qmdp9y7nrlg.seg
+          MAIN_WRITELOCK
+          _MAIN_1.toc
+        pipeline_562/
+          MAIN_WRITELOCK
+          MAIN_t8b6tsk64zjw8to0.seg
+          _MAIN_1.toc
+        pipeline_563/
+          MAIN_WRITELOCK
+          MAIN_fs8yv9ssu85u8v4c.seg
+          _MAIN_1.toc
+        pipeline_565/
+          MAIN_WRITELOCK
+          MAIN_tzjhiyafgmj2v8si.seg
+          _MAIN_1.toc
+        pipeline_598/
+          MAIN_WRITELOCK
+          MAIN_e88vqbil1uc5tsw8.seg
+          _MAIN_1.toc
+        pipeline_637/
+          MAIN_WRITELOCK
+          MAIN_skbfntf91z6jh87y.seg
+          _MAIN_1.toc
+        pipeline_638/
+          MAIN_WRITELOCK
+          MAIN_ex1gydfvd5ya95rr.seg
+          _MAIN_1.toc
+        pipeline_639/
+          MAIN_WRITELOCK
+          MAIN_jot1r4qpgyuaams6.seg
+          _MAIN_1.toc
+        pipeline_640/
+          MAIN_WRITELOCK
+          MAIN_eh45nv9xnkph5n7a.seg
+          _MAIN_1.toc
+        pipeline_641/
+          MAIN_WRITELOCK
+          MAIN_qedhsdy3gzp0gyz4.seg
+          _MAIN_1.toc
+        pipeline_644/
+          MAIN_WRITELOCK
+          MAIN_quniztbzzmqsoidj.seg
+          _MAIN_1.toc
+      graphs/
+        v1.0/
+          5cf8789014e7b28522867a76551168813475ab1faf071b9445c05a1b5ce62bd8.json
+          9e3cc46e1568d5a2e987fec76f13567f829d52f7a9506f0163b0b80f039d4151.json
       pipelines/
         1/
           task_1_preprocessing_report.json
@@ -131,6 +176,8 @@
           task_40_text_chunks.json
           task_41_vector_index.json
           task_42_summary.json
+          task_45_preprocessing_report.json
+          task_46_parsed_text.json
         100/
           task_223_preprocessing_report.json
           task_224_parsed_text.json
@@ -177,6 +224,8 @@
           task_43_query_vector.json
           task_44_retrieved_context.json
           task_45_final_answer.json
+          task_53_preprocessing_report.json
+          task_54_parsed_text.json
         110/
           task_256_query_vector.json
           task_257_retrieved_context.json
@@ -217,6 +266,10 @@
         119/
           task_286_query_vector.json
           task_287_retrieved_context.json
+        12/
+          task_61_preprocessing_report.json
+          task_62_document_graph.json
+          task_63_document_graph.json
         120/
           task_289_query_vector.json
           task_290_retrieved_context.json
@@ -255,6 +308,9 @@
           task_316_query_vector.json
           task_317_retrieved_context.json
           task_318_final_answer.json
+        13/
+          task_69_preprocessing_report.json
+          task_70_parsed_text.json
         130/
           task_319_query_vector.json
           task_320_retrieved_context.json
@@ -295,6 +351,9 @@
           task_346_query_vector.json
           task_347_retrieved_context.json
           task_348_final_answer.json
+        14/
+          task_77_preprocessing_report.json
+          task_78_parsed_text.json
         140/
           task_349_query_vector.json
           task_350_retrieved_context.json
@@ -311,6 +370,8 @@
           task_358_query_vector.json
           task_359_retrieved_context.json
           task_360_final_answer.json
+        15/
+          task_85_preprocessing_report.json
         175/
           task_388_preprocessing_report.json
           task_389_parsed_text.json
@@ -550,6 +611,8 @@
           task_16_text_chunks.json
           task_17_vector_index.json
           task_18_summary.json
+          task_5_preprocessing_report.json
+          task_6_parsed_text.json
         30/
           task_155_parsed_text.json
           task_156_text_chunks.json
@@ -839,7 +902,9 @@
           task_974_retrieved_context.json
           task_975_final_answer.json
         4/
+          task_13_preprocessing_report.json
           task_13_query_vector.json
+          task_14_parsed_text.json
           task_14_retrieved_context.json
           task_15_final_answer.json
           task_19_preprocessing_report.json
@@ -1333,21 +1398,231 @@
           task_1402_parsed_text.json
           task_1403_text_chunks.json
           task_1404_vector_index.json
+        529/
+          task_1405_preprocessing_report.json
+          task_1406_preprocessing_report.json
         53/
           task_130_query_vector.json
           task_131_retrieved_context.json
           task_132_final_answer.json
+        530/
+          task_1414_preprocessing_report.json
+          task_1415_preprocessing_report.json
+          task_1416_parsed_text.json
+        531/
+          task_1423_preprocessing_report.json
+          task_1424_preprocessing_report.json
+          task_1425_parsed_text.json
+        532/
+          task_1432_preprocessing_report.json
+          task_1433_preprocessing_report.json
+          task_1434_parsed_text.json
+        533/
+          task_1441_preprocessing_report.json
+          task_1442_preprocessing_report.json
+          task_1443_parsed_text.json
+        534/
+          task_1450_preprocessing_report.json
+          task_1451_preprocessing_report.json
+          task_1452_parsed_text.json
+        535/
+          task_1459_preprocessing_report.json
+          task_1460_preprocessing_report.json
+          task_1461_parsed_text.json
+        536/
+          task_1468_preprocessing_report.json
+          task_1469_preprocessing_report.json
+          task_1470_parsed_text.json
+        537/
+          task_1477_preprocessing_report.json
+          task_1478_preprocessing_report.json
+          task_1479_parsed_text.json
+          task_1480_document_graph.json
+          task_1481_parsed_text.json
+        538/
+          task_1486_preprocessing_report.json
+          task_1487_preprocessing_report.json
+          task_1488_parsed_text.json
+          task_1489_document_graph.json
+          task_1490_parsed_text.json
+          task_1491_text_chunks.json
+          task_1492_vector_index.json
+        539/
+          task_1495_preprocessing_report.json
+          task_1496_preprocessing_report.json
+          task_1497_parsed_text.json
+          task_1498_document_graph.json
+          task_1499_parsed_text.json
+          task_1500_text_chunks.json
+          task_1501_vector_index.json
+          task_1502_bm25_index.json
+          task_1503_summary.json
         54/
           task_133_query_vector.json
           task_134_retrieved_context.json
           task_135_final_answer.json
+        540/
+          task_1504_query_vector.json
+          task_1505_retrieved_context.json
+        541/
+          task_1509_query_vector.json
+          task_1510_retrieved_context.json
+          task_1511_expanded_context.json
+          task_1512_reranked_context.json
+          task_1513_final_answer.json
+        542/
+          task_1514_preprocessing_report.json
+          task_1515_preprocessing_report.json
+          task_1516_parsed_text.json
+          task_1517_document_graph.json
+          task_1518_parsed_text.json
+          task_1519_text_chunks.json
+          task_1520_vector_index.json
+          task_1521_bm25_index.json
+          task_1522_summary.json
+        543/
+          task_1523_query_vector.json
+          task_1524_retrieved_context.json
+          task_1525_expanded_context.json
+          task_1526_reranked_context.json
+          task_1527_final_answer.json
+        544/
+          task_1528_preprocessing_report.json
+          task_1529_preprocessing_report.json
+          task_1530_parsed_text.json
+          task_1531_document_graph.json
+          task_1532_parsed_text.json
+          task_1533_text_chunks.json
+          task_1534_vector_index.json
+          task_1535_bm25_index.json
+          task_1536_summary.json
+        545/
+          task_1537_query_vector.json
+          task_1538_retrieved_context.json
+          task_1539_expanded_context.json
+          task_1540_reranked_context.json
+          task_1541_final_answer.json
+        546/
+          task_1542_preprocessing_report.json
+          task_1543_preprocessing_report.json
+          task_1544_parsed_text.json
+          task_1545_document_graph.json
+          task_1546_parsed_text.json
+          task_1547_text_chunks.json
+          task_1548_vector_index.json
+          task_1549_bm25_index.json
+          task_1550_summary.json
+        547/
+          task_1551_query_vector.json
+          task_1552_retrieved_context.json
+          task_1553_expanded_context.json
+          task_1554_reranked_context.json
+          task_1555_final_answer.json
+        548/
+          task_1556_query_vector.json
+          task_1557_retrieved_context.json
+          task_1558_expanded_context.json
+          task_1559_reranked_context.json
+          task_1560_final_answer.json
+        549/
+          task_1561_preprocessing_report.json
+          task_1562_preprocessing_report.json
+          task_1563_parsed_text.json
+          task_1564_document_graph.json
+          task_1565_parsed_text.json
+          task_1566_text_chunks.json
+          task_1567_vector_index.json
+          task_1568_bm25_index.json
+          task_1569_summary.json
         55/
           task_136_query_vector.json
           task_137_retrieved_context.json
           task_138_final_answer.json
+        550/
+          task_1570_query_vector.json
+          task_1571_retrieved_context.json
+          task_1572_expanded_context.json
+          task_1573_reranked_context.json
+          task_1574_final_answer.json
+        551/
+          task_1575_query_vector.json
+          task_1576_retrieved_context.json
+          task_1577_expanded_context.json
+          task_1578_reranked_context.json
+          task_1579_final_answer.json
+        552/
+          task_1580_query_vector.json
+          task_1581_retrieved_context.json
+          task_1582_expanded_context.json
+          task_1583_reranked_context.json
+          task_1584_final_answer.json
+        553/
+          task_1585_query_vector.json
+          task_1586_retrieved_context.json
+          task_1587_expanded_context.json
+          task_1588_reranked_context.json
+          task_1589_final_answer.json
+        554/
+          task_1590_query_vector.json
+          task_1591_retrieved_context.json
+          task_1592_expanded_context.json
+          task_1593_reranked_context.json
+          task_1594_final_answer.json
+        555/
+          task_1598_preprocessing_report.json
+          task_1599_preprocessing_report.json
+        556/
+          task_1607_preprocessing_report.json
+          task_1608_preprocessing_report.json
+        557/
+          task_1616_preprocessing_report.json
+          task_1617_preprocessing_report.json
+        558/
+          task_1625_preprocessing_report.json
+          task_1626_preprocessing_report.json
+        559/
+          task_1634_preprocessing_report.json
+          task_1635_preprocessing_report.json
         56/
           task_139_query_vector.json
           task_140_retrieved_context.json
+        560/
+          task_1643_preprocessing_report.json
+          task_1644_preprocessing_report.json
+        561/
+          task_1653_preprocessing_report.json
+        562/
+          task_1661_preprocessing_report.json
+          task_1662_preprocessing_report.json
+          task_1663_parsed_text.json
+          task_1664_document_graph.json
+          task_1665_parsed_text.json
+          task_1666_text_chunks.json
+          task_1667_vector_index.json
+          task_1668_bm25_index.json
+          task_1669_summary.json
+        563/
+          task_1670_preprocessing_report.json
+          task_1671_preprocessing_report.json
+          task_1672_parsed_text.json
+          task_1673_document_graph.json
+          task_1674_parsed_text.json
+          task_1675_text_chunks.json
+          task_1676_vector_index.json
+          task_1677_bm25_index.json
+          task_1678_summary.json
+        564/
+          task_1679_preprocessing_report.json
+          task_1680_preprocessing_report.json
+        565/
+          task_1690_preprocessing_report.json
+          task_1691_parsed_text.json
+          task_1692_document_graph.json
+          task_1693_parsed_text.json
+          task_1694_text_chunks.json
+          task_1695_vector_index.json
+          task_1696_bm25_index.json
+          task_1697_summary.json
         57/
           task_142_query_vector.json
           task_143_retrieved_context.json
@@ -1363,6 +1638,17 @@
           task_304_query_vector.json
           task_305_retrieved_context.json
           task_306_final_answer.json
+        598/
+          task_1723_preprocessing_report.json
+          task_1724_parsed_text.json
+          task_1725_document_graph.json
+          task_1726_parsed_text.json
+          task_1727_text_chunks.json
+          task_1728_vector_index.json
+          task_1729_bm25_index.json
+          task_1730_summary.json
+        599/
+          task_1731_preprocessing_report.json
         6/
           task_19_preprocessing_report.json
           task_20_parsed_text.json
@@ -1381,7 +1667,151 @@
           task_36_summary.json
           task_43_vector_index.json
           task_45_final_report.json
+        600/
+          task_1739_preprocessing_report.json
+          task_1740_parsed_text.json
+          task_1741_document_graph.json
+        601/
+          task_1747_preprocessing_report.json
+        602/
+          task_1755_preprocessing_report.json
+          task_1756_parsed_text.json
+          task_1757_document_graph.json
+        603/
+          task_1763_preprocessing_report.json
+        604/
+          task_1771_preprocessing_report.json
+        605/
+          task_1779_preprocessing_report.json
+        606/
+          task_1787_preprocessing_report.json
+        607/
+          task_1795_preprocessing_report.json
+        608/
+          task_1803_preprocessing_report.json
+        609/
+          task_1811_preprocessing_report.json
+        610/
+          task_1819_preprocessing_report.json
+        611/
+          task_1827_preprocessing_report.json
+        612/
+          task_1835_preprocessing_report.json
+        613/
+          task_1843_preprocessing_report.json
+        614/
+          task_1851_preprocessing_report.json
+        615/
+          task_1859_preprocessing_report.json
+        616/
+          task_1867_preprocessing_report.json
+        617/
+          task_1875_preprocessing_report.json
+        618/
+          task_1883_preprocessing_report.json
+        619/
+          task_1891_preprocessing_report.json
+        620/
+          task_1899_preprocessing_report.json
+        621/
+          task_1907_preprocessing_report.json
+        622/
+          task_1915_preprocessing_report.json
+        623/
+          task_1923_preprocessing_report.json
+        624/
+          task_1931_preprocessing_report.json
+        625/
+          task_1939_preprocessing_report.json
+        626/
+          task_1947_preprocessing_report.json
+        627/
+          task_1955_preprocessing_report.json
+        628/
+          task_1963_preprocessing_report.json
+        629/
+          task_1971_preprocessing_report.json
+        630/
+          task_1979_preprocessing_report.json
+        631/
+          task_1987_preprocessing_report.json
+        632/
+          task_1995_preprocessing_report.json
+        633/
+          task_2003_preprocessing_report.json
+        634/
+          task_2011_preprocessing_report.json
+        635/
+          task_2019_preprocessing_report.json
+        636/
+          task_2027_preprocessing_report.json
+        637/
+          task_2035_preprocessing_report.json
+          task_2036_parsed_text.json
+          task_2037_document_graph.json
+          task_2038_parsed_text.json
+          task_2039_text_chunks.json
+          task_2040_vector_index.json
+          task_2041_bm25_index.json
+          task_2042_summary.json
+        638/
+          task_2043_preprocessing_report.json
+          task_2044_parsed_text.json
+          task_2045_document_graph.json
+          task_2046_parsed_text.json
+          task_2047_text_chunks.json
+          task_2048_vector_index.json
+          task_2049_bm25_index.json
+          task_2050_summary.json
+        639/
+          task_2051_preprocessing_report.json
+          task_2052_parsed_text.json
+          task_2053_document_graph.json
+          task_2054_parsed_text.json
+          task_2055_text_chunks.json
+          task_2056_vector_index.json
+          task_2057_bm25_index.json
+          task_2058_summary.json
+        640/
+          task_2059_preprocessing_report.json
+          task_2060_parsed_text.json
+          task_2061_document_graph.json
+          task_2062_parsed_text.json
+          task_2063_text_chunks.json
+          task_2064_vector_index.json
+          task_2065_bm25_index.json
+          task_2066_summary.json
+        641/
+          task_2067_preprocessing_report.json
+          task_2068_parsed_text.json
+          task_2069_document_graph.json
+          task_2070_parsed_text.json
+          task_2071_text_chunks.json
+          task_2072_vector_index.json
+          task_2073_bm25_index.json
+          task_2074_summary.json
+        642/
+          task_2075_query_vector.json
+          task_2076_retrieved_context.json
+          task_2077_expanded_context.json
+          task_2078_reranked_context.json
+          task_2079_final_answer.json
+        643/
+          task_2080_preprocessing_report.json
+        644/
+          task_2088_preprocessing_report.json
+          task_2089_parsed_text.json
+          task_2090_document_graph.json
+          task_2091_parsed_text.json
+          task_2092_text_chunks.json
+          task_2093_vector_index.json
+          task_2094_bm25_index.json
+          task_2095_summary.json
+        645/
+          task_2096_preprocessing_report.json
         7/
+          task_21_preprocessing_report.json
+          task_22_parsed_text.json
           task_25_preprocessing_report.json
           task_25_query_vector.json
           task_26_parsed_text.json
@@ -1393,8 +1823,10 @@
           task_30_summary.json
         8/
           task_28_query_vector.json
+          task_29_preprocessing_report.json
           task_29_retrieved_context.json
           task_30_final_answer.json
+          task_30_parsed_text.json
           task_31_preprocessing_report.json
           task_32_parsed_text.json
           task_33_parsed_text.json
@@ -1411,6 +1843,7 @@
           task_35_vector_index.json
           task_36_summary.json
           task_37_preprocessing_report.json
+          task_38_parsed_text.json
         91/
           task_178_preprocessing_report.json
           task_179_parsed_text.json
@@ -1476,11 +1909,33 @@
           task_724_vector_index.json
           task_760_vector_index.json
           task_818_vector_index.json
+      profile_embeddings.py
+      retrieval_scenario_proofs.json
+      run_retrieval_scenarios.py
+      run_specific_queries.py
+      scaleflow.db
       temp/
+        560_enhanced_pages/
+        561_enhanced_pages/
+        564_enhanced_pages/
+        565_enhanced_pages/
+          page_0001.png
+        598_enhanced_pages/
+          page_0001.png
+        599_enhanced_pages/
+          page_0001.png
+        600_enhanced_pages/
+          page_0001.png
+        601_enhanced_pages/
+          page_0001.png
+        602_enhanced_pages/
+          page_0001.png
         temp_parse_1050.txt
+        test-pipeline-123_enhanced_pages/
+          page_0001.png
       uploads/
-        1_Kaustav_Kumar_Res.pdf
         109_CN_Assignment2.pdf
+        10_category_A_simple.pdf
         110_ML_Notes.pdf
         111_PBL_Patent.pdf
         112_ML_Notes.pdf
@@ -1491,6 +1946,7 @@
         117_ML_Notes.pdf
         118_ML_Notes.pdf
         119_ML_Notes.pdf
+        11_category_A_simple.pdf
         120_ML_Notes.pdf
         121_ML_Notes.pdf
         122_KaustavKumar_23FE10ITE00220_B_PythonAssignClassesObjects.pdf
@@ -1501,6 +1957,7 @@
         127_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
         128_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
         129_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
+        12_category_A_simple.pdf
         130_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
         131_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
         132_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
@@ -1511,6 +1968,7 @@
         137_133_The_Silver_Bears_--_Paul_E__Erdman_--_Dover_edition_Mineola_New_York_2019_--.pdf
         138_The_Silver_Bears_--_Paul_E__Erdman_--_Dover_edition_Mineola_New_York_2019_--_iBo.pdf
         139_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
+        13_category_A_simple.pdf
         140_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
         141_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
         142_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
@@ -1521,6 +1979,7 @@
         147_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
         148_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
         149_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
+        14_category_A_simple.pdf
         150_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
         151_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
         152_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
@@ -1531,18 +1990,99 @@
         157_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
         158_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
         159_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
+        15_category_A_simple.pdf
         160_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
         161_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
         162_23FE10ITE00220_Kaustav_SPAssign1_D_1.pdf
         163_KaustavKumar_23FE10ITE00220_D_OSAssign2.pdf
+        164_PBL_Patent.pdf
+        165_PBL_Patent.pdf
+        166_PBL_Patent.pdf
+        167_PBL_Patent.pdf
+        168_PBL_Patent.pdf
+        169_PBL_Patent.pdf
+        16_category_A_simple.pdf
+        170_PBL_Patent.pdf
+        171_PBL_Patent.pdf
+        172_PBL_Patent.pdf
+        173_PBL_Patent.pdf
+        174_PBL_Patent.pdf
+        175_PBL_Patent.pdf
+        176_PBL_Patent.pdf
+        177_PBL_Patent.pdf
+        178_PBL_Patent.pdf
+        179_The_Money_Changers_--_Arthur_Hailey_--_1975_--_Bantam_Books_--_9788129108074_--_.pdf
+        180_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
+        181_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
+        182_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
+        183_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
+        184_The_Silver_Bears_--_Paul_E__Erdman_--_Dover_edition_Mineola_New_York_2019_--_iBo.pdf
+        185_The_Silver_Bears_--_Paul_E__Erdman_--_Dover_edition_Mineola_New_York_2019_--_iBo.pdf
+        186_e2e_test.txt
+        187_final_e2e_test.txt
+        188_The_Silver_Bears_--_Paul_E__Erdman_--_Dover_edition_Mineola_New_York_2019_--_iBo.pdf
+        189_category_A_simple.pdf
+        1_Kaustav_Kumar_Res.pdf
+        222_category_A_simple.pdf
+        223_category_A_simple.pdf
+        224_category_A_simple.pdf
+        225_category_A_simple.pdf
+        226_category_A_simple.pdf
+        227_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
+        228_category_A_simple.pdf
+        229_category_A_simple.pdf
+        230_category_A_simple.pdf
+        231_category_A_simple.pdf
+        232_category_A_simple.pdf
+        233_category_A_simple.pdf
+        234_category_A_simple.pdf
+        235_category_A_simple.pdf
+        236_category_A_simple.pdf
+        237_category_A_simple.pdf
+        238_category_A_simple.pdf
+        239_category_A_simple.pdf
+        240_category_A_simple.pdf
+        241_category_A_simple.pdf
+        242_category_A_simple.pdf
+        243_category_A_simple.pdf
+        244_category_A_simple.pdf
+        245_category_A_simple.pdf
+        246_category_A_simple.pdf
+        247_category_A_simple.pdf
+        248_category_A_simple.pdf
+        249_category_A_simple.pdf
+        250_category_A_simple.pdf
+        251_category_A_simple.pdf
+        252_category_A_simple.pdf
+        253_category_A_simple.pdf
+        254_category_A_simple.pdf
+        255_category_A_simple.pdf
+        256_category_A_simple.pdf
+        257_category_A_simple.pdf
+        258_Bhoomimitra_patent.pdf
+        259_category_A_simple.pdf
+        260_category_A_simple.pdf
+        261_Bhoomimitra_patent.pdf
+        262_category_A_simple.pdf
+        263_category_A_simple.pdf
+        264_category_A_simple.pdf
+        265_category_A_simple.pdf
+        266_Bhoomimitra_patent.pdf
+        267_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
+        268_category_A_simple.pdf
+        269_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
         2_KaustavKumar_Resume.pdf
         2_PBL_Sypnosis_Kaustav.pdf
-        3_Kaustav_Kumar_Res.pdf
+        2_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
         3_KaustavKumar_23FE10ITE00220_D_SPAssign21march.pdf
-        4_category_A_simple.pdf
+        3_Kaustav_Kumar_Res.pdf
+        3_The_Silver_Bears_--_Paul_E__Erdman_--_Dover_edition_Mineola_New_York_2019_--_iBo.pdf
         4_Kaustav_Kumar_Res.pdf
-        5_category_C_large.pdf
+        4_category_A_simple.pdf
         55_KaustavKumar_Resume.pdf
+        5_category_C_large.pdf
+        7_The_Silver_Bears_--_Paul_E__Erdman_--_Dover_edition_Mineola_New_York_2019_--_iBo.pdf
+        8_category_A_simple.pdf
         91_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
         92_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
         93_The_Billion_Dollar_Sure_Thing_--_Paul_Emil_Erdman_--_2018_--_Dover_Publications_.pdf
@@ -1551,6 +2091,9 @@
         96_Bhoomimitra_patent.pdf
         97_Bhoomimitra_patent.pdf
         98_Bhoomimitra_patent.pdf
+        9_The_Silver_Bears_--_Paul_E__Erdman_--_Dover_edition_Mineola_New_York_2019_--_iBo.pdf
+    task_registry.py
+    task_schedular.db
     test_data/
       billion_dollar_sure_thing.pdf
       category_A_simple.pdf
@@ -1568,13 +2111,28 @@
       preprocessed_verify_E.pdf
       synthetic_table.pdf
       temp_billion.jpg
-      temp_scanned.jpg
       temp_enhanced/
+      temp_scanned.jpg
+    test_ocr_quality.py
+    test_orchestration_reliability.py
+    test_preprocessor_smoke.py
+    test_resource_limits.py
+    test_validation.py
+    tests/
+      benchmark_ocr.py
+      test_gemini_api.py
+      test_vlm_extraction.py
+      verify_rate_limit_resumable.py
+    universal_parsing_audit.py
+    worker.py
+  check-logs.bat
+  docker-compose.yml
   docs/
+    DEMO_GUIDE.md
+    STARTUP_GUIDE.md
     architecture_documentation.md
     chunking_benchmark_report.md
     confidence_scoring_design.md
-    DEMO_GUIDE.md
     domain_adapter_interface.md
     final_document_intelligence_roadmap.md
     handwriting_detection_report.md
@@ -1585,19 +2143,37 @@
     routing_design.md
     routing_validation_report.md
     signature_detection_report.md
-    STARTUP_GUIDE.md
     table_extraction_report.md
     table_retrieval_impact.md
+  document_preprocessor.py
   frontend/
     .dockerignore
     .env
     .env.example
     .gitignore
     Dockerfile
-    package.json
-    package-lock.json
-    powershell.cmd
     README.md
+    build/
+      asset-manifest.json
+      favicon.ico
+      index.html
+      logo192.png
+      logo512.png
+      manifest.json
+      robots.txt
+      static/
+        css/
+          main.8d8554bf.css
+          main.8d8554bf.css.map
+        js/
+          453.03346f77.chunk.js
+          453.03346f77.chunk.js.map
+          main.d6554dd7.js
+          main.d6554dd7.js.LICENSE.txt
+          main.d6554dd7.js.map
+    package-lock.json
+    package.json
+    powershell.cmd
     public/
       favicon.ico
       index.html
@@ -1609,11 +2185,6 @@
       App.css
       App.js
       App.test.js
-      index.css
-      index.js
-      logo.svg
-      reportWebVitals.js
-      setupTests.js
       components/
         ArchitectureOverview.js
         Charts.js
@@ -1628,35 +2199,108 @@
         TaskModal.js
         ValidationLab.js
         VectorSearchPage.js
-        WorkersPage.js
         WorkerStatus.js
+        WorkersPage.js
+      index.css
+      index.js
+      logo.svg
+      reportWebVitals.js
       services/
         api.js
+      setupTests.js
       utils/
         timeUtils.js
+  generate_workspace_tree.py
+  list_templates.py
+  powershell.bat
+  push-to-github.bat
+  push.bat
   qdrant_storage/
-    raft_state.json
     .deleted/
     aliases/
       data.json
     collections/
       scaleflow_chunks/
-        config.json
-        payload_index.json
-        shard_key_mapping.json
-        version.info
         0/
+          applied_seq.json
           newest_clocks.json
           replica_state.json
-          shard_config.json
           segments/
             187fd4c9-3086-4fea-bb12-167f3b1948c1/
               mutable_id_tracker.mappings
               mutable_id_tracker.versions
-              segment.json
-              version.info
               payload_index/
-                config.json
+                4t90os6nruvfiq8vbfbkcesd-neighbor-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                4t90os6nruvfiq8vbfbkcesd-neighbor-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5j29f1blb7vobjvc1vb6589h-entities-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5j29f1blb7vobjvc1vb6589h-entities-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5pt8idh3aanmlhuof95poaac-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5pt8idh3aanmlhuof95poaac-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 7uq5c8ub61qqhbsq5u0uueva-section-map/
                   bitmask.dat
                   config.json
@@ -1670,6 +2314,25 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-map/
                   bitmask.dat
                   config.json
@@ -1684,6 +2347,33 @@
                     flags_a.dat
                     status.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                config.json
+                cvf0q440qp797efj06arrk33-keywords-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                cvf0q440qp797efj06arrk33-keywords-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-numeric/
                   bitmask.dat
                   config.json
                   gaps.dat
@@ -1721,6 +2411,45 @@
                   gaps.dat
                   page_0.dat
                   tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
                 oruua22165nnaekttbgk7mjr-content_-map/
                   bitmask.dat
                   config.json
@@ -1734,12 +2463,39 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
               payload_storage/
                 bitmask.dat
                 config.json
                 gaps.dat
                 page_0.dat
                 tracker.dat
+              segment.json
               vector_storage/
                 deleted/
                   flags_a.dat
@@ -1748,13 +2504,82 @@
                   chunk_0.mmap
                   config.json
                   status.dat
+              version.info
             6cf9b823-2d12-4d0e-956d-8062e5f130f3/
               mutable_id_tracker.mappings
               mutable_id_tracker.versions
-              segment.json
-              version.info
               payload_index/
-                config.json
+                4t90os6nruvfiq8vbfbkcesd-neighbor-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                4t90os6nruvfiq8vbfbkcesd-neighbor-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5j29f1blb7vobjvc1vb6589h-entities-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5j29f1blb7vobjvc1vb6589h-entities-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5pt8idh3aanmlhuof95poaac-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5pt8idh3aanmlhuof95poaac-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 7uq5c8ub61qqhbsq5u0uueva-section-map/
                   bitmask.dat
                   config.json
@@ -1768,6 +2593,25 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-map/
                   bitmask.dat
                   config.json
@@ -1782,6 +2626,33 @@
                     flags_a.dat
                     status.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                config.json
+                cvf0q440qp797efj06arrk33-keywords-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                cvf0q440qp797efj06arrk33-keywords-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-numeric/
                   bitmask.dat
                   config.json
                   gaps.dat
@@ -1819,6 +2690,45 @@
                   gaps.dat
                   page_0.dat
                   tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
                 oruua22165nnaekttbgk7mjr-content_-map/
                   bitmask.dat
                   config.json
@@ -1832,12 +2742,39 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
               payload_storage/
                 bitmask.dat
                 config.json
                 gaps.dat
                 page_0.dat
                 tracker.dat
+              segment.json
               vector_storage/
                 deleted/
                   flags_a.dat
@@ -1846,13 +2783,82 @@
                   chunk_0.mmap
                   config.json
                   status.dat
+              version.info
             7ac20ac3-5830-481e-9fb2-41ae21296ad7/
               mutable_id_tracker.mappings
               mutable_id_tracker.versions
-              segment.json
-              version.info
               payload_index/
-                config.json
+                4t90os6nruvfiq8vbfbkcesd-neighbor-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                4t90os6nruvfiq8vbfbkcesd-neighbor-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5j29f1blb7vobjvc1vb6589h-entities-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5j29f1blb7vobjvc1vb6589h-entities-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5pt8idh3aanmlhuof95poaac-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5pt8idh3aanmlhuof95poaac-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 7uq5c8ub61qqhbsq5u0uueva-section-map/
                   bitmask.dat
                   config.json
@@ -1866,6 +2872,25 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-map/
                   bitmask.dat
                   config.json
@@ -1880,6 +2905,33 @@
                     flags_a.dat
                     status.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                config.json
+                cvf0q440qp797efj06arrk33-keywords-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                cvf0q440qp797efj06arrk33-keywords-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-numeric/
                   bitmask.dat
                   config.json
                   gaps.dat
@@ -1917,6 +2969,45 @@
                   gaps.dat
                   page_0.dat
                   tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
                 oruua22165nnaekttbgk7mjr-content_-map/
                   bitmask.dat
                   config.json
@@ -1930,12 +3021,39 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
               payload_storage/
                 bitmask.dat
                 config.json
                 gaps.dat
                 page_0.dat
                 tracker.dat
+              segment.json
               vector_storage/
                 deleted/
                   flags_a.dat
@@ -1944,13 +3062,82 @@
                   chunk_0.mmap
                   config.json
                   status.dat
+              version.info
             820118fa-e413-425e-99dc-7bf320b8c7b8/
               mutable_id_tracker.mappings
               mutable_id_tracker.versions
-              segment.json
-              version.info
               payload_index/
-                config.json
+                4t90os6nruvfiq8vbfbkcesd-neighbor-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                4t90os6nruvfiq8vbfbkcesd-neighbor-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5j29f1blb7vobjvc1vb6589h-entities-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5j29f1blb7vobjvc1vb6589h-entities-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5pt8idh3aanmlhuof95poaac-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5pt8idh3aanmlhuof95poaac-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 7uq5c8ub61qqhbsq5u0uueva-section-map/
                   bitmask.dat
                   config.json
@@ -1964,6 +3151,25 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-map/
                   bitmask.dat
                   config.json
@@ -1978,6 +3184,33 @@
                     flags_a.dat
                     status.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                config.json
+                cvf0q440qp797efj06arrk33-keywords-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                cvf0q440qp797efj06arrk33-keywords-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-numeric/
                   bitmask.dat
                   config.json
                   gaps.dat
@@ -2015,6 +3248,45 @@
                   gaps.dat
                   page_0.dat
                   tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
                 oruua22165nnaekttbgk7mjr-content_-map/
                   bitmask.dat
                   config.json
@@ -2028,12 +3300,39 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
               payload_storage/
                 bitmask.dat
                 config.json
                 gaps.dat
                 page_0.dat
                 tracker.dat
+              segment.json
               vector_storage/
                 deleted/
                   flags_a.dat
@@ -2042,27 +3341,97 @@
                   chunk_0.mmap
                   config.json
                   status.dat
+              version.info
+          shard_config.json
           wal/
             first-index
             open-1
             open-2
-      scaleflow_paragraphs/
         config.json
         payload_index.json
         shard_key_mapping.json
         version.info
+      scaleflow_paragraphs/
         0/
+          applied_seq.json
           newest_clocks.json
           replica_state.json
-          shard_config.json
           segments/
             458b7094-e71c-4c47-aec7-562e8e18fce3/
               mutable_id_tracker.mappings
               mutable_id_tracker.versions
-              segment.json
-              version.info
               payload_index/
-                config.json
+                4t90os6nruvfiq8vbfbkcesd-neighbor-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                4t90os6nruvfiq8vbfbkcesd-neighbor-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5j29f1blb7vobjvc1vb6589h-entities-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5j29f1blb7vobjvc1vb6589h-entities-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5pt8idh3aanmlhuof95poaac-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5pt8idh3aanmlhuof95poaac-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 7uq5c8ub61qqhbsq5u0uueva-section-map/
                   bitmask.dat
                   config.json
@@ -2076,6 +3445,25 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-map/
                   bitmask.dat
                   config.json
@@ -2090,6 +3478,33 @@
                     flags_a.dat
                     status.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                config.json
+                cvf0q440qp797efj06arrk33-keywords-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                cvf0q440qp797efj06arrk33-keywords-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-numeric/
                   bitmask.dat
                   config.json
                   gaps.dat
@@ -2127,6 +3542,45 @@
                   gaps.dat
                   page_0.dat
                   tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
                 oruua22165nnaekttbgk7mjr-content_-map/
                   bitmask.dat
                   config.json
@@ -2140,12 +3594,39 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
               payload_storage/
                 bitmask.dat
                 config.json
                 gaps.dat
                 page_0.dat
                 tracker.dat
+              segment.json
               vector_storage/
                 deleted/
                   flags_a.dat
@@ -2154,13 +3635,82 @@
                   chunk_0.mmap
                   config.json
                   status.dat
+              version.info
             88c2336d-1f06-40c5-8db1-cb78d661e0c1/
               mutable_id_tracker.mappings
               mutable_id_tracker.versions
-              segment.json
-              version.info
               payload_index/
-                config.json
+                4t90os6nruvfiq8vbfbkcesd-neighbor-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                4t90os6nruvfiq8vbfbkcesd-neighbor-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5j29f1blb7vobjvc1vb6589h-entities-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5j29f1blb7vobjvc1vb6589h-entities-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5pt8idh3aanmlhuof95poaac-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5pt8idh3aanmlhuof95poaac-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 7uq5c8ub61qqhbsq5u0uueva-section-map/
                   bitmask.dat
                   config.json
@@ -2174,6 +3724,25 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-map/
                   bitmask.dat
                   config.json
@@ -2188,6 +3757,33 @@
                     flags_a.dat
                     status.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                config.json
+                cvf0q440qp797efj06arrk33-keywords-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                cvf0q440qp797efj06arrk33-keywords-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-numeric/
                   bitmask.dat
                   config.json
                   gaps.dat
@@ -2225,6 +3821,45 @@
                   gaps.dat
                   page_0.dat
                   tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
                 oruua22165nnaekttbgk7mjr-content_-map/
                   bitmask.dat
                   config.json
@@ -2238,12 +3873,39 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
               payload_storage/
                 bitmask.dat
                 config.json
                 gaps.dat
                 page_0.dat
                 tracker.dat
+              segment.json
               vector_storage/
                 deleted/
                   flags_a.dat
@@ -2252,13 +3914,82 @@
                   chunk_0.mmap
                   config.json
                   status.dat
+              version.info
             a1ba46ff-8a05-4153-b4ac-f06379739489/
               mutable_id_tracker.mappings
               mutable_id_tracker.versions
-              segment.json
-              version.info
               payload_index/
-                config.json
+                4t90os6nruvfiq8vbfbkcesd-neighbor-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                4t90os6nruvfiq8vbfbkcesd-neighbor-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5j29f1blb7vobjvc1vb6589h-entities-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5j29f1blb7vobjvc1vb6589h-entities-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5pt8idh3aanmlhuof95poaac-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5pt8idh3aanmlhuof95poaac-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 7uq5c8ub61qqhbsq5u0uueva-section-map/
                   bitmask.dat
                   config.json
@@ -2272,6 +4003,25 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-map/
                   bitmask.dat
                   config.json
@@ -2286,6 +4036,33 @@
                     flags_a.dat
                     status.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                config.json
+                cvf0q440qp797efj06arrk33-keywords-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                cvf0q440qp797efj06arrk33-keywords-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-numeric/
                   bitmask.dat
                   config.json
                   gaps.dat
@@ -2323,6 +4100,45 @@
                   gaps.dat
                   page_0.dat
                   tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
                 oruua22165nnaekttbgk7mjr-content_-map/
                   bitmask.dat
                   config.json
@@ -2336,12 +4152,39 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
               payload_storage/
                 bitmask.dat
                 config.json
                 gaps.dat
                 page_0.dat
                 tracker.dat
+              segment.json
               vector_storage/
                 deleted/
                   flags_a.dat
@@ -2350,13 +4193,82 @@
                   chunk_0.mmap
                   config.json
                   status.dat
+              version.info
             b54127db-bf56-466f-9aea-2c8daa762556/
               mutable_id_tracker.mappings
               mutable_id_tracker.versions
-              segment.json
-              version.info
               payload_index/
-                config.json
+                4t90os6nruvfiq8vbfbkcesd-neighbor-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                4t90os6nruvfiq8vbfbkcesd-neighbor-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5j29f1blb7vobjvc1vb6589h-entities-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5j29f1blb7vobjvc1vb6589h-entities-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                5pt8idh3aanmlhuof95poaac-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                5pt8idh3aanmlhuof95poaac-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                77gk2i7nhv8g4a1sej3q51dk-parser_v-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                7k75jh3gh6e8h993lop7jkpf-page_sta-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 7uq5c8ub61qqhbsq5u0uueva-section-map/
                   bitmask.dat
                   config.json
@@ -2370,6 +4282,25 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                ahikfj7r13gkggdklm5l16v3-page_end-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-map/
                   bitmask.dat
                   config.json
@@ -2384,6 +4315,33 @@
                     flags_a.dat
                     status.dat
                 bhsfc6csoeabaqnb03es9bv5-file_id-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                config.json
+                cvf0q440qp797efj06arrk33-keywords-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                cvf0q440qp797efj06arrk33-keywords-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                dif7jl9rvph8lino3e23ejd6-graph_de-numeric/
                   bitmask.dat
                   config.json
                   gaps.dat
@@ -2421,6 +4379,45 @@
                   gaps.dat
                   page_0.dat
                   tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                ktcj388bknlg80gp8r5vqfgr-collecti-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                m6gpltgt3h9vt76kufikn168-importan-numeric/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                o2h2ai1doetv2gqek1imdp09-semantic-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
                 oruua22165nnaekttbgk7mjr-content_-map/
                   bitmask.dat
                   config.json
@@ -2434,12 +4431,39 @@
                   is_null/
                     flags_a.dat
                     status.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                rbhhd9qckgvo2gqqrcgh4cjk-section_-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-map/
+                  bitmask.dat
+                  config.json
+                  gaps.dat
+                  page_0.dat
+                  tracker.dat
+                v5jh6j5roti0rl07somu6k6j-chunk_id-null/
+                  has_values/
+                    flags_a.dat
+                    status.dat
+                  is_null/
+                    flags_a.dat
+                    status.dat
               payload_storage/
                 bitmask.dat
                 config.json
                 gaps.dat
                 page_0.dat
                 tracker.dat
+              segment.json
               vector_storage/
                 deleted/
                   flags_a.dat
@@ -2448,27 +4472,25 @@
                   chunk_0.mmap
                   config.json
                   status.dat
+              version.info
+          shard_config.json
           wal/
             first-index
             open-1
             open-2
-      scaleflow_tables/
         config.json
         payload_index.json
         shard_key_mapping.json
         version.info
+      scaleflow_tables/
         0/
           newest_clocks.json
           replica_state.json
-          shard_config.json
           segments/
             8cb58ead-a65a-4e33-802d-f8fd2012da50/
               mutable_id_tracker.mappings
               mutable_id_tracker.versions
-              segment.json
-              version.info
               payload_index/
-                config.json
                 7uq5c8ub61qqhbsq5u0uueva-section-map/
                   bitmask.dat
                   config.json
@@ -2501,6 +4523,7 @@
                   gaps.dat
                   page_0.dat
                   tracker.dat
+                config.json
                 dn8dtdb9jkkpajoj8mekb4t6-chunk_te-null/
                   has_values/
                     flags_a.dat
@@ -2552,6 +4575,7 @@
                 gaps.dat
                 page_0.dat
                 tracker.dat
+              segment.json
               vector_storage/
                 deleted/
                   flags_a.dat
@@ -2560,13 +4584,11 @@
                   chunk_0.mmap
                   config.json
                   status.dat
+              version.info
             c53a40b6-22d1-44e3-a360-8141704de0d3/
               mutable_id_tracker.mappings
               mutable_id_tracker.versions
-              segment.json
-              version.info
               payload_index/
-                config.json
                 7uq5c8ub61qqhbsq5u0uueva-section-map/
                   bitmask.dat
                   config.json
@@ -2599,6 +4621,7 @@
                   gaps.dat
                   page_0.dat
                   tracker.dat
+                config.json
                 dn8dtdb9jkkpajoj8mekb4t6-chunk_te-null/
                   has_values/
                     flags_a.dat
@@ -2650,6 +4673,7 @@
                 gaps.dat
                 page_0.dat
                 tracker.dat
+              segment.json
               vector_storage/
                 deleted/
                   flags_a.dat
@@ -2658,13 +4682,11 @@
                   chunk_0.mmap
                   config.json
                   status.dat
+              version.info
             d6753860-b769-4d1e-8168-19a7dc54fc84/
               mutable_id_tracker.mappings
               mutable_id_tracker.versions
-              segment.json
-              version.info
               payload_index/
-                config.json
                 7uq5c8ub61qqhbsq5u0uueva-section-map/
                   bitmask.dat
                   config.json
@@ -2697,6 +4719,7 @@
                   gaps.dat
                   page_0.dat
                   tracker.dat
+                config.json
                 dn8dtdb9jkkpajoj8mekb4t6-chunk_te-null/
                   has_values/
                     flags_a.dat
@@ -2748,6 +4771,7 @@
                 gaps.dat
                 page_0.dat
                 tracker.dat
+              segment.json
               vector_storage/
                 deleted/
                   flags_a.dat
@@ -2756,13 +4780,11 @@
                   chunk_0.mmap
                   config.json
                   status.dat
+              version.info
             f2c0d48a-ca10-4aa1-bf3e-5a95b56690c6/
               mutable_id_tracker.mappings
               mutable_id_tracker.versions
-              segment.json
-              version.info
               payload_index/
-                config.json
                 7uq5c8ub61qqhbsq5u0uueva-section-map/
                   bitmask.dat
                   config.json
@@ -2795,6 +4817,7 @@
                   gaps.dat
                   page_0.dat
                   tracker.dat
+                config.json
                 dn8dtdb9jkkpajoj8mekb4t6-chunk_te-null/
                   has_values/
                     flags_a.dat
@@ -2846,6 +4869,7 @@
                 gaps.dat
                 page_0.dat
                 tracker.dat
+              segment.json
               vector_storage/
                 deleted/
                   flags_a.dat
@@ -2854,10 +4878,19 @@
                   chunk_0.mmap
                   config.json
                   status.dat
+              version.info
+          shard_config.json
           wal/
             first-index
             open-1
             open-2
+        config.json
+        payload_index.json
+        shard_key_mapping.json
+        version.info
+    raft_state.json
+  rebuild-docker.bat
+  recreate_tables.py
   scripts/
     cleanup_services.py
     inspect_docker_logs.py
@@ -2870,6 +4903,8 @@
     simulate_llm_service.py
     simulate_ui_upload.py
     wait_for_services.py
+  start-services.bat
+  task_schedular.db
   test_data/
     billion_dollar_sure_thing.pdf
     category_A_simple.pdf
@@ -2879,6 +4914,8 @@
     category_E_malformed.pdf
     large_document.txt
     photographed_notes.pdf
+  test_parallel_pipeline.py
+  test_small_pipeline.py
   tests/
     test_hybrid_qa.py
     test_new_parser.py
@@ -2892,3 +4929,4 @@
     test_upload.py
     test_upload_auth.py
     test_worker.py
+  validate.py

@@ -4,8 +4,8 @@ import time
 import os
 
 API_URL = "http://localhost:5000"
-FILE_PATH = "backend/storage/uploads/6_category_A_simple.pdf"
-HEADERS = {"X-API-Key": "dev_secret_api_key"}
+FILE_PATH = "test_data/category_A_simple.pdf"
+HEADERS = {"X-API-Key": "local_only_secret_key"}
 
 print(f"Uploading {FILE_PATH}...")
 with open(FILE_PATH, 'rb') as f:

@@ -977,22 +977,33 @@ def parse_pdf(
         "final_mb": 0,
     }
 
+    # Ensure checkpoint compatibility: reset if provider changes
+    provider_name = os.getenv("VLM_PROVIDER", "openrouter").lower()
+    if isinstance(progress_json, dict):
+        last_provider = progress_json.get("vlm_provider")
+        if last_provider and last_provider != provider_name:
+            _trace(trace_fn, f"[PARSER] VLM provider changed ({last_provider} -> {provider_name}). Resetting checkpoint progress to start from page 1.")
+            progress_json["resume_page"] = 1
+            progress_json["last_completed_page"] = 0
+            progress_json["completed_pages_count"] = 0
+            progress_json["completed_page_texts"] = {}
+        progress_json["vlm_provider"] = provider_name
+
     # Parser selection must be immutable: read from progress_json if available.
     locked_parser = progress_json.get("parser") if isinstance(progress_json, dict) else None
 
-    if locked_parser == "gemini":
-        parser_choice = "gemini"
-        skip_ocr = True
-        _trace(trace_fn, "[PARSER] Parser locked to Gemini (from progress_json)")
+    if locked_parser == "vlm" or locked_parser == "gemini":
+        parser_choice = "vlm"
+        _trace(trace_fn, f"[PARSER] Parser locked to VLM (Provider: {provider_name}) (from progress_json)")
     elif locked_parser == "ocr":
         parser_choice = "ocr"
         _trace(trace_fn, "[PARSER] Parser locked to OCR (from progress_json)")
     else:
         if VLM_AVAILABLE:
-            parser_choice = "gemini"
+            parser_choice = "vlm"
             if progress_json is not None:
-                progress_json["parser"] = "gemini"
-                _trace(trace_fn, "[PARSER] Parser set to Gemini (persisted)")
+                progress_json["parser"] = "vlm"
+                _trace(trace_fn, f"[PARSER] Parser set to VLM (Provider: {provider_name}) (persisted)")
         else:
             parser_choice = "ocr"
             if progress_json is not None:
@@ -1015,16 +1026,32 @@ def parse_pdf(
     # Page metadata for stats; will be filled if OCR used
     page_metadata = []
 
-    if parser_choice == "gemini" and VLM_AVAILABLE:
+    if parser_choice == "vlm" and VLM_AVAILABLE:
         _trace(trace_fn, "[PARSER] Starting VLM document graph extraction via transcribe_pages...")
         try:
             vlm_start = time.time()
-            # Call transcribe_pages to get text for all pages (this also ensures artifact is stored)
-            page_texts = transcribe_pages(
-                file_path=filepath,
-                page_numbers=list(range(1, total_pages + 1)),
-                trace_fn=trace_fn
-            )
+            # Load resume page and cached page texts from checkpoint
+            resume_page = 1
+            completed_page_texts = {}
+            if isinstance(progress_json, dict):
+                resume_page = progress_json.get("resume_page", 1)
+                raw_texts = progress_json.get("completed_page_texts", {})
+                completed_page_texts = {int(k): v for k, v in raw_texts.items()}
+
+            remaining_pages = list(range(resume_page, total_pages + 1))
+            if remaining_pages:
+                _trace(trace_fn, f"[PARSER] Resuming VLM parsing from page {resume_page} (remaining: {len(remaining_pages)} pages)")
+                new_texts = transcribe_pages(
+                    file_path=filepath,
+                    page_numbers=remaining_pages,
+                    trace_fn=trace_fn,
+                    on_page_completed=on_page_completed
+                )
+                completed_page_texts.update(new_texts)
+            else:
+                _trace(trace_fn, "[PARSER] All pages already transcribed according to checkpoint progress.")
+
+            page_texts = completed_page_texts
             vlm_extraction_duration = time.time() - vlm_start
 
             if page_texts:
@@ -1066,7 +1093,7 @@ def parse_pdf(
                         if pnum:
                             # Combine all node texts for the page
                             page_text = "\n".join([n.get("text", "") for n in pg.get("nodes", [])])
-                            on_page_completed(pnum, {"text": page_text, "source": "gemini"})
+                            on_page_completed(pnum, {"text": page_text, "source": provider_name})
             else:
                 _trace(trace_fn, "[PARSER] VLM returned empty page texts")
                 document_graph = None

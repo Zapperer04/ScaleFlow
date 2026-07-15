@@ -127,7 +127,7 @@ def _store_graph(
             "parser": parser,
             "schema_version": version,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "model_used": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            "model_used": os.getenv("OPENROUTER_MODEL" if os.getenv("VLM_PROVIDER", "openrouter").lower() == "openrouter" else "GEMINI_MODEL", "unknown"),
         }
     }
     if timings:
@@ -482,7 +482,9 @@ def _get_gemini_api_key_and_model() -> Tuple[str, str]:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY environment variable missing.")
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    model = os.getenv("GEMINI_MODEL")
+    if not model:
+        raise ValueError("GEMINI_MODEL environment variable missing.")
     return api_key, model
 
 def _upload_pdf_to_gemini_resumable(file_path: str, trace_fn: Optional[Callable] = None) -> Tuple[str, str]:
@@ -579,6 +581,7 @@ def _call_gemini_with_pdf(
     gemini_model: str,
     api_key: str,
     rate_mgr: GeminiRateManager,
+    pages_in_chunk: List[int],
     trace_fn: Optional[Callable] = None,
     max_retries: int = 3,
 ) -> Dict[str, Any]:
@@ -595,6 +598,7 @@ def _call_gemini_with_pdf(
                 pass
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
+    max_tokens = min(4000, max(2000, len(pages_in_chunk) * 1000))
     payload = {
         "contents": [{
             "parts": [
@@ -604,7 +608,8 @@ def _call_gemini_with_pdf(
         }],
         "generationConfig": {
             "temperature": 0.0,
-            "responseMimeType": "application/json"
+            "responseMimeType": "application/json",
+            "maxOutputTokens": max_tokens
         }
     }
 
@@ -676,6 +681,9 @@ def _call_gemini_with_pdf(
                     pass
                 _t(f"[GEMINI] Rate limit hit. Retry after {retry_after}s")
                 raise RateLimitPauseRequired(resume_at=time.time() + retry_after, reason="rate_limit", retry_after=retry_after)
+            elif resp.status_code in (400, 401, 402, 403, 422):
+                _t(f"[GEMINI] Fatal API Error: {resp.status_code} - {resp.text}")
+                raise RuntimeError(f"Gemini Fatal API Error {resp.status_code}: {resp.text}")
             else:
                 if resp.status_code in (500, 502, 504):
                     sleep_time = 2 ** attempt
@@ -686,6 +694,8 @@ def _call_gemini_with_pdf(
                     _t(f"[GEMINI] HTTP error: {resp.status_code}")
                     raise RuntimeError(f"Gemini API error: {resp.status_code}")
         except RateLimitPauseRequired:
+            raise
+        except RuntimeError:
             raise
         except requests.exceptions.Timeout as e:
             _t(f"[GEMINI] Request timeout. Retry attempt {attempt+1}/{max_retries}")
@@ -714,6 +724,161 @@ def _call_gemini_with_pdf(
     raise RuntimeError(f"Gemini call failed after {max_retries} attempts: {last_error}")
 
 
+def _call_openrouter_with_images(
+    chunk_path: str,
+    pages_in_chunk: List[int],
+    prompt: str,
+    rate_mgr: GeminiRateManager,
+    trace_fn: Optional[Callable] = None,
+    max_retries: int = 3,
+) -> Dict[str, Any]:
+    """
+    Render PDF pages in chunk_path to base64 images and call OpenRouter with the prompt.
+    Returns parsed JSON response (dict).
+    """
+    def _t(msg: str):
+        if trace_fn:
+            try:
+                trace_fn(msg)
+            except Exception:
+                pass
+
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    model = os.getenv("OPENROUTER_MODEL")
+    if not api_key:
+        raise ValueError("OPENROUTER_API_KEY environment variable is not set")
+    if not model:
+        raise ValueError("OPENROUTER_MODEL environment variable is not set")
+
+    _t(f"[OPENROUTER] Rendering {len(pages_in_chunk)} pages for OpenRouter...")
+    images = []
+    # Render all pages in the temporary chunk PDF (chunk has pages 1..len(pages_in_chunk))
+    rendered = convert_from_path(chunk_path, dpi=150)
+    for idx, img in enumerate(rendered):
+        images.append((pages_in_chunk[idx], img))
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt}
+            ]
+        }
+    ]
+
+    for pnum, img in images:
+        _, buffer = cv2.imencode(".jpeg", cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR))
+        base64_image = base64.b64encode(buffer).decode("utf-8")
+        messages[0]["content"].append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/jpeg;base64,{base64_image}"
+            }
+        })
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://scaleflow.ai",
+        "X-Title": "ScaleFlow VLM",
+    }
+    
+    max_tokens = 4096
+    payload = {
+        "model": model,
+        "messages": messages,
+        "response_format": {"type": "json_object"},
+        "temperature": 0.0,
+        "max_tokens": max_tokens
+    }
+
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    timeout_seconds = getattr(config, "GEMINI_GENERATE_TIMEOUT", 240)
+
+    for attempt in range(max_retries):
+        try:
+            _t(f"[OPENROUTER] Sending request to OpenRouter (attempt {attempt+1}/{max_retries})...")
+            resp = requests.post(url, headers=headers, json=payload, timeout=timeout_seconds)
+            if resp.status_code == 400 and "response_format" in resp.text and "response_format" in payload:
+                _t("[OPENROUTER] Model does not support response_format. Retrying without it...")
+                del payload["response_format"]
+                resp = requests.post(url, headers=headers, json=payload, timeout=timeout_seconds)
+            if resp.status_code == 200:
+                data = resp.json()
+                if "error" in data:
+                    err_data = data["error"]
+                    err_msg = err_data.get("message", "Unknown error")
+                    err_code = err_data.get("code", 500)
+                    _t(f"[OPENROUTER] Error inside 200 response: {err_msg} (code: {err_code})")
+                    if "rate limit" in err_msg.lower() or "limit exceeded" in err_msg.lower() or err_code == 429:
+                        rate_mgr.register_429(
+                            retry_after_header=resp.headers.get("Retry-After"),
+                            response=resp
+                        )
+                        retry_after = 60.0
+                        _t(f"[OPENROUTER] Rate limit inside 200. Retry after {retry_after}s")
+                        raise RateLimitPauseRequired(resume_at=time.time() + retry_after, reason="rate_limit", retry_after=retry_after)
+                    elif err_code in (401, 402):
+                        raise RuntimeError(f"OpenRouter Fatal API Error: {err_msg} (code: {err_code})")
+                    else:
+                        raise Exception(f"OpenRouter Transient API Error: {err_msg} (code: {err_code})")
+                text = data["choices"][0]["message"]["content"]
+                try:
+                    parsed = json.loads(text)
+                except json.JSONDecodeError as e:
+                    _t(f"[OPENROUTER] JSON parse error: {e}. Raw text: {text[:500]}")
+                    cleaned = re.sub(r"^```json\s*", "", text)
+                    cleaned = re.sub(r"\s*```$", "", cleaned)
+                    try:
+                        parsed = json.loads(cleaned)
+                    except:
+                        raise ValueError(f"Invalid JSON response: {e}")
+                if not isinstance(parsed, dict):
+                    raise ValueError("Response is not a JSON object")
+                if "pages" not in parsed:
+                    if isinstance(parsed, list):
+                        parsed = {"pages": parsed}
+                    else:
+                        raise ValueError("Response JSON missing 'pages' key")
+                return parsed
+            elif resp.status_code in (429, 503) or "quota" in resp.text.lower() or "rate limit" in resp.text.lower():
+                rate_mgr.register_429(
+                    retry_after_header=resp.headers.get("Retry-After"),
+                    response=resp
+                )
+                retry_after = 60.0
+                try:
+                    retry_after = float(resp.headers.get("Retry-After", 60.0))
+                except:
+                    pass
+                _t(f"[OPENROUTER] Rate limit hit. Retry after {retry_after}s")
+                raise RateLimitPauseRequired(resume_at=time.time() + retry_after, reason="rate_limit", retry_after=retry_after)
+            elif resp.status_code in (400, 401, 402, 403, 422):
+                _t(f"[OPENROUTER] Fatal API Error: {resp.status_code} - {resp.text}")
+                raise RuntimeError(f"OpenRouter Fatal API Error {resp.status_code}: {resp.text}")
+            else:
+                if resp.status_code in (500, 502, 504):
+                    sleep_time = 2 ** attempt
+                    _t(f"[OPENROUTER] Server error {resp.status_code}. Retrying in {sleep_time}s...")
+                    time.sleep(sleep_time)
+                    continue
+                else:
+                    _t(f"[OPENROUTER] HTTP error: {resp.status_code}")
+                    raise RuntimeError(f"OpenRouter API error: {resp.status_code}")
+        except RateLimitPauseRequired:
+            raise
+        except RuntimeError:
+            raise
+        except Exception as e:
+            _t(f"[OPENROUTER] Request error on attempt {attempt+1}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+            else:
+                raise e
+    raise RuntimeError(f"OpenRouter call failed after {max_retries} attempts")
+
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Adaptive Planning
 # ─────────────────────────────────────────────────────────────────────────────
@@ -738,7 +903,9 @@ def _adaptive_plan(
     file_size = os.path.getsize(file_path)
     is_scanned = report and report.document_type == "SCANNED"
 
-    if num_pages <= MAX_PAGES_WHOLE and file_size <= MAX_FILE_SIZE_WHOLE and not is_scanned:
+    # Estimate output tokens (approx 1000 per page)
+    estimated_output_tokens = len(pages_to_transcribe) * 1000
+    if num_pages <= MAX_PAGES_WHOLE and file_size <= MAX_FILE_SIZE_WHOLE and not is_scanned and estimated_output_tokens <= 4000:
         estimated_tokens = _estimate_tokens_from_pdf(file_path, pages_to_transcribe)
         if estimated_tokens < 700000:
             return {"strategy": "whole", "page_list": pages_to_transcribe}
@@ -746,9 +913,17 @@ def _adaptive_plan(
     # Use dynamic batch size from rate manager
     rate_mgr = GeminiRateManager()
     recommended = rate_mgr.get_recommended_batch_size()
-    batch_size = recommended
+    
+    # Cap batch size to ensure estimated output is within 4000 output tokens cap
+    max_pages_from_cap = max(1, 4000 // 1000) # 4 pages
+    batch_size = min(recommended, max_pages_from_cap)
     if is_scanned:
-        batch_size = min(batch_size, 6)  # scanned docs may be heavier
+        batch_size = min(batch_size, 2)  # scanned docs may be heavier
+
+    # Cap batch size to 1 for OpenRouter to prevent token limit/truncation errors
+    provider_name = os.getenv("VLM_PROVIDER", "gemini").lower()
+    if provider_name == "openrouter":
+        batch_size = min(batch_size, 1)
 
     pages_sorted = sorted(pages_to_transcribe)
     segments = []
@@ -789,17 +964,21 @@ def _is_batch_size_failure(exc: Exception) -> bool:
         error_str = str(exc).lower()
         if "timeout" in error_str or "read timed out" in error_str:
             return True
-    # Value errors with specific messages
-    if isinstance(exc, ValueError):
+    # Value errors and RuntimeErrors with specific messages
+    if isinstance(exc, (ValueError, RuntimeError)):
         msg = str(exc).lower()
         # Safety/recitation blocks are content issues, not batch-size
         if "safety" in msg or "recitation" in msg:
             return False
         if "max_tokens" in msg or "payload too large" in msg or "response too large" in msg:
             return True
+        if "402" in msg or "affordable" in msg or "budget" in msg or "credit" in msg:
+            return True
     # Generic timeout in error string
     error_str = str(exc).lower()
     if "timeout" in error_str or "read timed out" in error_str:
+        return True
+    if "402" in error_str or "affordable" in error_str:
         return True
     return False
 
@@ -813,6 +992,7 @@ def _execute_adaptive_transcription(
     pages_to_transcribe: List[int],
     trace_fn: Optional[Callable] = None,
     report: Optional[PreprocessingReport] = None,
+    on_page_completed: Optional[Callable] = None,
 ) -> Dict[int, str]:
     """
     Transcribe pages using adaptive strategy with Gemini Files API.
@@ -879,7 +1059,11 @@ def _execute_adaptive_transcription(
             _delete_gemini_file(name, trace_fn)
         uploaded_files.clear()
 
-    api_key, model = _get_gemini_api_key_and_model()
+    provider_name = os.getenv("VLM_PROVIDER", "openrouter").lower()
+    if provider_name == "gemini":
+        api_key, model = _get_gemini_api_key_and_model()
+    else:
+        api_key, model = None, None
     plan = _adaptive_plan(file_path, pages_to_transcribe, report)
     strategy = plan["strategy"]
     recommended_batch = plan.get("recommended_batch_size", 0)
@@ -938,54 +1122,70 @@ def _execute_adaptive_transcription(
             start_page = pages_in_chunk[0]
             end_page = pages_in_chunk[-1]
 
-            # Look up in rate manager cache (includes page range)
-            cached_uri = rate_mgr.lookup_upload(
-                pdf_hash=session_hash,
-                page_start=start_page,
-                page_end=end_page,
-                model=model,
-                prompt_hash=prompt_hash,
-                generation_config_hash=gen_config_hash
-            )
-            if cached_uri:
-                # Cache hit – reuse URI
-                file_uri = cached_uri
-                file_name = None  # not tracked for deletion
-                upload_reuse_count += 1
-                timings["upload_secs"] = 0.0
-                timings["cache_hit"] = True
-                _t(f"[ADAPTIVE] Cache HIT for pages {start_page}-{end_page}")
-            else:
-                # Cache miss – we need to upload
-                timings["cache_hit"] = False
-                # Create temp chunk and upload
-                upload_start = time.perf_counter()
+            provider_name = os.getenv("VLM_PROVIDER", "openrouter").lower()
+            parser_name = f"{provider_name}_vlm"
+            if provider_name == "openrouter":
                 chunk_path = _get_temp_chunk(pages_in_chunk)
-                upload_count += 1  # count as a cache miss / new upload
-                file_uri, file_name = _upload_pdf_to_gemini_resumable(chunk_path, trace_fn)
-                # Cache the upload
-                rate_mgr.cache_upload(
+                generate_start = time.perf_counter()
+                parsed = _call_openrouter_with_images(chunk_path, pages_in_chunk, prompt, rate_mgr, trace_fn)
+                rate_mgr.register_success()
+                timings["upload_secs"] = 0.0
+                timings["cache_hit"] = False
+                timings["generate_secs"] = time.perf_counter() - generate_start
+                # Clean up temp chunk immediately
+                try:
+                    os.unlink(chunk_path)
+                except:
+                    pass
+            else:
+                # Look up in rate manager cache (includes page range)
+                cached_uri = rate_mgr.lookup_upload(
                     pdf_hash=session_hash,
                     page_start=start_page,
                     page_end=end_page,
-                    file_uri=file_uri,
                     model=model,
                     prompt_hash=prompt_hash,
                     generation_config_hash=gen_config_hash
                 )
-                if file_name:
-                    uploaded_files.add(file_name)
-                timings["upload_secs"] = time.perf_counter() - upload_start
+                if cached_uri:
+                    # Cache hit – reuse URI
+                    file_uri = cached_uri
+                    file_name = None  # not tracked for deletion
+                    upload_reuse_count += 1
+                    timings["upload_secs"] = 0.0
+                    timings["cache_hit"] = True
+                    _t(f"[ADAPTIVE] Cache HIT for pages {start_page}-{end_page}")
+                else:
+                    # Cache miss – we need to upload
+                    timings["cache_hit"] = False
+                    # Create temp chunk and upload
+                    upload_start = time.perf_counter()
+                    chunk_path = _get_temp_chunk(pages_in_chunk)
+                    upload_count += 1  # count as a cache miss / new upload
+                    file_uri, file_name = _upload_pdf_to_gemini_resumable(chunk_path, trace_fn)
+                    # Cache the upload
+                    rate_mgr.cache_upload(
+                        pdf_hash=session_hash,
+                        page_start=start_page,
+                        page_end=end_page,
+                        file_uri=file_uri,
+                        model=model,
+                        prompt_hash=prompt_hash,
+                        generation_config_hash=gen_config_hash
+                    )
+                    if file_name:
+                        uploaded_files.add(file_name)
+                    timings["upload_secs"] = time.perf_counter() - upload_start
 
-            # GenerateContent – reuse the same slot
-            generate_start = time.perf_counter()
-            parsed = _call_gemini_with_pdf(file_uri, prompt, model, api_key, rate_mgr, trace_fn)
-            retries = parsed.get("_retries", 0)
-            nonlocal total_retries
-            total_retries += retries
-            # Register success after successful parsing
-            rate_mgr.register_success()
-            timings["generate_secs"] = time.perf_counter() - generate_start
+                # GenerateContent – reuse the same slot
+                generate_start = time.perf_counter()
+                parsed = _call_gemini_with_pdf(file_uri, prompt, model, api_key, rate_mgr, pages_in_chunk, trace_fn)
+                retries = parsed.get("_retries", 0)
+                nonlocal total_retries
+                total_retries += retries
+                # Register success after successful parsing
+                rate_mgr.register_success()
+                timings["generate_secs"] = time.perf_counter() - generate_start
 
             # JSON parsing timing
             parse_start = time.perf_counter()
@@ -1050,9 +1250,9 @@ def _execute_adaptive_transcription(
             "reading_order": reading_order
         }
 
-    # Recursive batch processing with adaptive subdivision
     recursion_depth = 0
     subdivision_count = 0
+    provider_name = os.getenv("VLM_PROVIDER", "openrouter").lower()
 
     def _process_batch_recursive(batch_pages: List[int], depth: int = 0) -> None:
         nonlocal recursion_depth, subdivision_count
@@ -1061,6 +1261,21 @@ def _execute_adaptive_transcription(
         recursion_depth = max(recursion_depth, depth)
         if not batch_pages:
             return
+
+        # Proactive intelligent batching based on estimated output tokens (1000 per page)
+        # Cap output tokens requested at 4000
+        estimated_output = len(batch_pages) * 1000
+        if estimated_output > 4000 and len(batch_pages) > 1:
+            _t(f"[ADAPTIVE] Estimated output ({estimated_output}) exceeds cap (4000). Proactively subdividing batch without request.")
+            mid = len(batch_pages) // 2
+            left = batch_pages[:mid]
+            right = batch_pages[mid:]
+            subdivision_count += 1
+            total_subdivisions += 1
+            _process_batch_recursive(left, depth+1)
+            _process_batch_recursive(right, depth+1)
+            return
+
         if len(batch_pages) == 1:
             # Single page fallback (last resort after all subdivision)
             p = batch_pages[0]
@@ -1068,6 +1283,8 @@ def _execute_adaptive_transcription(
             page_text = _transcribe_single_page_fallback(file_path, p, trace_fn, rate_mgr)
             if page_text:
                 result[p] = page_text
+                if on_page_completed:
+                    on_page_completed(p, {"text": page_text, "source": provider_name})
                 minimal_page = {
                     "page": p,
                     "text": page_text,
@@ -1096,9 +1313,13 @@ def _execute_adaptive_transcription(
                 max_batch_size_attempted = max(max_batch_size_attempted, batch_size)
                 min_batch_size_attempted = min(min_batch_size_attempted, batch_size)
 
-                text_dict, graph_list, timings = _process_pdf_file(batch_pages, is_whole=False, parser_name="gemini_vlm")
+                text_dict, graph_list, timings = _process_pdf_file(batch_pages, is_whole=False, parser_name="vlm_parser")
                 result.update(text_dict)
                 all_graph_pages.extend(graph_list)
+
+                if on_page_completed:
+                    for pnum, ptext in text_dict.items():
+                        on_page_completed(pnum, {"text": ptext, "source": provider_name})
 
                 batch_entry = {
                     "size": batch_size,
@@ -1267,14 +1488,13 @@ def _build_graph_extraction_prompt(pages: List[int], is_whole: bool) -> str:
         prompt += f"The document has pages 1..{max(page_list)}. Return all requested pages.\n"
     return prompt
 
-
 def _transcribe_single_page_fallback(
     file_path: str,
     page_num: int,
     trace_fn: Optional[Callable] = None,
     rate_mgr: Optional[GeminiRateManager] = None,
 ) -> Optional[str]:
-    """Fallback to old image-based single page transcription."""
+    """Fallback to old image-based single page transcription, with Tesseract fallback on error/block."""
     def _t(msg: str):
         if trace_fn:
             try:
@@ -1285,43 +1505,72 @@ def _transcribe_single_page_fallback(
     if rate_mgr is None:
         rate_mgr = GeminiRateManager()
 
-    api_key, model = _get_gemini_api_key_and_model()
-    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    provider_name = os.getenv("VLM_PROVIDER", "openrouter").lower()
+    if provider_name == "gemini":
+        api_key, model = _get_gemini_api_key_and_model()
+        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    else:
+        api_key, model = None, None
+        endpoint = None
 
+    img = None
     try:
         images = convert_from_path(file_path, first_page=page_num, last_page=page_num, dpi=150)
-        if not images:
-            _t(f"[FALLBACK] Page {page_num} could not be rendered")
-            return None
-        img = np.array(images[0])
+        if images:
+            img = np.array(images[0])
+    except Exception as e:
+        _t(f"[FALLBACK] Page {page_num} image rendering error: {e}")
+
+    if img is None:
+        _t(f"[FALLBACK] Page {page_num} could not be rendered, returning None")
+        return None
+
+    # Check VLM decision
+    vlm_allowed = False
+    try:
         decision = rate_mgr.get_decision()
-        if not decision.allowed:
-            raise RateLimitPauseRequired(
-                resume_at=decision.resume_at,
-                reason=decision.reason,
-                retry_after=decision.retry_after
-            )
-        slot = rate_mgr.acquire_request_slot()
-        if slot is None:
-            raise RateLimitPauseRequired(resume_at=time.time() + 30, reason="no_slot_available")
+        vlm_allowed = decision.allowed
+    except Exception:
+        pass
+
+    if vlm_allowed:
+        slot = None
         try:
-            _, text = _transcribe_single_page(
-                page_idx=page_num-1,
-                image=img,
-                gemini_endpoint=endpoint,
-                rate_mgr=rate_mgr,
-                trace_fn=trace_fn,
-                max_retries=3
-            )
-            return text
+            slot = rate_mgr.acquire_request_slot()
+            if slot is not None:
+                _, text = _transcribe_single_page(
+                    page_idx=page_num-1,
+                    image=img,
+                    gemini_endpoint=endpoint,
+                    rate_mgr=rate_mgr,
+                    trace_fn=trace_fn,
+                    max_retries=3
+                )
+                if text:
+                    return text
+        except RateLimitPauseRequired:
+            _t(f"[FALLBACK] VLM rate limit pause required on page {page_num}")
+        except RuntimeError as e:
+            # Fatal error, fail fast and propagate it!
+            _t(f"[FALLBACK] VLM fatal error on page {page_num}: {e}")
+            raise
+        except Exception as e:
+            _t(f"[FALLBACK] VLM fallback transcription error on page {page_num}: {e}")
         finally:
             if slot is not None:
                 rate_mgr.release_request_slot(slot)
+
+    # Final fallback: local Tesseract OCR
+    _t(f"[FALLBACK] Falling back to local Tesseract OCR for page {page_num}")
+    try:
+        import pytesseract
+        text = pytesseract.image_to_string(img)
+        if text and text.strip():
+            return text
+        return ""
     except Exception as e:
-        _t(f"[FALLBACK] Page {page_num} error: {e}")
+        _t(f"[FALLBACK] Tesseract OCR failed on page {page_num}: {e}")
         return None
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # VLM Page Transcription (Stateless, uses GeminiRateManager) - kept for fallback
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1334,7 +1583,7 @@ def _transcribe_single_page(
     max_retries: int = 3,
 ) -> Tuple[int, Optional[str]]:
     """
-    Transcribe a single page using Gemini (image-based). Assumes a slot is already acquired.
+    Transcribe a single page using Gemini or OpenRouter (image-based). Assumes a slot is already acquired.
     Returns (page_idx, text) or (page_idx, None) on failure.
     """
     def _t(msg: str):
@@ -1345,6 +1594,7 @@ def _transcribe_single_page(
                 pass
 
     last_error = None
+    provider_name = os.getenv("VLM_PROVIDER", "openrouter").lower()
     for attempt in range(max_retries):
         try:
             _, buffer = cv2.imencode(".png", cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR))
@@ -1353,71 +1603,165 @@ def _transcribe_single_page(
                 "Extract the full document graph from this page. Output JSON with blocks (type, text). "
                 "Include tables if present. Response: {\"page\": <number>, \"blocks\": [...], \"tables\": [...]}"
             )
-            payload = {
-                "contents": [{
-                    "parts": [
-                        {"text": prompt},
-                        {"inlineData": {"mimeType": "image/png", "data": base64_image}}
-                    ]
-                }],
-                "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
-            }
-
-            timeout_seconds = getattr(config, "GEMINI_GENERATE_TIMEOUT", 240)
-            res = requests.post(gemini_endpoint, headers={"Content-Type": "application/json"}, json=payload, timeout=timeout_seconds)
-            if res.status_code == 200:
-                data = res.json()
-                candidates = data.get("candidates", [])
-                if not candidates:
-                    _t(f"[VLM] No candidates for page {page_idx+1}")
-                    return page_idx, None
-                finish_reason = candidates[0].get("finishReason")
-                if finish_reason != "STOP":
-                    _t(f"[VLM] Page {page_idx+1} finishReason={finish_reason}")
-                    if finish_reason in ("SAFETY", "RECITATION"):
-                        return page_idx, None
-                    if attempt < max_retries - 1:
-                        time.sleep(2 ** attempt)
-                        continue
-                    else:
-                        return page_idx, None
-                parts = candidates[0].get("content", {}).get("parts", [])
-                if not parts:
-                    return page_idx, None
-                page_text = parts[0].get("text", "")
-                try:
-                    parsed = json.loads(page_text)
+            
+            if provider_name == "openrouter":
+                api_key = os.getenv("OPENROUTER_API_KEY")
+                model = os.getenv("OPENROUTER_MODEL")
+                if not api_key:
+                    raise ValueError("OPENROUTER_API_KEY environment variable is not set")
+                if not model:
+                    raise ValueError("OPENROUTER_MODEL environment variable is not set")
+                
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://scaleflow.ai",
+                    "X-Title": "ScaleFlow VLM",
+                }
+                payload = {
+                    "model": model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/png;base64,{base64_image}"
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.0,
+                    "max_tokens": 4000
+                }
+                
+                timeout_seconds = getattr(config, "GEMINI_GENERATE_TIMEOUT", 240)
+                res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=timeout_seconds)
+                if res.status_code == 200:
+                    data = res.json()
+                    text = data["choices"][0]["message"]["content"]
+                    try:
+                        parsed = json.loads(text)
+                    except json.JSONDecodeError:
+                        cleaned = text.strip()
+                        if cleaned.startswith("```json"):
+                            cleaned = cleaned[7:]
+                        if cleaned.endswith("```"):
+                            cleaned = cleaned[:-3]
+                        parsed = json.loads(cleaned.strip())
+                    
+                    page_text = text
                     if "blocks" in parsed:
                         text_parts = [b.get("text", "") for b in parsed["blocks"]]
                         page_text = "\n".join(text_parts)
                     elif "text" in parsed:
                         page_text = parsed["text"]
-                except:
-                    pass
-                _t(f"[VLM] Page {page_idx+1} transcribed ({len(page_text)} chars)")
-                rate_mgr.register_success()
-                return page_idx, page_text
-            elif res.status_code in (429, 503) or "quota" in res.text.lower() or "rate limit" in res.text.lower():
-                rate_mgr.register_429(
-                    retry_after_header=res.headers.get("Retry-After"),
-                    response=res
-                )
-                retry_after = 60.0
-                try:
-                    retry_after = float(res.headers.get("Retry-After", 60.0))
-                except:
-                    pass
-                raise RateLimitPauseRequired(resume_at=time.time() + retry_after, reason="rate_limit", retry_after=retry_after)
-            else:
-                if res.status_code in (500, 502, 504):
-                    sleep_time = 2 ** attempt
-                    _t(f"[VLM] Page {page_idx+1} got HTTP {res.status_code}. Retrying in {sleep_time}s...")
-                    time.sleep(sleep_time)
-                    continue
+                        
+                    _t(f"[OPENROUTER] Page {page_idx+1} transcribed ({len(page_text)} chars)")
+                    rate_mgr.register_success()
+                    return page_idx, page_text
+                elif res.status_code in (429, 503) or "quota" in res.text.lower() or "rate limit" in res.text.lower():
+                    rate_mgr.register_429(
+                        retry_after_header=res.headers.get("Retry-After"),
+                        response=res
+                    )
+                    retry_after = 60.0
+                    try:
+                        retry_after = float(res.headers.get("Retry-After", 60.0))
+                    except:
+                        pass
+                    raise RateLimitPauseRequired(resume_at=time.time() + retry_after, reason="rate_limit", retry_after=retry_after)
+                elif res.status_code in (400, 401, 402, 403, 422):
+                    _t(f"[OPENROUTER] Fatal API Error: {res.status_code} - {res.text}")
+                    raise RuntimeError(f"OpenRouter Fatal API Error {res.status_code}: {res.text}")
                 else:
-                    _t(f"[VLM] Page {page_idx+1} failed: HTTP {res.status_code}")
-                    return page_idx, None
+                    if res.status_code in (500, 502, 504):
+                        sleep_time = 2 ** attempt
+                        _t(f"[OPENROUTER] Server error {res.status_code}. Retrying in {sleep_time}s...")
+                        time.sleep(sleep_time)
+                        continue
+                    else:
+                        _t(f"[OPENROUTER] HTTP error: {res.status_code}")
+                        raise RuntimeError(f"OpenRouter API error: {res.status_code}")
+            else:
+                payload = {
+                    "contents": [{
+                        "parts": [
+                            {"text": prompt},
+                            {"inlineData": {"mimeType": "image/png", "data": base64_image}}
+                        ]
+                    }],
+                    "generationConfig": {
+                        "temperature": 0.0,
+                        "responseMimeType": "application/json",
+                        "maxOutputTokens": 4000
+                    }
+                }
+
+                timeout_seconds = getattr(config, "GEMINI_GENERATE_TIMEOUT", 240)
+                res = requests.post(gemini_endpoint, headers={"Content-Type": "application/json"}, json=payload, timeout=timeout_seconds)
+                if res.status_code == 200:
+                    data = res.json()
+                    candidates = data.get("candidates", [])
+                    if not candidates:
+                        _t(f"[VLM] No candidates for page {page_idx+1}")
+                        return page_idx, None
+                    finish_reason = candidates[0].get("finishReason")
+                    if finish_reason != "STOP":
+                        _t(f"[VLM] Page {page_idx+1} finishReason={finish_reason}")
+                        if finish_reason in ("SAFETY", "RECITATION"):
+                            return page_idx, None
+                        if attempt < max_retries - 1:
+                            time.sleep(2 ** attempt)
+                            continue
+                        else:
+                            return page_idx, None
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if not parts:
+                        return page_idx, None
+                    page_text = parts[0].get("text", "")
+                    try:
+                        parsed = json.loads(page_text)
+                        if "blocks" in parsed:
+                            text_parts = [b.get("text", "") for b in parsed["blocks"]]
+                            page_text = "\n".join(text_parts)
+                        elif "text" in parsed:
+                            page_text = parsed["text"]
+                    except:
+                        pass
+                    _t(f"[VLM] Page {page_idx+1} transcribed ({len(page_text)} chars)")
+                    rate_mgr.register_success()
+                    return page_idx, page_text
+                elif res.status_code in (429, 503) or "quota" in res.text.lower() or "rate limit" in res.text.lower():
+                    rate_mgr.register_429(
+                        retry_after_header=res.headers.get("Retry-After"),
+                        response=res
+                    )
+                    retry_after = 60.0
+                    try:
+                        retry_after = float(res.headers.get("Retry-After", 60.0))
+                    except:
+                        pass
+                    raise RateLimitPauseRequired(resume_at=time.time() + retry_after, reason="rate_limit", retry_after=retry_after)
+                elif res.status_code in (400, 401, 402, 403, 422):
+                    _t(f"[VLM] Fatal API Error: {res.status_code} - {res.text}")
+                    raise RuntimeError(f"VLM Fatal API Error {res.status_code}: {res.text}")
+                else:
+                    if res.status_code in (500, 502, 504):
+                        sleep_time = 2 ** attempt
+                        _t(f"[VLM] Page {page_idx+1} got HTTP {res.status_code}. Retrying in {sleep_time}s...")
+                        time.sleep(sleep_time)
+                        continue
+                    else:
+                        _t(f"[VLM] Page {page_idx+1} failed: HTTP {res.status_code}")
+                        return page_idx, None
         except RateLimitPauseRequired:
+            raise
+        except RuntimeError:
             raise
         except requests.exceptions.Timeout as e:
             last_error = "timeout"
@@ -1437,7 +1781,6 @@ def _transcribe_single_page(
     _t(f"[VLM] Page {page_idx+1} failed after {max_retries} attempts: {last_error}")
     return page_idx, None
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Public API: transcribe_pages (kept for backward compatibility)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1445,10 +1788,11 @@ def transcribe_pages(
     file_path: str,
     page_numbers: List[int],
     trace_fn: Optional[Callable] = None,
+    on_page_completed: Optional[Callable] = None,
 ) -> Dict[int, str]:
     if not page_numbers:
         return {}
-    return _execute_adaptive_transcription(file_path, page_numbers, trace_fn, report=None)
+    return _execute_adaptive_transcription(file_path, page_numbers, trace_fn, report=None, on_page_completed=on_page_completed)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
