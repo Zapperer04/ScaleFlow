@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sed -i '/execute_vlm_extraction_step/!b;n;n;s/\\\\* \"You are a document transcription engine.\\\\n.*?\\\\n\\\\}}/\\\\\\\\n\\\\\\\\n\\\\\\\\n\\\\}}/g' backend/services/document_preprocessor.py)",
+      "Bash(awk 'NR==25 {print} NR!=25 {print}' backend/services/document_preprocessor.py)",
+      "Bash(mv backend/services/temp.py backend/services/document_preprocessor.py)",
+      "Bash(python *)",
+      "Read(//workspace/codestorm/**)",
+      "Bash(flask test *)"
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "average_blur_score": 0.0,
+  "average_contrast_score": 0.0,
+  "average_edge_density": 0.0,
+  "document_type": "DIGITAL",
+  "enhanced_pages_path": null,
+  "enhancement_flags": {},
+  "extractable_text_ratio": 0.0,
+  "handwritten_confidence": 0.0,
+  "hard_reject": false,
+  "is_corrupted": false,
+  "is_encrypted": false,
+  "needs_enhancement": false,
+  "overall_quality": 100.0,
+  "overall_quality_score": 100.0,
+  "parse_method_hint": "pypdf",
+  "quality_scores": {
+    "blur": 0.0,
+    "contrast": 0.0,
+    "noise": 0.0,
+    "skew_angle": 0.0
+  },
+  "reject_reason": null,
+  "routing_action": "DIRECT_PARSE",
+  "routing_confidence": 1.0,
+  "timings": {},
+  "used_enhancement": false,
+  "warnings": []
+}

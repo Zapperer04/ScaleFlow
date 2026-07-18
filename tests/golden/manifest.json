@@ -1,0 +1,63 @@
+{
+  "dataset_version": "1.1",
+  "generated_at": "2026-07-18T10:44:17.041941Z",
+  "hashes": {
+    "digital_large_document": {
+      "chunks.json": "e76f0ce096552e014c9de4aad2a2eb03208bf35c99bc88817780a944745504f8",
+      "document_graph.json": "95f9b26a9c09e34002a5e6d46e6e8d21cecded87df4aeece9390e80bd1bab132",
+      "metadata.json": "be650395f2b1aac39f6794ff305337aaa49c100b94f96477b38553d3d7c7da3b",
+      "parser_output.json": "5beb3971bda4d5dae78f7040589c96b67919d7468113721ca0270eeaab1f6559",
+      "retrieval_queries.json": "f85c430937a0e3eecbc366f3903191e8ba96c8e856f0e1ee169a2571d13ef683",
+      "retrieval_results.json": "39de35e0bff49b7c6b86c65c8dca17fd32bfbeeb2abe2afed4b38de4d1652877"
+    },
+    "forms_large_document": {
+      "chunks.json": "9a2bc826e5cdd13546f9345a5f7c11a1e1c29d03447a9a8dbacf17ceb4e49a12",
+      "document_graph.json": "95f9b26a9c09e34002a5e6d46e6e8d21cecded87df4aeece9390e80bd1bab132",
+      "metadata.json": "be650395f2b1aac39f6794ff305337aaa49c100b94f96477b38553d3d7c7da3b",
+      "parser_output.json": "5beb3971bda4d5dae78f7040589c96b67919d7468113721ca0270eeaab1f6559",
+      "retrieval_queries.json": "f85c430937a0e3eecbc366f3903191e8ba96c8e856f0e1ee169a2571d13ef683",
+      "retrieval_results.json": "39de35e0bff49b7c6b86c65c8dca17fd32bfbeeb2abe2afed4b38de4d1652877"
+    },
+    "images_large_document": {
+      "chunks.json": "d534a972a0499431728ae45632a7e8f6f9cd6561cafa2da38b337680557278e9",
+      "document_graph.json": "a00ef51c44aae444380dcffcf24c68b6068fa8359c399bb22fb4590c60fb29dc",
+      "metadata.json": "be650395f2b1aac39f6794ff305337aaa49c100b94f96477b38553d3d7c7da3b",
+      "parser_output.json": "5beb3971bda4d5dae78f7040589c96b67919d7468113721ca0270eeaab1f6559",
+      "retrieval_queries.json": "f85c430937a0e3eecbc366f3903191e8ba96c8e856f0e1ee169a2571d13ef683",
+      "retrieval_results.json": "39de35e0bff49b7c6b86c65c8dca17fd32bfbeeb2abe2afed4b38de4d1652877"
+    },
+    "mixed_large_document": {
+      "chunks.json": "72522d3db6820f71ee448c65ada432fdf3ed580b3225ffc496eaaf1f61ed81e6",
+      "document_graph.json": "95f9b26a9c09e34002a5e6d46e6e8d21cecded87df4aeece9390e80bd1bab132",
+      "metadata.json": "be650395f2b1aac39f6794ff305337aaa49c100b94f96477b38553d3d7c7da3b",
+      "parser_output.json": "5beb3971bda4d5dae78f7040589c96b67919d7468113721ca0270eeaab1f6559",
+      "retrieval_queries.json": "f85c430937a0e3eecbc366f3903191e8ba96c8e856f0e1ee169a2571d13ef683",
+      "retrieval_results.json": "39de35e0bff49b7c6b86c65c8dca17fd32bfbeeb2abe2afed4b38de4d1652877"
+    },
+    "multicolumn_large_document": {
+      "chunks.json": "4d71d2c4a739dfa263af7ff7eb8f8073c1608d6e6ec9b277fd6d2cb783fd5b9b",
+      "document_graph.json": "a00ef51c44aae444380dcffcf24c68b6068fa8359c399bb22fb4590c60fb29dc",
+      "metadata.json": "be650395f2b1aac39f6794ff305337aaa49c100b94f96477b38553d3d7c7da3b",
+      "parser_output.json": "5beb3971bda4d5dae78f7040589c96b67919d7468113721ca0270eeaab1f6559",
+      "retrieval_queries.json": "f85c430937a0e3eecbc366f3903191e8ba96c8e856f0e1ee169a2571d13ef683",
+      "retrieval_results.json": "39de35e0bff49b7c6b86c65c8dca17fd32bfbeeb2abe2afed4b38de4d1652877"
+    },
+    "scanned_large_document": {
+      "chunks.json": "21050737f58f99b2e02181074a7cacb3e37ad5a8bfa18b719013bd9195ce6ed0",
+      "document_graph.json": "a00ef51c44aae444380dcffcf24c68b6068fa8359c399bb22fb4590c60fb29dc",
+      "metadata.json": "be650395f2b1aac39f6794ff305337aaa49c100b94f96477b38553d3d7c7da3b",
+      "parser_output.json": "5beb3971bda4d5dae78f7040589c96b67919d7468113721ca0270eeaab1f6559",
+      "retrieval_queries.json": "f85c430937a0e3eecbc366f3903191e8ba96c8e856f0e1ee169a2571d13ef683",
+      "retrieval_results.json": "39de35e0bff49b7c6b86c65c8dca17fd32bfbeeb2abe2afed4b38de4d1652877"
+    },
+    "tables_large_document": {
+      "chunks.json": "680554427359a4876573d69b3b3e95e8dd399b26cac7c3ee9834f8d8519f1ec8",
+      "document_graph.json": "a00ef51c44aae444380dcffcf24c68b6068fa8359c399bb22fb4590c60fb29dc",
+      "metadata.json": "be650395f2b1aac39f6794ff305337aaa49c100b94f96477b38553d3d7c7da3b",
+      "parser_output.json": "5beb3971bda4d5dae78f7040589c96b67919d7468113721ca0270eeaab1f6559",
+      "retrieval_queries.json": "f85c430937a0e3eecbc366f3903191e8ba96c8e856f0e1ee169a2571d13ef683",
+      "retrieval_results.json": "39de35e0bff49b7c6b86c65c8dca17fd32bfbeeb2abe2afed4b38de4d1652877"
+    }
+  },
+  "pipeline_version": "1.1"
+}
