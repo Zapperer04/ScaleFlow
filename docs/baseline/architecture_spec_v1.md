@@ -1,4 +1,4 @@
-# Architecture Specification & Refactoring Plan (v1.1)
+# Architecture Specification & Refactoring Plan (v1.1 Final)
 
 > [!IMPORTANT]
 > **The Core Architectural Principle:**
@@ -19,6 +19,35 @@
 
 ---
 
+## Architecture Decision Log (ADR)
+
+- **ADR-001**: Application layer owns orchestration.
+- **ADR-002**: Domain models are framework-independent.
+- **ADR-003**: All provider implementations must implement `BaseParserProvider`.
+- **ADR-004**: Repositories expose domain objects only.
+- **ADR-005**: Storage stores raw artifacts only.
+- **ADR-006**: Every pipeline stage communicates through DTOs.
+- **ADR-007**: Golden Dataset is the single source of truth for regression testing.
+
+---
+
+## Functional Invariants (Do Not Break)
+
+The following behaviours MUST remain identical throughout every refactoring phase:
+- Same parser outputs
+- Same chunk boundaries
+- Same graph structure
+- Same embeddings
+- Same retrieval ranking
+- Same API contracts
+- Same worker semantics
+- Same database schema (unless explicitly migrated)
+- Same authentication behaviour
+
+*Any intentional behaviour change must be accompanied by: (1) ADR update, (2) Contract update, (3) Golden dataset update.*
+
+---
+
 ## Target Folder Structure
 
 ```text
@@ -34,12 +63,12 @@ backend/
 │   ├── node.py
 │   ├── edge.py
 │   ├── artifact.py
-│   ├── states.py               # Pipeline state machine (Uploaded, Preprocessed, Parsed, Chunked, Embedded, Indexed, Ready, Failed)
-│   └── events/                 # Domain events (DocumentUploaded, ParsingStarted, etc.)
+│   ├── states.py               # Pipeline state machine
+│   └── events/                 # Domain events
 ├── dto/                        # Data Transfer Objects
-│   ├── parsing.py              # ParseRequest, ParseResponse
-│   ├── chunking.py             # ChunkRequest
-│   └── retrieval.py            # RetrievalRequest, RetrievalResponse
+│   ├── parsing.py
+│   ├── chunking.py
+│   └── retrieval.py
 ├── contracts/                  # Versioned serialization & validation contracts
 │   ├── document_contract_v1.md
 │   ├── parser_contract_v1.md
@@ -73,10 +102,10 @@ backend/
 │   ├── openrouter/
 │   └── huggingface/
 ├── repositories/               # Repository interfaces & query implementations
-│   ├── base.py                 # Abstract repository definitions
-│   └── sqlite_pg_repo.py       # SQL Alchemy queries for domain models
+│   ├── base.py
+│   └── sqlite_pg_repo.py
 ├── interfaces/                 # Outer-most request delivery mechanisms
-│   ├── api/                    # Flask routers (routing and request validation only)
+│   ├── api/                    # Flask routers
 │   └── workers/                # Background runner & queue listeners
 └── tests/
     ├── fixtures/               # Golden dataset inputs
@@ -85,79 +114,80 @@ backend/
 
 ---
 
-## Target Implementation Phases & Success Criteria
+## Target Implementation Phases & Exit Criteria
 
 ### Phase 0: Architecture Baseline ✅
-- **Objective**: Set base stats, hotspots, dead code, and target architecture specifications.
+- **Exit Criteria**: All hotspots, dependencies, configurations, and violations are quantified and documented.
 
 ### Phase 0.5: Golden Dataset
-- **Objective**: Create a permanent benchmark suite containing diverse document fixtures.
-- **Scope**:
-  - Store source files (`tests/fixtures/`) categorized under: `digital`, `scanned`, `mixed`, `tables`, `forms`, `multicolumn`, and `images`.
-  - Store verified outputs (`tests/expected/`) including text parser content, graphs, chunks, embeddings, and retrieval outputs.
-- **Success Criteria**:
-  - Ground truth JSON outputs frozen for all files in the test suite.
+- **Objective**: Create a permanent benchmark suite containing diverse document fixtures under `tests/fixtures/` and verified outputs under `tests/expected/`.
+- **Exit Criteria**: Ground truth JSON outputs frozen for all files in the test suite.
 
 ### Phase 1: Safety Net
 - **Objective**: Implement comprehensive regression testing verifying the frozen Golden Dataset.
-- **Scope**:
-  - **Parser**: Digital PDF, Scanned PDF, Mixed PDF, Resume parsing, Batch parsing, OCR fallback, Provider switching, Checkpoint recovery, Large PDF, Corrupted PDF.
-  - **Worker**: Lease, Heartbeat, Resume, Retry, Failure, Queue Priority, Dead Worker Recovery.
-  - **Retrieval**: Dense, BM25, Hybrid, Metadata filtering, Reranking, Graph expansion, Intent routing.
-  - **Integration**: Complete end-to-end pipeline (Upload -> Preprocess -> Parse -> Chunk -> Embed -> Retrieve -> LLM).
-- **Success Criteria**:
-  - 100% pass rate on regression validations using current production codebase.
+- **Exit Criteria**: 100% pass rate on regression validations using current production codebase.
 
 ### Phase 2: Domain Models + DTOs + Contracts + Adapters
-- **Objective**: Introduce structured representations without breaking changes.
-- **Scope**:
-  - Define `domain/` objects (Node, Edge, Artifact, State Machine).
-  - Implement bidirectional Adapters (`Legacy -> Domain`, `Legacy -> DTO`).
-- **Success Criteria**:
-  - Integration tests pass using adapters and new contracts while using the legacy pipeline.
+- **Objective**: Introduce structured representations and mappings without breaking legacy setups.
+- **Exit Criteria**: Integration tests pass using adapters and new contracts while using the legacy pipeline.
 
 ### Phase 3: Provider Abstraction
-- **Objective**: Wrap parser providers cleanly behind capability matrices.
-- **Scope**:
-  - Implement `BaseParserProvider` interfaces.
-  - Integrate Gemini, OpenRouter, and OCR fallbacks with Retry Policies, Circuit Breakers, and Rate Limiters.
-- **Success Criteria**:
+- **Objective**: Decouple the parser from concrete LLM APIs via `BaseParserProvider`.
+- **Exit Criteria**:
   - Parser contains zero provider-specific library imports or direct `os.environ` updates.
   - Golden dataset outputs match perfectly.
 
 ### Phase 4: Storage + Repository Abstraction
 - **Objective**: Segregate physical assets from query engines.
-- **Scope**:
-  - Separate `Repository`, `Storage`, `Cache`, `Artifact Store`, `Vector Store`, and `Metadata Store`.
-- **Success Criteria**:
-  - All DB/Redis/Qdrant references decoupled from core service scripts.
+- **Exit Criteria**: All DB/Redis/Qdrant references decoupled from core service scripts.
 
 ### Phase 5: Parser Refactor
-- **Objective**: Decompose parser code by responsibility.
-- **Scope**:
-  - Break down into: Routing -> Checkpoint -> VLM -> OCR -> Graph -> Chunk -> Statistics.
-- **Success Criteria**:
-  - Total `pdf_parser.py` code modularized. Golden dataset output matches exactly.
+- **Objective**: Decompose parser code by responsibility (orchestrator, graph builder, routing).
+- **Exit Criteria**: Total `pdf_parser.py` code modularized. Golden dataset output matches exactly.
 
 ### Phase 6: Retrieval Refactor
-- **Objective**: Simplify and isolate search pipelines.
-- **Scope**:
-  - Separate: Query -> Intent -> Metadata Filter -> Dense -> BM25 -> Fusion -> Graph Expansion -> Reranker -> Context Builder.
+- **Objective**: Split BM25, dense vector, reranker, and graph expansion into modular application services.
+- **Exit Criteria**:
+  - Hybrid retrieval unchanged.
+  - Recall@5 and Precision@5 >= previous baseline.
+  - Average latency unchanged.
+  - Golden dataset passes.
 
 ### Phase 7: Worker Refactor
 - **Objective**: Clean background worker leases and queue mechanisms.
-- **Scope**:
-  - Separate: Lease Manager, Heartbeat, Executor, Retry Queue, DLQ, Metrics.
+- **Exit Criteria**:
+  - Worker restart, lease recovery, and dead worker recovery verified.
+  - Retry logic verified with no duplicate task execution.
 
 ### Phase 8: API Refactor
-- **Objective**: Restructure entry points.
-- **Scope**:
-  - Decouple routes, controllers, request validations, application services, and repositories.
+- **Objective**: Restructure HTTP router endpoints.
+- **Exit Criteria**:
+  - `app.py` < 500 LOC.
+  - Controllers contain zero business logic.
+  - Services contain zero Flask imports.
+  - Routes contain only request validation.
 
 ### Phase 9: Performance & Production Hardening
-- **Objective**: Secure runtime stability, observability, and scaling.
-- **Scope**:
-  - Profiling, caching, OpenTelemetry tracing, Prometheus/Grafana monitoring, Memory leak tests, CI/CD pipelines, and security checks.
-- **Success Criteria**:
-  - Zero memory leaks under load tests.
-  - Observability stats report properly via tracing.
+- **Objective**: Caching, OpenTelemetry, metrics exporting, load testing.
+- **Exit Criteria**:
+  - P95 latency, CPU, and memory targets achieved.
+  - OpenTelemetry traces and Prometheus metrics working.
+  - Load and memory-leak tests passed.
+
+---
+
+## Progress Tracking
+
+| Phase | Status | Branch | Tests |
+| :--- | :--- | :--- | :--- |
+| **0** | ✅ | `main` | N/A |
+| **0.5** | ⬜ | `phase-0.5` | Pending |
+| **1** | ⬜ | `phase-1` | Pending |
+| **2** | ⬜ | `phase-2` | Pending |
+| **3** | ⬜ | `phase-3` | Pending |
+| **4** | ⬜ | `phase-4` | Pending |
+| **5** | ⬜ | `phase-5` | Pending |
+| **6** | ⬜ | `phase-6` | Pending |
+| **7** | ⬜ | `phase-7` | Pending |
+| **8** | ⬜ | `phase-8` | Pending |
+| **9** | ⬜ | `phase-9` | Pending |
