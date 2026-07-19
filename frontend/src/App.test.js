@@ -3,6 +3,6 @@ import App from './App';
 
 test('renders ScaleFlow branding', () => {
   render(<App />);
-  const brandingElement = screen.getByText(/ScaleFlow/i);
-  expect(brandingElement).toBeInTheDocument();
+  const brandingElements = screen.getAllByText(/ScaleFlow/i);
+  expect(brandingElements.length).toBeGreaterThan(0);
 });

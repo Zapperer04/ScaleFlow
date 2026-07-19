@@ -15,6 +15,8 @@ import TaskModal from './components/TaskModal';
 import ValidationLab from './components/ValidationLab';
 import DesignSystemShowcase from './components/ui/showcase/DesignSystemShowcase';
 import AppShell from './components/layout/AppShell';
+import CommandPalette from './components/ui/CommandPalette';
+import ErrorBoundary from './components/ui/ErrorBoundary';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { DocumentProvider, useDocument } from './contexts/DocumentContext';
 import { PipelineProvider, usePipeline } from './contexts/PipelineContext';
@@ -60,6 +62,20 @@ function AppContent() {
   const qdrantStatus = useTelemetry(s => s.qdrantStatus);
   const leaderId = useTelemetry(s => s.leaderId);
   const orchestratorCount = useTelemetry(s => s.orchestratorCount);
+
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  // Toggle Command Palette on Cmd+K / Ctrl+K
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Poll intervals managed by centralized manager
   useEffect(() => {
@@ -134,6 +150,18 @@ function AppContent() {
 
   const queuePressure = getQueuePressure();
 
+  const commandPaletteActions = [
+    { id: 'nav-overview', label: 'Go to AI Document Workspace', category: 'Navigation', perform: () => handleNavigateToView('overview') },
+    { id: 'nav-pipelines', label: 'Go to DAG Orchestration Workspace', category: 'Navigation', perform: () => handleNavigateToView('pipelines') },
+    { id: 'nav-validation', label: 'Go to Validation & Chaos Lab', category: 'Navigation', perform: () => handleNavigateToView('validation-lab') },
+    { id: 'nav-workers', label: 'Go to Workers Registry Control', category: 'Navigation', perform: () => handleNavigateToView('workers') },
+    { id: 'nav-replay', label: 'Go to Deterministic Replay Engine', category: 'Navigation', perform: () => handleNavigateToView('replay') },
+    { id: 'nav-architecture', label: 'Go to System Architecture Blueprint', category: 'Navigation', perform: () => handleNavigateToView('architecture') },
+    { id: 'nav-diagnostics', label: 'Go to Diagnostics & Dead-Letter Queue', category: 'Navigation', perform: () => handleNavigateToView('diagnostics') },
+    { id: 'nav-design-system', label: 'Go to Design System Showcase', category: 'Navigation', perform: () => handleNavigateToView('design-system') },
+    { id: 'action-tests', label: 'Execute System Integration Tests', category: 'System Operations', perform: () => handleRunTests() }
+  ];
+
   return (
     <>
       <AppShell
@@ -150,56 +178,64 @@ function AppContent() {
         testing={testing}
         onRunTests={handleRunTests}
       >
-        {showStuckWarning && (
-          <div className="alert-banner warning" style={{ borderRadius: 0, borderLeft: 0, borderRight: 0, margin: '0 0 var(--spacing-20) 0' }}>
-            <ShieldAlert size={16} />
-            <span className="alert-message">
-              Execution queue reconciliation required. Tasks are queued in Redis but worker heartbeat loop is standing by. Check worker registers.
-            </span>
-          </div>
-        )}
+        <ErrorBoundary>
+          {showStuckWarning && (
+            <div className="alert-banner warning" style={{ borderRadius: 0, borderLeft: 0, borderRight: 0, margin: '0 0 var(--spacing-20) 0' }}>
+              <ShieldAlert size={16} />
+              <span className="alert-message">
+                Execution queue reconciliation required. Tasks are queued in Redis but worker heartbeat loop is standing by. Check worker registers.
+              </span>
+            </div>
+          )}
 
-        {activeView === 'overview' && (
-          <OverviewPage 
-            pipelines={pipelines}
-            workers={workers}
-            queueStats={queueStats}
-            stats={stats}
-            redisStatus={redisStatus}
-            dbStatus={dbStatus}
-            qdrantStatus={qdrantStatus}
-            onSelectPipeline={handleSelectPipeline}
-            onNavigateToView={handleNavigateToView}
-            onUploadFile={handleUploadFile}
-            fileType={fileType}
-            setFileType={setFileType}
-            uploading={uploading}
-            uploadStatus={uploadStatus}
-            selectedPipelineId={selectedPipelineId}
-            setSelectedPipelineId={setSelectedPipelineId}
-            onSelectTask={setSelectedTaskId}
-          />
-        )}
+          {activeView === 'overview' && (
+            <OverviewPage 
+              pipelines={pipelines}
+              workers={workers}
+              queueStats={queueStats}
+              stats={stats}
+              redisStatus={redisStatus}
+              dbStatus={dbStatus}
+              qdrantStatus={qdrantStatus}
+              onSelectPipeline={handleSelectPipeline}
+              onNavigateToView={handleNavigateToView}
+              onUploadFile={handleUploadFile}
+              fileType={fileType}
+              setFileType={setFileType}
+              uploading={uploading}
+              uploadStatus={uploadStatus}
+              selectedPipelineId={selectedPipelineId}
+              setSelectedPipelineId={setSelectedPipelineId}
+              onSelectTask={setSelectedTaskId}
+            />
+          )}
 
-        {activeView === 'pipelines' && (
-          <PipelineDashboard 
-            selectedPipelineId={selectedPipelineId} 
-            setSelectedPipelineId={setSelectedPipelineId} 
-          />
-        )}
+          {activeView === 'pipelines' && (
+            <PipelineDashboard 
+              selectedPipelineId={selectedPipelineId} 
+              setSelectedPipelineId={setSelectedPipelineId} 
+            />
+          )}
 
-        {activeView === 'workers' && <WorkersPage />}
+          {activeView === 'workers' && <WorkersPage />}
 
-        {activeView === 'validation-lab' && <ValidationLab />}
+          {activeView === 'validation-lab' && <ValidationLab />}
 
-        {activeView === 'replay' && <ReplayPage />}
+          {activeView === 'replay' && <ReplayPage />}
 
-        {activeView === 'architecture' && <ArchitectureOverview />}
+          {activeView === 'architecture' && <ArchitectureOverview />}
 
-        {activeView === 'diagnostics' && <DiagnosticsPage />}
+          {activeView === 'diagnostics' && <DiagnosticsPage />}
 
-        {activeView === 'design-system' && <DesignSystemShowcase />}
+          {activeView === 'design-system' && <DesignSystemShowcase />}
+        </ErrorBoundary>
       </AppShell>
+
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        actions={commandPaletteActions}
+      />
 
       {/* Selected Task Details Modal */}
       <TaskModal 

@@ -1,9 +1,8 @@
 import React from 'react';
-import { 
-  Layers, Server, Activity, Cpu, RefreshCw, 
-  Play, Film, ShieldAlert, Shield, BookOpen 
-} from 'lucide-react';
+import { Layers, Cpu, RefreshCw } from 'lucide-react';
 import Button from '../ui/Button';
+import Breadcrumb from '../ui/Breadcrumb';
+import { NAVIGATION_CATEGORIES, getViewDetails } from '../../routes/navigation';
 
 /**
  * Reusable layout wrapper for the ScaleFlow application workspace.
@@ -38,21 +37,13 @@ export const AppShell = ({
   onRunTests,
   children
 }) => {
-  const getNavLabel = () => {
-    switch (activeView) {
-      case 'overview': return 'Orchestration Control Plane';
-      case 'pipelines': return 'Active Pipelines Workspace';
-      case 'validation-lab': return 'System Validation & Chaos Lab';
-      case 'workers': return 'Worker Registry Control';
-      case 'replay': return 'Deterministic Time Travel Replay';
-      case 'architecture': return 'ScaleFlow System Architecture';
-      case 'diagnostics': return 'Diagnostics & Dead-Letter Queue';
-      case 'design-system': return 'Design System Playground';
-      default: return 'ScaleFlow Workspace';
-    }
-  };
-
   const activeWorkersCount = workers.filter(w => w.status !== 'offline').length;
+  const viewDetails = getViewDetails(activeView);
+
+  const breadcrumbItems = [
+    { label: 'ScaleFlow Workspace', onClick: () => onNavigateToView('overview') },
+    { label: viewDetails.label }
+  ];
 
   return (
     <div className="app-container">
@@ -69,70 +60,37 @@ export const AppShell = ({
           </div>
 
           <nav className="sidebar-nav">
-            <div className="text-caption" style={{ color: 'var(--text-disabled)', fontWeight: 'var(--font-weight-bold)', textTransform: 'uppercase', letterSpacing: 'var(--ls-wide)', marginBottom: 'var(--spacing-8)', paddingLeft: 'var(--spacing-8)' }}>
-              Main Experience
-            </div>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'overview' ? 'active' : ''}`}
-              onClick={() => onNavigateToView('overview')}
-            >
-              <Activity size={18} />
-              AI Document Workspace
-            </button>
-
-            <div className="text-caption" style={{ color: 'var(--text-disabled)', fontWeight: 'var(--font-weight-bold)', textTransform: 'uppercase', letterSpacing: 'var(--ls-wide)', marginTop: 'var(--spacing-24)', marginBottom: 'var(--spacing-8)', paddingLeft: 'var(--spacing-8)' }}>
-              Advanced Runtime Tools
-            </div>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'pipelines' ? 'active' : ''}`}
-              onClick={() => onNavigateToView('pipelines')}
-            >
-              <Play size={18} />
-              DAG Orchestration
-            </button>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'validation-lab' ? 'active' : ''}`}
-              onClick={() => onNavigateToView('validation-lab')}
-            >
-              <Shield size={18} />
-              Validation & Chaos Lab
-            </button>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'workers' ? 'active' : ''}`}
-              onClick={() => onNavigateToView('workers')}
-            >
-              <Server size={18} />
-              Workers Registry
-            </button>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'replay' ? 'active' : ''}`}
-              onClick={() => onNavigateToView('replay')}
-            >
-              <Film size={18} />
-              Replay Engine
-            </button>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'architecture' ? 'active' : ''}`}
-              onClick={() => onNavigateToView('architecture')}
-            >
-              <Layers size={18} />
-              System Architecture
-            </button>
-            
-            <button 
-              className={`sidebar-nav-item ${activeView === 'diagnostics' ? 'active' : ''}`}
-              onClick={() => onNavigateToView('diagnostics')}
-            >
-              <ShieldAlert size={18} />
-              Diagnostics & DLQ
-            </button>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'design-system' ? 'active' : ''}`}
-              onClick={() => onNavigateToView('design-system')}
-            >
-              <BookOpen size={18} />
-              Design System
-            </button>
+            {NAVIGATION_CATEGORIES.map(category => (
+              <React.Fragment key={category.id}>
+                <div 
+                  className="text-caption" 
+                  style={{ 
+                    color: 'var(--text-disabled)', 
+                    fontWeight: 'var(--font-weight-bold)', 
+                    textTransform: 'uppercase', 
+                    letterSpacing: 'var(--ls-wide)', 
+                    marginTop: category.id === 'tools' ? 'var(--spacing-24)' : '0', 
+                    marginBottom: 'var(--spacing-8)', 
+                    paddingLeft: 'var(--spacing-8)' 
+                  }}
+                >
+                  {category.label}
+                </div>
+                {category.items.map(item => {
+                  const Icon = item.icon;
+                  return (
+                    <button 
+                      key={item.id}
+                      className={`sidebar-nav-item ${activeView === item.id ? 'active' : ''}`}
+                      onClick={() => onNavigateToView(item.id)}
+                    >
+                      <Icon size={18} />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </React.Fragment>
+            ))}
           </nav>
         </div>
 
@@ -186,10 +144,8 @@ export const AppShell = ({
         
         {/* Top Control Bar */}
         <header className="top-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '60px', borderBottom: '1px solid var(--border-subtle)', padding: '0 var(--spacing-24)', background: 'var(--bg-panel)' }}>
-          <div className="top-bar-left" style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-12)' }}>
-            <span className="view-title text-h3" style={{ fontWeight: 'var(--font-weight-bold)', color: 'var(--text-primary)' }}>
-              {getNavLabel()}
-            </span>
+          <div className="top-bar-left" style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-16)' }}>
+            <Breadcrumb items={breadcrumbItems} />
             
             <span className={`mode-badge text-caption ${queuePressure > 60 ? 'backpressure' : queuePressure > 30 ? 'high-load' : ''}`}>
               {queuePressure > 60 ? 'Queue Backpressure: Active' : queuePressure > 30 ? 'Load Mode: High' : 'Load Mode: Optimal'}
