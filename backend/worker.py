@@ -546,10 +546,11 @@ def handle_parse_document(payload, input_artifacts):
             parse_method_hint = prep.get("parse_method_hint", "vlm_document_graph")
             enhanced_pages_path = prep.get("enhanced_pages_path")
 
-            from services.vlm_provider import get_vlm_provider
-            provider = get_vlm_provider()
-            result = provider.parse_document(
-                filepath=filepath,
+            from backend.infrastructure.providers.bootstrap import bootstrap_app
+            container = bootstrap_app()
+            parsing_service = container.parsing_service
+            result = parsing_service.parse_document(
+                file_path=filepath,
                 task_id=task_id,
                 lease_token=lease_token,
                 progress_json=progress_cache,
@@ -583,7 +584,7 @@ def handle_parse_document(payload, input_artifacts):
             save_checkpoint()
             raise
         except Exception as e:
-            from services.vlm_provider import RateLimitPauseRequired
+            from services.gemini_rate_manager import RateLimitPauseRequired
             if isinstance(e, RateLimitPauseRequired):
                 save_checkpoint()
                 raise TaskPauseException(resume_at=e.resume_at, reason="rate_limit", progress=progress_cache)

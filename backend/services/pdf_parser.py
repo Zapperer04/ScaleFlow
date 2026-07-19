@@ -923,6 +923,7 @@ def parse_pdf(
     on_page_completed: Optional[Callable[[int, Dict[str, Any]], None]] = None,
     cancellation_check: Optional[Callable[[], bool]] = None,
     timeout_check: Optional[Callable[[], bool]] = None,
+    vlm_provider_name: Optional[str] = None,
 ) -> ParseResult:
     """
     Parse a document into a structured document graph using VLM as primary method.
@@ -978,7 +979,7 @@ def parse_pdf(
     }
 
     # Ensure checkpoint compatibility: reset if provider changes
-    provider_name = os.getenv("VLM_PROVIDER", "openrouter").lower()
+    provider_name = vlm_provider_name or "openrouter"
     if isinstance(progress_json, dict):
         last_provider = progress_json.get("vlm_provider")
         if last_provider and last_provider != provider_name:
