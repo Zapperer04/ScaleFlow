@@ -9,6 +9,9 @@ backend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ba
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
+from models import init_db
+init_db()
+
 # Apply shims/patches for offline testing safety
 import re
 def whoosh_escape(text):
