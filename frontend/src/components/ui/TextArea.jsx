@@ -24,10 +24,13 @@ export const TextArea = ({
 }) => {
   const errorClass = error ? 'input-error' : '';
 
+  const errorId = `${rest.id || 'textarea'}-error-msg`;
+  const helperId = `${rest.id || 'textarea'}-helper-text`;
+
   return (
     <div className={`form-field-wrapper ${errorClass} ${className}`.trim()}>
       {label && (
-        <label className="form-label">
+        <label className="form-label" htmlFor={rest.id}>
           {label} {required && <span className="form-required-star" aria-hidden="true">*</span>}
         </label>
       )}
@@ -36,10 +39,12 @@ export const TextArea = ({
         rows={rows}
         className="form-input form-textarea"
         required={required}
+        aria-invalid={error ? 'true' : 'false'}
+        aria-describedby={error ? errorId : helperText ? helperId : undefined}
         {...rest}
       />
-      {error && <span className="form-error-msg" role="alert">{error}</span>}
-      {!error && helperText && <span className="form-helper-text">{helperText}</span>}
+      {error && <span id={errorId} className="form-error-msg" role="alert">{error}</span>}
+      {!error && helperText && <span id={helperId} className="form-helper-text">{helperText}</span>}
     </div>
   );
 };

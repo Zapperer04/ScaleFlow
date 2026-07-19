@@ -22,10 +22,12 @@ export const Select = ({
 }) => {
   const errorClass = error ? 'input-error' : '';
 
+  const errorId = `${rest.id || 'select'}-error-msg`;
+  
   return (
     <div className={`form-field-wrapper ${errorClass} ${className}`.trim()}>
       {label && (
-        <label className="form-label">
+        <label className="form-label" htmlFor={rest.id}>
           {label} {required && <span className="form-required-star" aria-hidden="true">*</span>}
         </label>
       )}
@@ -33,6 +35,8 @@ export const Select = ({
         disabled={disabled}
         className="form-input form-select"
         required={required}
+        aria-invalid={error ? 'true' : 'false'}
+        aria-describedby={error ? errorId : undefined}
         {...rest}
       >
         {options.map((opt) => (
@@ -41,7 +45,7 @@ export const Select = ({
           </option>
         ))}
       </select>
-      {error && <span className="form-error-msg" role="alert">{error}</span>}
+      {error && <span id={errorId} className="form-error-msg" role="alert">{error}</span>}
     </div>
   );
 };

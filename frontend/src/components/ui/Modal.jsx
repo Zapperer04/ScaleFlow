@@ -1,15 +1,10 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom';
+import useFocusTrap from '../../hooks/useFocusTrap';
+import useEscapeKey from '../../hooks/useEscapeKey';
 
 /**
  * Reusable Modal component utilizing React Portals.
- * 
- * @param {Object} props
- * @param {boolean} props.isOpen - Whether the modal is active and visible
- * @param {Function} props.onClose - Action triggered when modal closes
- * @param {string} [props.title] - Modal header title
- * @param {string} [props.className=''] - Custom overrides
- * @param {React.ReactNode} props.children - Modal content contents
  */
 export const Modal = ({
   isOpen,
@@ -19,6 +14,9 @@ export const Modal = ({
   children,
   ...rest
 }) => {
+  const containerRef = useFocusTrap(isOpen);
+  useEscapeKey(onClose, isOpen);
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -32,11 +30,20 @@ export const Modal = ({
 
   if (!isOpen) return null;
 
+  const titleId = title ? 'modal-title-id' : undefined;
+
   return ReactDOM.createPortal(
     <div className="modal-overlay-backdrop" onClick={onClose} {...rest}>
-      <div className={`modal-card-box ${className}`.trim()} onClick={e => e.stopPropagation()}>
+      <div 
+        ref={containerRef}
+        className={`modal-card-box ${className}`.trim()} 
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
         <div className="modal-card-header">
-          {title && <h2 className="modal-title-text text-h2">{title}</h2>}
+          {title && <h2 id={titleId} className="modal-title-text text-h2">{title}</h2>}
           <button className="modal-close-button-icon" onClick={onClose} aria-label="Close modal">
             ✕
           </button>

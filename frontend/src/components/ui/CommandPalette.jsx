@@ -1,14 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import SearchInput from './SearchInput';
+import useFocusTrap from '../../hooks/useFocusTrap';
+import useEscapeKey from '../../hooks/useEscapeKey';
 
 /**
  * Reusable Command Palette overlay component.
- * 
- * @param {Object} props
- * @param {boolean} props.isOpen - Palette visibility trigger
- * @param {Function} props.onClose - Action triggered when palette closes
- * @param {Array<{id: string, label: string, category: string, perform: Function}>} props.actions - List of actions
  */
 export const CommandPalette = ({
   isOpen,
@@ -17,7 +14,8 @@ export const CommandPalette = ({
 }) => {
   const [search, setSearch] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
-  const containerRef = useRef(null);
+  const containerRef = useFocusTrap(isOpen);
+  useEscapeKey(onClose, isOpen);
 
   // Filter actions based on query
   const filteredActions = actions.filter(action =>
@@ -47,9 +45,6 @@ export const CommandPalette = ({
           filteredActions[activeIndex].perform();
           onClose();
         }
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
       }
     };
 
@@ -77,6 +72,9 @@ export const CommandPalette = ({
         className="command-palette-card panel"
         onClick={e => e.stopPropagation()}
         ref={containerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command Palette"
         style={{
           width: '90%',
           maxWidth: '600px',

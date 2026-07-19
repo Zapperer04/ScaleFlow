@@ -1,26 +1,12 @@
-import React from 'react';
-import { Layers, Cpu, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import { Layers, Cpu, RefreshCw, Menu, X } from 'lucide-react';
 import Button from '../ui/Button';
 import Breadcrumb from '../ui/Breadcrumb';
 import { NAVIGATION_CATEGORIES, getViewDetails } from '../../routes/navigation';
+import useMediaQuery from '../../hooks/useMediaQuery';
 
 /**
  * Reusable layout wrapper for the ScaleFlow application workspace.
- * 
- * @param {Object} props
- * @param {string} props.activeView - Currently rendered route view name
- * @param {Function} props.onNavigateToView - Callback to switch views
- * @param {string} props.redisStatus - Connection state of Redis
- * @param {string} props.dbStatus - Connection state of database
- * @param {string} props.qdrantStatus - Connection state of Qdrant
- * @param {string} props.leaderId - Active orchestrator leader ID
- * @param {Array} props.workers - List of active processing host workers
- * @param {number} props.orchestratorCount - Active leader host count
- * @param {Object} props.queueStats - Queue size and task distributions
- * @param {number} props.queuePressure - Derived queue pressure metric (0-100)
- * @param {boolean} props.testing - Loading lock for tests execution
- * @param {Function} props.onRunTests - Action handler to run system integrations tests
- * @param {React.ReactNode} props.children - Workspace inner page contents
  */
 export const AppShell = ({
   activeView,
@@ -37,6 +23,9 @@ export const AppShell = ({
   onRunTests,
   children
 }) => {
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   const activeWorkersCount = workers.filter(w => w.status !== 'offline').length;
   const viewDetails = getViewDetails(activeView);
 
@@ -45,19 +34,47 @@ export const AppShell = ({
     { label: viewDetails.label }
   ];
 
+  const sidebarClass = isMobile && !sidebarOpen ? 'sidebar-collapsed' : '';
+
+  const handleNavigate = (viewId) => {
+    onNavigateToView(viewId);
+    if (isMobile) {
+      setSidebarOpen(false);
+    }
+  };
+
   return (
     <div className="app-container">
       
-      {/* 1. LEFT SIDEBAR */}
-      <aside className="sidebar">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-32)' }}>
-          <div className="sidebar-branding">
-            <div className="sidebar-logo">
-              <Layers size={22} style={{ color: 'var(--color-accent)' }} />
-              <span className="text-h3" style={{ fontWeight: 'var(--font-weight-heavy)' }}>ScaleFlow</span>
-            </div>
-            <span className="sidebar-subtitle text-caption">Distributed Platform</span>
+      {/* Mobile Top Navbar with toggles */}
+      {isMobile && (
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-panel)', padding: 'var(--spacing-12) var(--spacing-16)', borderBottom: '1px solid var(--border-subtle)', zIndex: 100 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-8)' }}>
+            <Layers size={18} style={{ color: 'var(--color-accent)' }} />
+            <span className="text-body" style={{ fontWeight: 'var(--font-weight-heavy)' }}>ScaleFlow</span>
           </div>
+          <button 
+            onClick={() => setSidebarOpen(prev => !prev)}
+            style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+            aria-label="Toggle sidebar menu"
+          >
+            {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+        </header>
+      )}
+
+      {/* 1. LEFT SIDEBAR */}
+      <aside className={`sidebar ${sidebarClass}`.trim()} role="navigation" aria-label="Sidebar Navigation">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-32)' }}>
+          {!isMobile && (
+            <div className="sidebar-branding">
+              <div className="sidebar-logo">
+                <Layers size={22} style={{ color: 'var(--color-accent)' }} />
+                <span className="text-h3" style={{ fontWeight: 'var(--font-weight-heavy)' }}>ScaleFlow</span>
+              </div>
+              <span className="sidebar-subtitle text-caption">Distributed Platform</span>
+            </div>
+          )}
 
           <nav className="sidebar-nav">
             {NAVIGATION_CATEGORIES.map(category => (
@@ -82,7 +99,7 @@ export const AppShell = ({
                     <button 
                       key={item.id}
                       className={`sidebar-nav-item ${activeView === item.id ? 'active' : ''}`}
-                      onClick={() => onNavigateToView(item.id)}
+                      onClick={() => handleNavigate(item.id)}
                     >
                       <Icon size={18} />
                       {item.label}
@@ -140,10 +157,10 @@ export const AppShell = ({
       </aside>
 
       {/* 2. MAIN VIEWPORT */}
-      <main className="main-viewport">
+      <main className="main-viewport" role="main">
         
         {/* Top Control Bar */}
-        <header className="top-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '60px', borderBottom: '1px solid var(--border-subtle)', padding: '0 var(--spacing-24)', background: 'var(--bg-panel)' }}>
+        <header className="top-bar" role="banner" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '60px', borderBottom: '1px solid var(--border-subtle)', padding: '0 var(--spacing-24)', background: 'var(--bg-panel)' }}>
           <div className="top-bar-left" style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-16)' }}>
             <Breadcrumb items={breadcrumbItems} />
             
@@ -153,7 +170,7 @@ export const AppShell = ({
           </div>
 
           <div className="top-bar-right" style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-20)' }}>
-            <div className="top-bar-stats text-caption" style={{ display: 'flex', gap: 'var(--spacing-16)', color: 'var(--text-secondary)' }}>
+            <div className="top-bar-stats text-caption hide-mobile" style={{ display: 'flex', gap: 'var(--spacing-16)', color: 'var(--text-secondary)' }}>
               <div>
                 <span>Orchestrators: </span>
                 <span className="top-bar-stat-val" style={{ color: 'var(--text-primary)', fontWeight: 'var(--font-weight-bold)' }}>{orchestratorCount}</span>

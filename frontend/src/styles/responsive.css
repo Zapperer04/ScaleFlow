@@ -1,0 +1,44 @@
+/* Breakpoints & Responsive Grid Layout Utilities */
+
+@media (max-width: 1024px) {
+  .workspace-grid.cols-3 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .workspace-grid.cols-3,
+  .workspace-grid.cols-2 {
+    grid-template-columns: 1fr !important;
+  }
+  
+  .hide-mobile {
+    display: none !important;
+  }
+  
+  .show-mobile {
+    display: block !important;
+  }
+  
+  .app-container {
+    flex-direction: column !important;
+  }
+  
+  .sidebar {
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border-subtle) !important;
+    padding: var(--spacing-16) !important;
+  }
+  
+  .sidebar-collapsed {
+    display: none !important;
+  }
+  
+  .main-viewport {
+    width: 100% !important;
+    height: auto !important;
+  }
+}
