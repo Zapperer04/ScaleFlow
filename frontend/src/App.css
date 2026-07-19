@@ -1,19 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500;600;700&display=swap');
-
-:root {
-  --bg-primary: #090a0c;
-  --bg-panel: #0f1115;
-  --border-subtle: #1c1f26;
-  --color-accent: #3b82f6;
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-failure: #ef4444;
-  --color-replay: #8b5cf6;
-  --text-primary: #e2e8f0;
-  --text-muted: #52525b;
-  --text-muted-light: #94a3b8;
-  --shadow-soft: none; /* flat styling */
-}
+@import './styles/tokens.css';
 
 * {
   margin: 0;

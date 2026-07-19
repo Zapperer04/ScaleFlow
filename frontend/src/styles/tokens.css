@@ -1,0 +1,74 @@
+:root {
+  /* --- COLOR SYSTEM --- */
+  /* Brand/Semantic Colors */
+  --color-accent: #3b82f6;          /* Accent Blue */
+  --color-success: #10b981;         /* Success Green */
+  --color-warning: #f59e0b;         /* Warning Yellow */
+  --color-failure: #ef4444;         /* Failure Red */
+  --color-replay: #8b5cf6;          /* Replay Purple */
+
+  /* Dark Theme Palette (Base) */
+  --bg-primary: #090a0c;            /* App backdrop */
+  --bg-panel: #0f1115;              /* Panel containers */
+  --bg-input: #15181e;              /* Input fields fill */
+  --bg-hover: #1e222b;              /* Interactive item hover */
+  --border-subtle: #1c1f26;         /* Subtle borders */
+  
+  /* Text Contrast Scales */
+  --text-primary: #e2e8f0;          /* High contrast body text */
+  --text-muted: #52525b;            /* Low contrast sub-labels */
+  --text-muted-light: #94a3b8;      /* Mid contrast secondary text */
+  --text-white: #ffffff;            /* Pure white */
+
+  /* --- SPACING SCALE (4px base grid) --- */
+  --spacing-xxs: 4px;
+  --spacing-xs: 8px;
+  --spacing-sm: 12px;
+  --spacing-md: 16px;
+  --spacing-lg: 20px;
+  --spacing-xl: 24px;
+  --spacing-xxl: 32px;
+  --spacing-xxxl: 40px;
+  --spacing-giant: 60px;
+
+  /* --- TYPOGRAPHY SCALE --- */
+  --font-family-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-family-mono: 'Geist Mono', Menlo, Monaco, Consolas, 'Courier New', monospace;
+  
+  --font-size-xs: 0.65rem;          /* Tiny labels */
+  --font-size-sm: 0.75rem;          /* Metadata / status */
+  --font-size-md: 0.85rem;          /* Default body text */
+  --font-size-lg: 0.9rem;           /* Titles / subheaders */
+  --font-size-xl: 1.05rem;          /* Sidebar brand title */
+  --font-size-xxl: 1.25rem;         /* Dashboard section headers */
+  --font-size-giant: 1.5rem;        /* Main page headers */
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-heavy: 800;
+
+  /* --- BORDER RADIUS SCALE --- */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* --- ELEVATION & SHADOWS --- */
+  --shadow-soft: none;              /* Flat aesthetic default */
+  --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+  --shadow-popover: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+
+  /* --- MOTION & TRANSITIONS --- */
+  --transition-fast: all 0.1s ease;
+  --transition-normal: all 0.15s ease;
+  --transition-slow: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* --- Z-INDEX SCALE --- */
+  --z-index-base: 1;
+  --z-index-header: 9;
+  --z-index-sidebar: 10;
+  --z-index-overlay: 1000;
+}

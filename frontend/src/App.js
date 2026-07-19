@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Layers, Server, Activity, Cpu, RefreshCw, 
-  Play, Film, BookOpen, ShieldAlert, Shield
+  Play, Film, ShieldAlert, Shield
 } from 'lucide-react';
 import { 
-  fetchTasks, fetchWorkers, getQueueStats, runIntegrationTests, fetchPipelines,
-  getDatabaseStatus, fetchVectorStats, getClusterStatus, uploadFile
+  runIntegrationTests, uploadFile
 } from './services/api';
 import OverviewPage from './components/OverviewPage';
 import PipelineDashboard from './components/PipelineDashboard';
@@ -15,42 +14,63 @@ import ArchitectureOverview from './components/ArchitectureOverview';
 import DiagnosticsPage from './components/DiagnosticsPage';
 import TaskModal from './components/TaskModal';
 import ValidationLab from './components/ValidationLab';
+import { ThemeProvider } from './contexts/ThemeContext';
+import { DocumentProvider, useDocument } from './contexts/DocumentContext';
+import { PipelineProvider, usePipeline } from './contexts/PipelineContext';
+import { NotificationProvider, useNotification } from './contexts/NotificationContext';
+import { useTelemetry } from './services/telemetryStore';
+import { pollingManager } from './services/pollingManager';
 import './App.css';
 
 const POLL_INTERVAL = parseInt(process.env.REACT_APP_POLL_INTERVAL_MS || "3000");
 
-function App() {
+function AppContent() {
   // Navigation & Views
   const [activeView, setActiveView] = useState('overview');
-  const [selectedPipelineId, setSelectedPipelineId] = useState(null);
-  
-  // Data States
-  const [workers, setWorkers] = useState([]);
-  const [pipelines, setPipelines] = useState([]);
-  const [queueStats, setQueueStats] = useState({});
-  const [stats, setStats] = useState({ total: 0, pending: 0, running: 0, completed: 0 });
-  const [selectedTaskId, setSelectedTaskId] = useState(null);
 
-  // Cluster Status States
-  const [redisStatus, setRedisStatus] = useState('checking');
-  const [dbStatus, setDbStatus] = useState('checking');
-  const [qdrantStatus, setQdrantStatus] = useState('checking');
-  const [leaderId, setLeaderId] = useState('Checking...');
-  const [orchestratorCount, setOrchestratorCount] = useState(0);
+  // Document State Context
+  const { 
+    fileType, setFileType, 
+    uploading, setUploading, 
+    uploadStatus, setUploadStatus 
+  } = useDocument();
 
-  // Stuck queue warning
-  const queueStuckSinceRef = useRef(null);
-  const [showStuckWarning, setShowStuckWarning] = useState(false);
+  // Pipeline State Context
+  const { 
+    selectedPipelineId, setSelectedPipelineId, 
+    pipelines, setPipelines, 
+    selectedTaskId, setSelectedTaskId, 
+    testing, setTesting, 
+    showTestModal, setShowTestModal, 
+    testResults, setTestResults 
+  } = usePipeline();
 
-  // Ingestion upload states
-  const [fileType, setFileType] = useState('document_processing_demo');
-  const [uploading, setUploading] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState('');
+  // Notification State Context
+  const { 
+    showStuckWarning, setShowStuckWarning 
+  } = useNotification();
 
-  // Test Runner States
-  const [testing, setTesting] = useState(false);
-  const [showTestModal, setShowTestModal] = useState(false);
-  const [testResults, setTestResults] = useState(null);
+  // Telemetry Store (Outside React Context)
+  const workers = useTelemetry(s => s.workers);
+  const queueStats = useTelemetry(s => s.queueStats);
+  const stats = useTelemetry(s => s.stats);
+  const redisStatus = useTelemetry(s => s.redisStatus);
+  const dbStatus = useTelemetry(s => s.dbStatus);
+  const qdrantStatus = useTelemetry(s => s.qdrantStatus);
+  const leaderId = useTelemetry(s => s.leaderId);
+  const orchestratorCount = useTelemetry(s => s.orchestratorCount);
+
+  // Poll intervals managed by centralized manager
+  useEffect(() => {
+    pollingManager.start({
+      setPipelines,
+      setShowStuckWarning
+    }, POLL_INTERVAL);
+
+    return () => {
+      pollingManager.stop();
+    };
+  }, [setPipelines, setShowStuckWarning]);
 
   const handleRunTests = async () => {
     setTesting(true);
@@ -60,7 +80,7 @@ function App() {
       const data = await runIntegrationTests();
       setTestResults(data);
       setShowTestModal(true);
-      loadFastData();
+      pollingManager.triggerFastUpdate();
     } catch (err) {
       setTestResults({
         status: 'failed',
@@ -87,7 +107,7 @@ function App() {
       setSelectedPipelineId(res.pipeline_id);
       
       // Refresh fast data
-      loadFastData();
+      pollingManager.triggerFastUpdate();
     } catch (err) {
       console.error('File upload failed:', err);
       setUploadStatus('Upload failed: ' + (err.response?.data?.error || err.message));
@@ -96,134 +116,6 @@ function App() {
     }
   };
 
-  // Fast Polling: Workers, queueStats, Tasks, Pipelines (every 3s)
-  const loadFastData = useCallback(async () => {
-    // 1. Fetch Tasks
-    try {
-      const tasksData = await fetchTasks(1, 50);
-      const tasksList = tasksData.tasks || [];
-      const metadata = tasksData.metadata || { total_tasks: 0 };
-      setStats({
-        total: metadata.total_tasks,
-        pending: tasksList.filter(t => t.status === 'pending').length,
-        running: tasksList.filter(t => t.status === 'running').length,
-        completed: tasksList.filter(t => t.status === 'completed').length
-      });
-    } catch (error) {
-      console.warn('loadFastData: fetchTasks failed', error);
-    }
-
-    // 2. Fetch Pipelines
-    try {
-      const pipelinesData = await fetchPipelines();
-      setPipelines(pipelinesData);
-    } catch (error) {
-      console.warn('loadFastData: fetchPipelines failed', error);
-    }
-
-    // 3. Fetch Workers
-    let mergedWorkers = [];
-    try {
-      const workersData = await fetchWorkers();
-      const defaultWorkerIds = ['worker-1', 'worker-2', 'worker-3'];
-      mergedWorkers = defaultWorkerIds.map(id => {
-        const active = workersData.find(w => w.worker_id === id);
-        if (active) {
-          const secondsSinceLastSeen = (Date.now() - new Date(active.last_seen)) / 1000;
-          const computedStatus = secondsSinceLastSeen > 15 ? 'offline' : active.status;
-          return { ...active, status: computedStatus };
-        }
-        return {
-          worker_id: id,
-          status: 'offline',
-          last_seen: null,
-          tasks_completed: 0,
-          tasks_failed: 0,
-          last_action: 'Offline'
-        };
-      });
-      workersData.forEach(w => {
-        if (!defaultWorkerIds.includes(w.worker_id)) {
-          const secondsSinceLastSeen = (Date.now() - new Date(w.last_seen)) / 1000;
-          const computedStatus = secondsSinceLastSeen > 15 ? 'offline' : w.status;
-          mergedWorkers.push({ ...w, status: computedStatus });
-        }
-      });
-      setWorkers(mergedWorkers);
-    } catch (error) {
-      console.warn('loadFastData: fetchWorkers failed', error);
-    }
-
-    // 4. Fetch Queue Stats & determine Redis status independently
-    try {
-      const qs = await getQueueStats();
-      setQueueStats(qs);
-      // Use the explicit redis_status field from the backend if present
-      const redisOnline = qs.redis_status ? qs.redis_status === 'online' : true;
-      setRedisStatus(redisOnline ? 'online' : 'offline');
-
-      const totalQueued = qs.total || 0;
-      const allWorkersIdle = mergedWorkers.length > 0 && mergedWorkers.every(w => w.status === 'idle' || w.status === 'offline');
-      if (totalQueued > 0 && allWorkersIdle) {
-        if (queueStuckSinceRef.current === null) {
-          queueStuckSinceRef.current = Date.now();
-        } else if (Date.now() - queueStuckSinceRef.current > 10000) {
-          setShowStuckWarning(true);
-        }
-      } else {
-        queueStuckSinceRef.current = null;
-        setShowStuckWarning(false);
-      }
-    } catch (error) {
-      console.error('loadFastData: getQueueStats failed — Redis may be offline', error);
-      setRedisStatus('offline');
-    }
-  }, []);
-
-
-  // Slow Polling: Infrastructure health checks (every 10s)
-  const loadSlowData = useCallback(async () => {
-    // 1. Check Database connection
-    try {
-      const db = await getDatabaseStatus();
-      setDbStatus(db.status === 'connected' ? 'online' : 'offline');
-    } catch {
-      setDbStatus('offline');
-    }
-
-    // 2. Check Qdrant connection
-    try {
-      const qdrant = await fetchVectorStats();
-      setQdrantStatus(qdrant.status === 'ok' ? 'online' : 'offline');
-    } catch {
-      setQdrantStatus('offline');
-    }
-
-    // 3. Check Cluster status
-    try {
-      const cluster = await getClusterStatus();
-      setLeaderId(cluster.leader_instance_id || 'None');
-      setOrchestratorCount(cluster.orchestrators?.length || 0);
-    } catch {
-      setLeaderId('Unknown');
-      setOrchestratorCount(0);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadFastData();
-    loadSlowData();
-
-    const fastInterval = setInterval(loadFastData, POLL_INTERVAL);
-    const slowInterval = setInterval(loadSlowData, 10000);
-
-    return () => {
-      clearInterval(fastInterval);
-      clearInterval(slowInterval);
-    };
-  }, [loadFastData, loadSlowData]);
-
-  // Navigate to a view and clear pipeline state if necessary
   const handleNavigateToView = (viewName) => {
     setActiveView(viewName);
   };
@@ -346,14 +238,14 @@ function App() {
 
             <div className="cluster-status-item" style={{ borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px', marginTop: '4px' }}>
               <span>HA Status</span>
-              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#fff' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-white)' }}>
                 {leaderId !== 'Checking...' && leaderId !== 'None' ? 'Leader' : 'Replica'}
               </span>
             </div>
 
             <div className="cluster-status-item">
               <span>Online Nodes</span>
-              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#5B8CFF' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--color-accent)' }}>
                 {workers.filter(w => w.status !== 'offline').length} Workers
               </span>
             </div>
@@ -399,7 +291,7 @@ function App() {
               </div>
               <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '12px' }}>
                 <span>Queue Size:</span>
-                <span className="top-bar-stat-val" style={{ color: queuePressure > 60 ? '#EF4444' : '#fff' }}>
+                <span className="top-bar-stat-val" style={{ color: queuePressure > 60 ? 'var(--color-failure)' : 'var(--text-white)' }}>
                   {queueStats.total || 0}
                 </span>
               </div>
@@ -427,7 +319,7 @@ function App() {
           </div>
         </header>
 
-        {/* Global Stuck Queue reconcilliation Banner */}
+        {/* Global Stuck Queue reconciliation Banner */}
         {showStuckWarning && (
           <div className="alert-banner warning" style={{ borderRadius: 0, borderLeft: 0, borderRight: 0, margin: 0 }}>
             <ShieldAlert size={16} />
@@ -476,8 +368,6 @@ function App() {
 
           {activeView === 'architecture' && <ArchitectureOverview />}
 
-          
-
           {activeView === 'diagnostics' && <DiagnosticsPage />}
         </div>
 
@@ -485,7 +375,7 @@ function App() {
       <TaskModal 
         taskId={selectedTaskId} 
         onClose={() => setSelectedTaskId(null)} 
-        onActionComplete={loadFastData} 
+        onActionComplete={pollingManager.triggerFastUpdate} 
       />
 
       {/* System Integration Test Modal */}
@@ -513,7 +403,7 @@ function App() {
             display: 'flex',
             flexDirection: 'column',
             boxShadow: 'none',
-            color: '#f8fafc'
+            color: 'var(--text-primary)'
           }}>
             <div className="modal-header" style={{
               display: 'flex',
@@ -525,7 +415,7 @@ function App() {
               <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{
                   background: testResults.status === 'success' ? 'var(--color-success)' : 'var(--color-failure)',
-                  color: '#ffffff',
+                  color: 'var(--text-white)',
                   padding: '4px 10px',
                   borderRadius: '6px',
                   fontSize: '0.75rem',
@@ -562,10 +452,10 @@ function App() {
               fontFamily: 'monospace',
               fontSize: '0.875rem',
               lineHeight: 1.6,
-              background: '#090d16'
+              background: 'var(--bg-primary)'
             }}>
               {testResults.logs && testResults.logs.map((log, index) => {
-                let color = '#cbd5e1';
+                let color = 'var(--text-muted-light)';
                 if (log.includes('--- Test')) color = 'var(--color-accent)';
                 if (log.includes('successfully') || log.includes('passed')) color = 'var(--color-success)';
                 if (log.includes('Failed') || log.includes('rejected') || log.includes('error')) color = 'var(--color-failure)';
@@ -601,6 +491,20 @@ function App() {
       )}
       </main>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <ThemeProvider>
+      <NotificationProvider>
+        <DocumentProvider>
+          <PipelineProvider>
+            <AppContent />
+          </PipelineProvider>
+        </DocumentProvider>
+      </NotificationProvider>
+    </ThemeProvider>
   );
 }
 

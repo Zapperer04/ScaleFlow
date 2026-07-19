@@ -1094,7 +1094,7 @@ const OverviewPage = ({
           {selectedPipelineId ? (
             <LiveTraceStream events={traceEvents} />
           ) : (
-            <div className="panel" style={{ padding: '20px', background: 'rgba(0,0,0,0.2)', border: '1px dashed var(--border-subtle)', borderRadius: '6px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', padding: '60px 20px' }}>
+            <div className="panel" style={{ background: 'rgba(0,0,0,0.2)', border: '1px dashed var(--border-subtle)', borderRadius: '6px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', padding: '60px 20px' }}>
               Select a pipeline from the history below or upload a new file to watch live execution traces.
             </div>
           )}
