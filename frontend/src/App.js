@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Layers, Server, Activity, Cpu, RefreshCw, 
-  Play, Film, ShieldAlert, Shield, BookOpen
+  ShieldAlert
 } from 'lucide-react';
 import { 
   runIntegrationTests, uploadFile
@@ -15,6 +14,7 @@ import DiagnosticsPage from './components/DiagnosticsPage';
 import TaskModal from './components/TaskModal';
 import ValidationLab from './components/ValidationLab';
 import DesignSystemShowcase from './components/ui/showcase/DesignSystemShowcase';
+import AppShell from './components/layout/AppShell';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { DocumentProvider, useDocument } from './contexts/DocumentContext';
 import { PipelineProvider, usePipeline } from './contexts/PipelineContext';
@@ -135,201 +135,23 @@ function AppContent() {
   const queuePressure = getQueuePressure();
 
   return (
-    <div className="app-container">
-      
-      {/* 1. LEFT SIDEBAR */}
-      <aside className="sidebar">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-          <div className="sidebar-branding">
-            <div className="sidebar-logo">
-              <Layers size={22} />
-              <span>ScaleFlow</span>
-            </div>
-            <span className="sidebar-subtitle">Distributed Platform</span>
-          </div>
-
-          <nav className="sidebar-nav">
-            <div style={{ color: 'var(--text-muted)', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', paddingLeft: '8px' }}>
-              Main Experience
-            </div>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'overview' ? 'active' : ''}`}
-              onClick={() => handleNavigateToView('overview')}
-            >
-              <Activity size={18} />
-              AI Document Workspace
-            </button>
-
-            <div style={{ color: 'var(--text-muted)', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '24px', marginBottom: '8px', paddingLeft: '8px' }}>
-              Advanced Runtime Tools
-            </div>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'pipelines' ? 'active' : ''}`}
-              onClick={() => handleNavigateToView('pipelines')}
-            >
-              <Play size={18} />
-              DAG Orchestration
-            </button>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'validation-lab' ? 'active' : ''}`}
-              onClick={() => handleNavigateToView('validation-lab')}
-            >
-              <Shield size={18} />
-              Validation & Chaos Lab
-            </button>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'workers' ? 'active' : ''}`}
-              onClick={() => handleNavigateToView('workers')}
-            >
-              <Server size={18} />
-              Workers Registry
-            </button>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'replay' ? 'active' : ''}`}
-              onClick={() => handleNavigateToView('replay')}
-            >
-              <Film size={18} />
-              Replay Engine
-            </button>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'architecture' ? 'active' : ''}`}
-              onClick={() => handleNavigateToView('architecture')}
-            >
-              <Layers size={18} />
-              System Architecture
-            </button>
-            
-            <button 
-              className={`sidebar-nav-item ${activeView === 'diagnostics' ? 'active' : ''}`}
-              onClick={() => handleNavigateToView('diagnostics')}
-            >
-              <ShieldAlert size={18} />
-              Diagnostics & DLQ
-            </button>
-            <button 
-              className={`sidebar-nav-item ${activeView === 'design-system' ? 'active' : ''}`}
-              onClick={() => handleNavigateToView('design-system')}
-            >
-              <BookOpen size={18} />
-              Design System
-            </button>
-          </nav>
-        </div>
-
-        {/* Cluster Infrastructure Status Footer */}
-        <div className="sidebar-footer">
-          <div className="cluster-status-title">Infrastructure Health</div>
-          <div className="cluster-status-list">
-            <div className="cluster-status-item">
-              <span>Redis Broker</span>
-              <div className="status-dot-container">
-                <div className={`status-dot ${redisStatus}`} />
-                <span>{redisStatus === 'online' ? 'Connected' : 'Offline'}</span>
-              </div>
-            </div>
-            
-            <div className="cluster-status-item">
-              <span>Postgres DB</span>
-              <div className="status-dot-container">
-                <div className={`status-dot ${dbStatus}`} />
-                <span>{dbStatus === 'online' ? 'Connected' : 'Offline'}</span>
-              </div>
-            </div>
-
-            <div className="cluster-status-item">
-              <span>Qdrant Store</span>
-              <div className="status-dot-container">
-                <div className={`status-dot ${qdrantStatus}`} />
-                <span>{qdrantStatus === 'online' ? 'Connected' : 'Offline'}</span>
-              </div>
-            </div>
-
-            <div className="cluster-status-item" style={{ borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '8px', marginTop: '4px' }}>
-              <span>HA Status</span>
-              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-white)' }}>
-                {leaderId !== 'Checking...' && leaderId !== 'None' ? 'Leader' : 'Replica'}
-              </span>
-            </div>
-
-            <div className="cluster-status-item">
-              <span>Online Nodes</span>
-              <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--color-accent)' }}>
-                {workers.filter(w => w.status !== 'offline').length} Workers
-              </span>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {/* 2. MAIN VIEWPORT */}
-      <main className="main-viewport">
-        
-        {/* Top Control Bar */}
-        <header className="top-bar">
-          <div className="top-bar-left">
-            <span className="view-title">
-              {activeView === 'overview' && 'Orchestration Control Plane'}
-              {activeView === 'pipelines' && 'Active Pipelines Workspace'}
-              {activeView === 'validation-lab' && 'System Validation & Chaos Lab'}
-              {activeView === 'workers' && 'Worker Registry Control'}
-              {activeView === 'vectors' && 'Vector Search Observability'}
-              {activeView === 'replay' && 'Deterministic Time Travel Replay'}
-              {activeView === 'architecture' && 'ScaleFlow System Architecture'}
-              
-              {activeView === 'diagnostics' && 'Diagnostics & Dead-Letter Queue'}
-            </span>
-            
-            {/* Cluster pressure or backpressure modes */}
-            <span className={`mode-badge ${queuePressure > 60 ? 'backpressure' : queuePressure > 30 ? 'high-load' : ''}`}>
-              {queuePressure > 60 ? 'Queue Backpressure: Active' : queuePressure > 30 ? 'Load Mode: High' : 'Load Mode: Optimal'}
-            </span>
-          </div>
-
-          <div className="top-bar-right">
-            <div className="top-bar-stats">
-              <div>
-                <span>Orchestrators:</span>
-                <span className="top-bar-stat-val">{orchestratorCount}</span>
-              </div>
-              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '12px' }}>
-                <span>Active Leader ID:</span>
-                <span className="top-bar-stat-val" style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
-                  {leaderId.length > 10 ? `${leaderId.slice(0, 8)}...` : leaderId}
-                </span>
-              </div>
-              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '12px' }}>
-                <span>Queue Size:</span>
-                <span className="top-bar-stat-val" style={{ color: queuePressure > 60 ? 'var(--color-failure)' : 'var(--text-white)' }}>
-                  {queueStats.total || 0}
-                </span>
-              </div>
-            </div>
-
-            <button 
-              onClick={handleRunTests}
-              disabled={testing}
-              className="btn btn-primary"
-              style={{
-                borderRadius: '4px',
-                padding: '8px 16px',
-                fontSize: '0.8rem',
-                fontWeight: '700',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                background: testing ? 'rgba(91, 140, 255, 0.2)' : 'var(--color-accent)',
-                boxShadow: 'none'
-              }}
-            >
-              {testing ? <RefreshCw size={14} className="animate-spin" /> : <Cpu size={14} />}
-              Run System Tests
-            </button>
-          </div>
-        </header>
-
-        {/* Global Stuck Queue reconciliation Banner */}
+    <>
+      <AppShell
+        activeView={activeView}
+        onNavigateToView={handleNavigateToView}
+        redisStatus={redisStatus}
+        dbStatus={dbStatus}
+        qdrantStatus={qdrantStatus}
+        leaderId={leaderId}
+        workers={workers}
+        orchestratorCount={orchestratorCount}
+        queueStats={queueStats}
+        queuePressure={queuePressure}
+        testing={testing}
+        onRunTests={handleRunTests}
+      >
         {showStuckWarning && (
-          <div className="alert-banner warning" style={{ borderRadius: 0, borderLeft: 0, borderRight: 0, margin: 0 }}>
+          <div className="alert-banner warning" style={{ borderRadius: 0, borderLeft: 0, borderRight: 0, margin: '0 0 var(--spacing-20) 0' }}>
             <ShieldAlert size={16} />
             <span className="alert-message">
               Execution queue reconciliation required. Tasks are queued in Redis but worker heartbeat loop is standing by. Check worker registers.
@@ -337,49 +159,47 @@ function AppContent() {
           </div>
         )}
 
-        {/* 3. WORKSPACE SCROLL AREA */}
-        <div className="workspace-content">
-          {activeView === 'overview' && (
-            <OverviewPage 
-              pipelines={pipelines}
-              workers={workers}
-              queueStats={queueStats}
-              stats={stats}
-              redisStatus={redisStatus}
-              dbStatus={dbStatus}
-              qdrantStatus={qdrantStatus}
-              onSelectPipeline={handleSelectPipeline}
-              onNavigateToView={handleNavigateToView}
-              onUploadFile={handleUploadFile}
-              fileType={fileType}
-              setFileType={setFileType}
-              uploading={uploading}
-              uploadStatus={uploadStatus}
-              selectedPipelineId={selectedPipelineId}
-              setSelectedPipelineId={setSelectedPipelineId}
-              onSelectTask={setSelectedTaskId}
-            />
-          )}
+        {activeView === 'overview' && (
+          <OverviewPage 
+            pipelines={pipelines}
+            workers={workers}
+            queueStats={queueStats}
+            stats={stats}
+            redisStatus={redisStatus}
+            dbStatus={dbStatus}
+            qdrantStatus={qdrantStatus}
+            onSelectPipeline={handleSelectPipeline}
+            onNavigateToView={handleNavigateToView}
+            onUploadFile={handleUploadFile}
+            fileType={fileType}
+            setFileType={setFileType}
+            uploading={uploading}
+            uploadStatus={uploadStatus}
+            selectedPipelineId={selectedPipelineId}
+            setSelectedPipelineId={setSelectedPipelineId}
+            onSelectTask={setSelectedTaskId}
+          />
+        )}
 
-          {activeView === 'pipelines' && (
-            <PipelineDashboard 
-              selectedPipelineId={selectedPipelineId} 
-              setSelectedPipelineId={setSelectedPipelineId} 
-            />
-          )}
+        {activeView === 'pipelines' && (
+          <PipelineDashboard 
+            selectedPipelineId={selectedPipelineId} 
+            setSelectedPipelineId={setSelectedPipelineId} 
+          />
+        )}
 
-          {activeView === 'workers' && <WorkersPage />}
+        {activeView === 'workers' && <WorkersPage />}
 
-          {activeView === 'validation-lab' && <ValidationLab />}
+        {activeView === 'validation-lab' && <ValidationLab />}
 
-          {activeView === 'replay' && <ReplayPage />}
+        {activeView === 'replay' && <ReplayPage />}
 
-          {activeView === 'architecture' && <ArchitectureOverview />}
+        {activeView === 'architecture' && <ArchitectureOverview />}
 
-          {activeView === 'diagnostics' && <DiagnosticsPage />}
+        {activeView === 'diagnostics' && <DiagnosticsPage />}
 
-          {activeView === 'design-system' && <DesignSystemShowcase />}
-        </div>
+        {activeView === 'design-system' && <DesignSystemShowcase />}
+      </AppShell>
 
       {/* Selected Task Details Modal */}
       <TaskModal 
@@ -499,8 +319,7 @@ function AppContent() {
           </div>
         </div>
       )}
-      </main>
-    </div>
+    </>
   );
 }
 
