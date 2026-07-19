@@ -26,7 +26,18 @@ class EventEmitter:
     """
     Abstract event emitter. Business logic calls this instead of logging.
     """
+    _listeners = []
+
+    @classmethod
+    def register_listener(cls, listener):
+        cls._listeners.append(listener)
+
     @classmethod
     def emit(cls, event: ExecutionEvent):
-        # MVP: just print/log for now. Later this goes to a real Event Store.
         print(f"[{event.timestamp}] {event.type.value} | Job: {event.job_id} | Trace: {event.trace_id} | Payload: {event.payload}")
+        for listener in cls._listeners:
+            try:
+                listener(event)
+            except Exception:
+                pass
+
