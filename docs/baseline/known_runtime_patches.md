@@ -10,6 +10,8 @@ These shims document existing production bottlenecks and bugs. They will be remo
 | **Chunk node map shim** | `services.chunking_service._build_node_map` | Mismatch where `_build_node_map` expects `node_id` or `id`, but the plaintext parser output only includes `chunk_id`. | Yes | Phase 5 (Chunking & Processing Pipelines) |
 | **Qdrant offline mock** | `services.vector_store.upsert_document_chunks` | Bypasses local dependency on running Qdrant daemon for offline regression baselining. Resolves 3-tuple/4-tuple return type mismatch. | Yes | Phase 4 (Storage & Embedding Service Abstraction) |
 | **ArtifactType serialization** | `/artifacts/<id>/content` route | Flask's `jsonify` raises a 500 error when serializing the custom `ArtifactType` SQLAlchemy Enum directly. | Yes | Phase 8 (API & Web Server Refactoring) |
+| **set_chunk_lookup import bug** | `services.graph_expansion_service` | `retrieval_service.py` attempts to import `set_chunk_lookup` from `graph_expansion_service`, but only `set_batch_chunk_lookup` exists. | Yes | Phase 3 (Retrieval Abstraction) |
+
 
 ## Tech Debt Backlog Items
 

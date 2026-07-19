@@ -25,6 +25,9 @@ REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 TASK_RUNNING_TIMEOUT_SECONDS = int(os.environ.get("TASK_RUNNING_TIMEOUT_SECONDS", 1800))
 
 app = Flask(__name__)
+from backend.infrastructure.providers.bootstrap import bootstrap_app
+app.config["CONTAINER"] = bootstrap_app()
+
 if "*" in ALLOWED_ORIGINS:
     CORS(app)
 else:

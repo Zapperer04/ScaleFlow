@@ -1,0 +1,29 @@
+# Parser Regression Report
+
+- **Status**: PASS ✅
+- **Execution Time**: 1.39s
+- **Files Verified**: `tests/regression/parser/`
+- **Output Preview**:
+```
+============================= test session starts ==============================
+platform darwin -- Python 3.10.11, pytest-9.1.1, pluggy-1.6.0 -- /Users/kaustavkumar/Kaustav/Projects/task-schedular/backend/venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/kaustavkumar/Kaustav/Projects/task-schedular
+configfile: pytest.ini
+testpaths: tests/regression, tests/architecture, tests/contracts
+plugins: mock-3.15.1, anyio-4.14.2
+collecting ... collected 37 items / 29 deselected / 8 selected
+
+tests/regression/parser/test_parser.py::test_parser_golden_regression[digital_large_document] PASSED [ 12%]
+tests/regression/parser/test_parser.py::test_parser_golden_regression[forms_large_document] PASSED [ 25%]
+tests/regression/parser/test_parser.py::test_parser_golden_regression[images_large_document] PASSED [ 37%]
+tests/regression/parser/test_parser.py::test_parser_golden_regression[mixed_large_document] PASSED [ 50%]
+tests/regression/parser/test_parser.py::test_parser_golden_regression[multicolumn_large_document] PASSED [ 62%]
+tests/regression/parser/test_parser.py::test_parser_golden_regression[scanned_large_document] PASSED [ 75%]
+tests/regression/parser/test_parser.py::test_parser_golden_regression[tables_large_document] PASSED [ 87%]
+tests/regression/parser/test_parser.py::test_parser_unsupported_format PASSED [100%]
+
+======================= 8 passed, 29 deselected in 1.09s =======================
+
+
+```

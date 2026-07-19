@@ -1,0 +1,67 @@
+{
+  "properties": {
+    "version": {
+      "default": "v1",
+      "title": "Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "chunk_id": {
+      "title": "Chunk Id",
+      "type": "string"
+    },
+    "chunk_index": {
+      "title": "Chunk Index",
+      "type": "integer"
+    },
+    "chunk_text": {
+      "title": "Chunk Text",
+      "type": "string"
+    },
+    "page_number": {
+      "title": "Page Number",
+      "type": "integer"
+    },
+    "file_id": {
+      "title": "File Id",
+      "type": "integer"
+    },
+    "pipeline_id": {
+      "title": "Pipeline Id",
+      "type": "integer"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "graph_relations": {
+      "anyOf": [
+        {},
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Graph Relations"
+    }
+  },
+  "required": [
+    "chunk_id",
+    "chunk_index",
+    "chunk_text",
+    "page_number",
+    "file_id",
+    "pipeline_id"
+  ],
+  "title": "ChunkDTO",
+  "type": "object"
+}
