@@ -5,6 +5,7 @@
 @import './styles/shadows.css';
 @import './styles/zindex.css';
 @import './styles/motion.css';
+@import './styles/components.css';
 
 * {
   margin: 0;

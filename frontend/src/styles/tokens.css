@@ -1,7 +1,7 @@
-/* --- SEMANTIC DESIGN TOKENS --- */
+/* --- BRAND & SEMANTIC COLOR VARIABLES --- */
 
 :root {
-  /* Brand/Semantic Colors - Dark Theme (Default) */
+  /* Core Base Colors (Dark Theme) */
   --color-accent: #3b82f6;          /* Accent Blue */
   --color-accent-hover: #2563eb;    /* Primary Hover */
   --color-success: #10b981;         /* Success Green */
@@ -10,22 +10,53 @@
   --color-replay: #8b5cf6;          /* Replay Purple */
   --color-info: #60a5fa;            /* Info Blue */
 
-  /* Dark Theme Palette (Base Colors) */
-  --bg-primary: #090a0c;            /* Background App */
-  --bg-panel: #0f1115;              /* Surface */
+  /* Dark Theme Palette */
+  --bg-primary: #090a0c;            /* App backdrop */
+  --bg-panel: #0f1115;              /* Surface background */
   --bg-input: #15181e;              /* Input Fill */
-  --bg-hover: #1e222b;              /* Surface Hover */
-  --border-subtle: #1c1f26;         /* Border Default */
-  --border-divider: #1e293b;        /* Divider */
+  --bg-hover: #1e222b;              /* Interactive item hover */
+  --border-subtle: #1c1f26;         /* Default panels border */
+  --border-divider: #1e293b;        /* Divider border */
   
   /* Text Contrast Scales */
-  --text-primary: #e2e8f0;          /* Text Primary */
-  --text-secondary: #94a3b8;       /* Text Secondary */
-  --text-disabled: #52525b;        /* Text Disabled / Muted */
+  --text-primary: #e2e8f0;          /* High contrast text */
+  --text-secondary: #94a3b8;       /* Mid contrast text */
+  --text-disabled: #52525b;        /* Low contrast text */
   --text-white: #ffffff;            /* Pure white */
+
+  /* --- SEMANTIC COMPONENT TOKENS (Dark Theme) --- */
+  --button-primary-bg: var(--color-accent);
+  --button-primary-hover: var(--color-accent-hover);
+  --button-primary-text: var(--text-white);
+  --button-secondary-bg: transparent;
+  --button-secondary-border: var(--border-subtle);
+  --button-secondary-text: var(--text-primary);
+  --button-danger-bg: rgba(239, 68, 68, 0.15);
+  --button-danger-border: rgba(239, 68, 68, 0.4);
+  --button-danger-text: #fca5a5;
+
+  --panel-bg: var(--bg-panel);
+  --panel-border: var(--border-subtle);
+  
+  --table-row-hover: var(--bg-hover);
+  --input-bg: var(--bg-input);
+  --input-border: var(--border-subtle);
+  --input-border-focus: var(--color-accent);
+
+  --badge-success-bg: rgba(16, 185, 129, 0.08);
+  --badge-success-border: rgba(16, 185, 129, 0.15);
+  --badge-success-text: var(--color-success);
+  
+  --badge-warning-bg: rgba(245, 158, 11, 0.08);
+  --badge-warning-border: rgba(245, 158, 11, 0.15);
+  --badge-warning-text: var(--color-warning);
+  
+  --badge-danger-bg: rgba(239, 68, 68, 0.08);
+  --badge-danger-border: rgba(239, 68, 68, 0.15);
+  --badge-danger-text: var(--color-failure);
 }
 
-/* Light Theme Scaffold (Disabled by default) */
+/* Light Theme (Scaffold) */
 .theme-light {
   --color-accent: #1d4ed8;
   --color-accent-hover: #1e40af;
@@ -46,11 +77,42 @@
   --text-secondary: #475569;
   --text-disabled: #94a3b8;
   --text-white: #ffffff;
+
+  /* --- SEMANTIC COMPONENT TOKENS (Light Theme) --- */
+  --button-primary-bg: var(--color-accent);
+  --button-primary-hover: var(--color-accent-hover);
+  --button-primary-text: var(--text-white);
+  --button-secondary-bg: var(--bg-panel);
+  --button-secondary-border: var(--border-subtle);
+  --button-secondary-text: var(--text-primary);
+  --button-danger-bg: #fee2e2;
+  --button-danger-border: #fca5a5;
+  --button-danger-text: var(--color-failure);
+
+  --panel-bg: var(--bg-panel);
+  --panel-border: var(--border-subtle);
+  
+  --table-row-hover: var(--bg-input);
+  --input-bg: var(--bg-input);
+  --input-border: var(--border-subtle);
+  --input-border-focus: var(--color-accent);
+
+  --badge-success-bg: rgba(5, 150, 105, 0.1);
+  --badge-success-border: rgba(5, 150, 105, 0.2);
+  --badge-success-text: var(--color-success);
+
+  --badge-warning-bg: rgba(217, 119, 6, 0.1);
+  --badge-warning-border: rgba(217, 119, 6, 0.2);
+  --badge-warning-text: var(--color-warning);
+
+  --badge-danger-bg: rgba(220, 38, 38, 0.1);
+  --badge-danger-border: rgba(220, 38, 38, 0.2);
+  --badge-danger-text: var(--color-failure);
 }
 
-/* High Contrast Theme Scaffold (Disabled by default) */
+/* High Contrast Theme (Scaffold) */
 .theme-high-contrast {
-  --color-accent: #00ff00;          /* Neon Green */
+  --color-accent: #00ff00;
   --color-accent-hover: #00ff00;
   --color-success: #00ff00;
   --color-warning: #ffff00;
@@ -69,4 +131,35 @@
   --text-secondary: #ffffff;
   --text-disabled: #888888;
   --text-white: #ffffff;
+
+  /* --- SEMANTIC COMPONENT TOKENS (High Contrast) --- */
+  --button-primary-bg: #000000;
+  --button-primary-hover: #000000;
+  --button-primary-text: var(--color-accent);
+  --button-secondary-bg: #000000;
+  --button-secondary-border: var(--border-subtle);
+  --button-secondary-text: var(--text-primary);
+  --button-danger-bg: #000000;
+  --button-danger-border: var(--color-failure);
+  --button-danger-text: var(--color-failure);
+
+  --panel-bg: var(--bg-panel);
+  --panel-border: var(--border-subtle);
+  
+  --table-row-hover: #222222;
+  --input-bg: var(--bg-input);
+  --input-border: var(--border-subtle);
+  --input-border-focus: var(--color-accent);
+
+  --badge-success-bg: #000000;
+  --badge-success-border: var(--color-success);
+  --badge-success-text: var(--color-success);
+
+  --badge-warning-bg: #000000;
+  --badge-warning-border: var(--color-warning);
+  --badge-warning-text: var(--color-warning);
+
+  --badge-danger-bg: #000000;
+  --badge-danger-border: var(--color-failure);
+  --badge-danger-text: var(--color-failure);
 }

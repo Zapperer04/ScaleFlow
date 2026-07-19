@@ -1,0 +1,160 @@
+/* --- COMPONENT STYLING VOCABULARY --- */
+
+/* 1. Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-8);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--spacing-8) var(--spacing-16);
+  border-radius: var(--radius-4);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: var(--transition-fast-ease);
+}
+
+.btn-primary {
+  background: var(--button-primary-bg);
+  color: var(--button-primary-text);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--button-primary-hover);
+}
+
+.btn-secondary {
+  background: var(--button-secondary-bg);
+  border-color: var(--button-secondary-border);
+  color: var(--button-secondary-text);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.btn-danger {
+  background: var(--button-danger-bg);
+  border-color: var(--button-danger-border);
+  color: var(--button-danger-text);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--color-failure);
+  color: var(--text-white);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 2. Panels and Cards */
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-6);
+  padding: var(--spacing-20);
+  box-shadow: var(--shadow-small);
+}
+
+/* 3. Badges and Chips */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  padding: var(--spacing-2) var(--spacing-8);
+  border-radius: var(--radius-4);
+  border: 1px solid transparent;
+  text-transform: uppercase;
+}
+
+.badge.completed, .badge.success {
+  background: var(--badge-success-bg);
+  border-color: var(--badge-success-border);
+  color: var(--badge-success-text);
+}
+
+.badge.pending, .badge.warning {
+  background: var(--badge-warning-bg);
+  border-color: var(--badge-warning-border);
+  color: var(--badge-warning-text);
+}
+
+.badge.failed, .badge.danger {
+  background: var(--badge-danger-bg);
+  border-color: var(--badge-danger-border);
+  color: var(--badge-danger-text);
+}
+
+/* 4. Inputs and Textareas */
+.form-input {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--text-primary);
+  padding: var(--spacing-8) var(--spacing-12);
+  border-radius: var(--radius-4);
+  font-size: var(--font-size-body);
+  transition: var(--transition-fast-ease);
+}
+.form-input:focus {
+  outline: none;
+  border-color: var(--input-border-focus);
+}
+
+/* 5. Tables */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.table-custom {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-body);
+}
+
+.table-custom th {
+  color: var(--text-secondary);
+  padding: var(--spacing-8) var(--spacing-12);
+  border-bottom: 1px solid var(--border-divider);
+  text-align: left;
+}
+
+.table-custom td {
+  padding: var(--spacing-12);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.table-custom tr:hover td {
+  background: var(--table-row-hover);
+}
+
+/* 6. Sidebar Layout Elements */
+.sidebar-container {
+  width: 230px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+}
+
+/* 7. Status Dots */
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  display: inline-block;
+}
+.status-dot.online { background: var(--color-success); }
+.status-dot.offline { background: var(--color-failure); }
+.status-dot.checking { background: var(--color-warning); }
+
+/* 8. Dividers */
+.divider {
+  height: 1px;
+  background: var(--border-divider);
+  width: 100%;
+  margin: var(--spacing-12) 0;
+}
