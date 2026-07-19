@@ -1,0 +1,125 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:latest
+    ports:
+      - "6382:6379"
+    restart: unless-stopped
+
+  redis-proxy:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    command: ["python", "-u", "execution_engine/simulation/redis_proxy.py"]
+    environment:
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      PROXY_PORT: "6381"
+      REDIS_PROXY_CONFIG: "/app/execution_engine/simulation/configs/redis_proxy.yaml"
+    volumes:
+      - ../../:/app
+    depends_on:
+      - redis
+
+  gemini-mock:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    command: ["python", "-u", "execution_engine/simulation/mock_provider.py"]
+    environment:
+      PROVIDER_ID: "gemini"
+      PORT: "8000"
+      MOCK_PROVIDER_CONFIG: "/app/execution_engine/simulation/configs/gemini.yaml"
+    volumes:
+      - ../../:/app
+    ports:
+      - "8001:8000"
+
+  openrouter-mock:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    command: ["python", "-u", "execution_engine/simulation/mock_provider.py"]
+    environment:
+      PROVIDER_ID: "openrouter"
+      PORT: "8000"
+      MOCK_PROVIDER_CONFIG: "/app/execution_engine/simulation/configs/openrouter.yaml"
+    volumes:
+      - ../../:/app
+    ports:
+      - "8002:8000"
+
+  worker-1:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    command: ["python", "-u", "execution_engine/simulation/worker_daemon.py"]
+    environment:
+      WORKER_ID: "worker-1"
+      REDIS_HOST: "redis-proxy"
+      REDIS_PORT: "6381"
+      METRICS_PORT: "8000"
+      GEMINI_MOCK_URL: "http://gemini-mock:8000"
+      OPENROUTER_MOCK_URL: "http://openrouter-mock:8000"
+      MANIFESTS_DIR: "/app/execution_engine/core/manifests"
+    volumes:
+      - ../../:/app
+    depends_on:
+      - redis-proxy
+      - gemini-mock
+      - openrouter-mock
+
+  worker-2:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    command: ["python", "-u", "execution_engine/simulation/worker_daemon.py"]
+    environment:
+      WORKER_ID: "worker-2"
+      REDIS_HOST: "redis-proxy"
+      REDIS_PORT: "6381"
+      METRICS_PORT: "8000"
+      GEMINI_MOCK_URL: "http://gemini-mock:8000"
+      OPENROUTER_MOCK_URL: "http://openrouter-mock:8000"
+      MANIFESTS_DIR: "/app/execution_engine/core/manifests"
+    volumes:
+      - ../../:/app
+    depends_on:
+      - redis-proxy
+      - gemini-mock
+      - openrouter-mock
+
+  worker-3:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    command: ["python", "-u", "execution_engine/simulation/worker_daemon.py"]
+    environment:
+      WORKER_ID: "worker-3"
+      REDIS_HOST: "redis-proxy"
+      REDIS_PORT: "6381"
+      METRICS_PORT: "8000"
+      GEMINI_MOCK_URL: "http://gemini-mock:8000"
+      OPENROUTER_MOCK_URL: "http://openrouter-mock:8000"
+      MANIFESTS_DIR: "/app/execution_engine/core/manifests"
+    volumes:
+      - ../../:/app
+    depends_on:
+      - redis-proxy
+      - gemini-mock
+      - openrouter-mock
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3010:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
