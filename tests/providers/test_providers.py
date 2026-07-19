@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 pytestmark = [pytest.mark.regression]
 
 from backend.infrastructure.providers.base_provider import BaseParserProvider
-from backend.infrastructure.providers.gemini_provider import GeminiProvider, VLMCompatibilityAdapter
+from backend.infrastructure.providers.gemini_provider import GeminiProvider
 from backend.infrastructure.providers.openrouter_provider import OpenRouterProvider
 from backend.infrastructure.providers.ocr_provider import OCRProvider
 from backend.infrastructure.providers.digital_pdf_provider import DigitalPDFProvider
@@ -15,22 +15,13 @@ from backend.infrastructure.providers.provider_router import ProviderRouter
 from backend.infrastructure.providers.retry_policy import RetryPolicy
 from backend.infrastructure.providers.circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
 from backend.infrastructure.providers.bootstrap import bootstrap_app
-from backend.application.parsing_service import ParsingServiceImpl, CompatibleDocument
+from backend.application.parsing_service import ParsingServiceImpl
+from backend.domain.aggregates.document import Document
 from services.pdf_parser import ParseResult
 
 # ------------------------------------------------------------------------------
 # 1. Base / Compatibility / Metrics Tests
 # ------------------------------------------------------------------------------
-def test_vlm_compatibility_adapter():
-    import os
-    # Ensure starting state
-    os.environ.pop("VLM_PROVIDER", None)
-    
-    with VLMCompatibilityAdapter("test_val"):
-        assert os.environ.get("VLM_PROVIDER") == "test_val"
-    
-    assert "VLM_PROVIDER" not in os.environ
-
 # ------------------------------------------------------------------------------
 # 2. Retry Policy Tests
 # ------------------------------------------------------------------------------
@@ -164,8 +155,10 @@ def test_parsing_service_with_injected_provider(mock_parse_pdf):
         document_type="SCANNED"
     )
 
-    assert isinstance(doc, CompatibleDocument)
-    assert doc.stats == {"node_count": 0}
-    # verify __getattribute__ returns raw pages when pages is accessed
-    assert len(doc.pages) == 1
-    assert doc.pages[0]["text"] == "Page 1 Content"
+    # ParsingServiceImpl now returns a clean Document aggregate.
+    # Raw parser outputs (stats, pages, document_graph) are in metadata.
+    assert isinstance(doc, Document)
+    assert doc.metadata.get("stats") == {"node_count": 0}
+    raw_pages = doc.metadata.get("pages", [])
+    assert len(raw_pages) == 1
+    assert raw_pages[0]["text"] == "Page 1 Content"

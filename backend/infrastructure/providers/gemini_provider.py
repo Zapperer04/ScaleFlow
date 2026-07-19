@@ -1,4 +1,3 @@
-import os
 import time
 from typing import Any, Callable, Dict, Optional
 from backend.infrastructure.providers.base_provider import BaseParserProvider
@@ -7,25 +6,6 @@ from backend.infrastructure.providers.retry_policy import RetryPolicy
 from backend.infrastructure.providers.circuit_breaker import CircuitBreaker
 from services.pdf_parser import parse_pdf, ParseResult
 
-# TODO(Phase 5):
-# Remove after worker and API migrate to DTOs.
-class VLMCompatibilityAdapter:
-    """Isolates legacy code's reliance on os.environ['VLM_PROVIDER']."""
-    def __init__(self, provider_name: str):
-        self.provider_name = provider_name
-        self.old_val = None
-
-    def __enter__(self):
-        self.old_val = os.environ.get("VLM_PROVIDER")
-        os.environ["VLM_PROVIDER"] = self.provider_name
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.old_val is None:
-            if "VLM_PROVIDER" in os.environ:
-                del os.environ["VLM_PROVIDER"]
-        else:
-            os.environ["VLM_PROVIDER"] = self.old_val
 
 class GeminiProvider(BaseParserProvider):
     def __init__(self):
@@ -50,25 +30,24 @@ class GeminiProvider(BaseParserProvider):
         on_page_completed: Optional[Callable[[int, Dict[str, Any]], None]] = None,
     ) -> ParseResult:
         start_time = time.time()
-        
+
         def run_parsing():
-            with VLMCompatibilityAdapter("gemini"):
-                return parse_pdf(
-                    filepath=filepath,
-                    task_id=task_id,
-                    lease_token=lease_token,
-                    progress_json=progress_json,
-                    trace_fn=trace_fn,
-                    api_url=api_url,
-                    api_headers=api_headers,
-                    skip_ocr=skip_ocr,
-                    document_type=document_type,
-                    routing_confidence=routing_confidence,
-                    parse_method_hint=parse_method_hint,
-                    enhanced_pages_path=enhanced_pages_path,
-                    on_page_completed=on_page_completed,
-                    vlm_provider_name="gemini",
-                )
+            return parse_pdf(
+                filepath=filepath,
+                task_id=task_id,
+                lease_token=lease_token,
+                progress_json=progress_json,
+                trace_fn=trace_fn,
+                api_url=api_url,
+                api_headers=api_headers,
+                skip_ocr=skip_ocr,
+                document_type=document_type,
+                routing_confidence=routing_confidence,
+                parse_method_hint=parse_method_hint,
+                enhanced_pages_path=enhanced_pages_path,
+                on_page_completed=on_page_completed,
+                vlm_provider_name="gemini",
+            )
 
         try:
             result = self.circuit_breaker.execute(

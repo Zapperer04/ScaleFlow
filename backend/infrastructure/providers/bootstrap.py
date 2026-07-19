@@ -9,6 +9,7 @@ from backend.application.parsing_service import ParsingServiceImpl
 from backend.infrastructure.factories import StorageFactory, RepositoryFactory, CacheFactory, VectorStoreFactory
 from backend.models import SessionLocal
 
+
 class ApplicationContainer:
     """Dependency Injection Container representing the wired up application."""
     def __init__(
@@ -33,6 +34,7 @@ class ApplicationContainer:
         self.vector_store = vector_store
         self.unit_of_work = unit_of_work
 
+
 def bootstrap_app() -> ApplicationContainer:
     """Composition Root function to load config, wire dependencies, and return container."""
     # 1. Load config (config module does this on import)
@@ -51,36 +53,34 @@ def bootstrap_app() -> ApplicationContainer:
     registry.register("openrouter", openrouter)
     registry.register("ocr", ocr)
     registry.register("digital_pdf", digital_pdf)
-    registry.register("llamaparse", llamaparse, enabled=False) # disabled stub
+    registry.register("llamaparse", llamaparse, enabled=False)  # disabled stub
 
     # 4. Build router
     router = ProviderRouter(registry)
 
-    # 6. Instantiate Phase 4A Storage, Cache, Vector Store, and Unit of Work
-    # Check environment/config database mode
+    # 5. Instantiate Phase 4A Storage, Cache, Vector Store, and Unit of Work
     db_mode = os.environ.get("DB_MODE", "sqlite")
     storage_type = "filesystem"
     cache_type = "redis" if db_mode == "postgres" else "memory"
-    
-    # We default storage base directory
+
     base_storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "storage"))
     storage = StorageFactory.create_storage(storage_type, base_dir=base_storage_dir)
     artifact_store = StorageFactory.create_artifact_store(storage)
     checkpoint_store = StorageFactory.create_checkpoint_store(storage)
-    
+
     cache = CacheFactory.create_cache(cache_type)
     vector_store = VectorStoreFactory.create_vector_store("qdrant")
-    
+
     session = SessionLocal()
     unit_of_work = RepositoryFactory.create_unit_of_work(session)
 
-    # 7. Construct ParsingService with injected checkpoint_store
+    # 6. Construct ParsingService with injected checkpoint_store
     parsing_service = ParsingServiceImpl(
         parser_provider=router,
         checkpoint_service=checkpoint_store
     )
 
-    container = ApplicationContainer(
+    return ApplicationContainer(
         registry=registry,
         router=router,
         parsing_service=parsing_service,
@@ -89,18 +89,5 @@ def bootstrap_app() -> ApplicationContainer:
         checkpoint_store=checkpoint_store,
         cache=cache,
         vector_store=vector_store,
-        unit_of_work=unit_of_work
+        unit_of_work=unit_of_work,
     )
-    
-    global _container
-    _container = container
-    return container
-
-_container = None
-
-def get_container() -> ApplicationContainer:
-    global _container
-    if _container is None:
-        _container = bootstrap_app()
-    return _container
-

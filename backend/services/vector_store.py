@@ -442,17 +442,18 @@ def upsert_document_chunks(
             offset = last_successful_offset
             while offset < total_points:
                 batch_points = points[offset:offset + batch_size]
-                from backend.infrastructure.providers.bootstrap import get_container
-                from backend.infrastructure.storage.vector_store import VectorPoint
-                v_store = get_container().vector_store
-                v_points = [
-                    VectorPoint(id=p.id, vector=p.vector, payload=p.payload)
+                # NOTE (Deferred DI): services/vector_store.py is a flat functional module.
+                # Full class-based VectorStore injection deferred to a future refactor.
+                # See: docs/architecture/adr/007_constructor_dependency_injection_only.md
+                from qdrant_client.http import models as qm
+                from backend.infrastructure.storage.vector_store import VectorPoint as VPoint
+                client = get_client()
+                ensure_collection(collection_name, config.EMBEDDING_DIMENSION)
+                q_points = [
+                    qm.PointStruct(id=p.id, vector=p.vector, payload=p.payload)
                     for p in batch_points
                 ]
-                v_store.upsert(
-                    collection_name=collection_name,
-                    points=v_points
-                )
+                client.upsert(collection_name=collection_name, points=q_points, wait=True)
                 batch_count = len(batch_points)
                 attempt_inserted += batch_count
                 overall_inserted += batch_count
@@ -523,22 +524,32 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
             if conditions:
                 q_filter = qmodels.Filter(must=conditions)
 
-        from backend.infrastructure.providers.bootstrap import get_container
+        # NOTE (Deferred DI): services/vector_store.py is a flat functional module.
+        # Full class-based VectorStore injection deferred — see deferred_di_notes.md.
         from backend.infrastructure.storage.vector_store import VectorQueryFilter
-        v_store = get_container().vector_store
-        
-        # Build matching filter for VectorQueryFilter
+        client = get_client()
+        ensure_collection(collection_name, config.EMBEDDING_DIMENSION)
+
+        # Build matching filter
         raw_filters = {}
         if filters:
             raw_filters = dict(filters)
         v_filter = VectorQueryFilter(conditions=raw_filters) if raw_filters else None
 
-        payloads = v_store.query(
+        # Use qdrant client search directly (consistent with rest of this module)
+        q_filter_obj = q_filter  # already built above via qmodels
+        search_result = client.search(
             collection_name=collection_name,
-            vector=query_vector,
+            query_vector=query_vector,
             limit=top_k,
-            filter=v_filter
+            query_filter=q_filter_obj,
         )
+
+        payloads = []
+        for hit in search_result:
+            res = dict(hit.payload or {})
+            res["score"] = round(hit.score, 4)
+            payloads.append(res)
 
         results = []
         for payload in payloads:
