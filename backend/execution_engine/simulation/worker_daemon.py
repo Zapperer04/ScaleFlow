@@ -16,8 +16,7 @@ from execution_engine.control_plane.quota_manager import RedisQuotaManager
 from execution_engine.data_plane.artifacts.local_registry import LocalArtifactRegistry
 from execution_engine.data_plane.validator.pipeline import ValidationPipeline
 from execution_engine.data_plane.normalizer.graph import GraphNormalizer
-from execution_engine.data_plane.adapters.gemini import GeminiAdapter
-from execution_engine.data_plane.adapters.openrouter import OpenRouterAdapter
+from execution_engine.simulation.sim_adapters import SimulatedGeminiAdapter, SimulatedOpenRouterAdapter
 from execution_engine.core.job import JobSpec
 from execution_engine.core.events import EventEmitter, ExecutionEvent
 
@@ -202,8 +201,8 @@ def main():
     health_service = ProviderHealthService(r)
     
     # Initialize providers
-    gemini_provider = GeminiAdapter()
-    openrouter_provider = OpenRouterAdapter()
+    gemini_provider = SimulatedGeminiAdapter()
+    openrouter_provider = SimulatedOpenRouterAdapter()
     providers = [gemini_provider, openrouter_provider]
     
     # Broker
