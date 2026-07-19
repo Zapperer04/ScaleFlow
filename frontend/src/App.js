@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Layers, Server, Activity, Cpu, RefreshCw, 
-  Play, Film, ShieldAlert, Shield
+  Play, Film, ShieldAlert, Shield, BookOpen
 } from 'lucide-react';
 import { 
   runIntegrationTests, uploadFile
@@ -14,6 +14,7 @@ import ArchitectureOverview from './components/ArchitectureOverview';
 import DiagnosticsPage from './components/DiagnosticsPage';
 import TaskModal from './components/TaskModal';
 import ValidationLab from './components/ValidationLab';
+import DesignSystemShowcase from './components/ui/showcase/DesignSystemShowcase';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { DocumentProvider, useDocument } from './contexts/DocumentContext';
 import { PipelineProvider, usePipeline } from './contexts/PipelineContext';
@@ -205,6 +206,13 @@ function AppContent() {
               <ShieldAlert size={18} />
               Diagnostics & DLQ
             </button>
+            <button 
+              className={`sidebar-nav-item ${activeView === 'design-system' ? 'active' : ''}`}
+              onClick={() => handleNavigateToView('design-system')}
+            >
+              <BookOpen size={18} />
+              Design System
+            </button>
           </nav>
         </div>
 
@@ -369,6 +377,8 @@ function AppContent() {
           {activeView === 'architecture' && <ArchitectureOverview />}
 
           {activeView === 'diagnostics' && <DiagnosticsPage />}
+
+          {activeView === 'design-system' && <DesignSystemShowcase />}
         </div>
 
       {/* Selected Task Details Modal */}
