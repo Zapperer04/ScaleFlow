@@ -63,7 +63,9 @@ def test_api_endpoints_health():
         with flask_app.app.test_client() as client:
             headers = {"X-API-Key": "local_only_secret_key"}
             response = client.get("/diagnostics", headers=headers)
-            assert response.status_code == 200
+            if response.status_code != 200:
+                print(f"DIAGNOSTICS RESPONSE STATUS: {response.status_code}, BODY: {response.data}")
+            assert response.status_code == 200, f"Diagnostics endpoint failed: {response.data}"
             assert b"status" in response.data or b"ok" in response.data or b"scheduler" in response.data
 
 @pytest.mark.integration
