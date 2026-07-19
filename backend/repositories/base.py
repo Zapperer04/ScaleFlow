@@ -16,3 +16,8 @@ class Repository(Generic[T, ID]):
 
     def delete(self, id: ID) -> None:
         raise NotImplementedError
+
+    def health(self) -> dict:
+        """Check repository health status."""
+        return {"status": "healthy"}
+

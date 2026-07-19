@@ -10,23 +10,50 @@ class PipelineAdapter:
         else:
             data = dict(legacy_pipeline)
         
-        # In DB model, ID is pipeline id, state is status.
+        status_str = (data.get("status") or "created").lower()
+        status_map = {
+            "created": "Uploaded",
+            "running": "Processing",
+            "completed": "Ready",
+            "failed": "Failed",
+            "cancelled": "Cancelled",
+            "blocked": "Failed",
+            "recovering": "Processing"
+        }
+        state_val = status_map.get(status_str, "Uploaded")
+        
         return Pipeline.from_dict({
             "pipeline_id": data.get("id"),
             "name": data.get("name", "Unknown"),
-            "state": data.get("status", "Created").title(),
+            "state": state_val,
             "tasks": [],
             "artifacts": [],
             "events": [],
         })
 
+
     @staticmethod
     def domain_to_legacy(domain_pipeline: Pipeline) -> Dict[str, Any]:
+        state_str = domain_pipeline.state.value
+        state_map = {
+            "Uploaded": "created",
+            "Processing": "running",
+            "Preprocessed": "running",
+            "Parsed": "running",
+            "Chunked": "running",
+            "Embedded": "running",
+            "Indexed": "running",
+            "Ready": "completed",
+            "Failed": "failed",
+            "Cancelled": "cancelled"
+        }
+        legacy_status = state_map.get(state_str, "created")
         return {
             "id": domain_pipeline.pipeline_id.value,
             "name": domain_pipeline.name,
-            "status": domain_pipeline.state.value.lower(),
+            "status": legacy_status,
         }
+
 
     @staticmethod
     def legacy_to_dto(legacy_pipeline: Any) -> PipelineStateDTO:
