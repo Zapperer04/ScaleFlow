@@ -3,7 +3,7 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import { 
-  runIntegrationTests, uploadFile
+  runIntegrationTests
 } from './services/api';
 import OverviewPage from './components/OverviewPage';
 import PipelineDashboard from './components/PipelineDashboard';
@@ -18,9 +18,10 @@ import AppShell from './components/layout/AppShell';
 import CommandPalette from './components/ui/CommandPalette';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import { ThemeProvider } from './contexts/ThemeContext';
-import { DocumentProvider, useDocument } from './contexts/DocumentContext';
+import { DocumentProvider } from './contexts/DocumentContext';
 import { PipelineProvider, usePipeline } from './contexts/PipelineContext';
 import { NotificationProvider, useNotification } from './contexts/NotificationContext';
+import { WorkspaceProvider } from './contexts/WorkspaceContext';
 import { useTelemetry } from './services/telemetryStore';
 import { pollingManager } from './services/pollingManager';
 import './App.css';
@@ -31,17 +32,11 @@ function AppContent() {
   // Navigation & Views
   const [activeView, setActiveView] = useState('overview');
 
-  // Document State Context
-  const { 
-    fileType, setFileType, 
-    uploading, setUploading, 
-    uploadStatus, setUploadStatus 
-  } = useDocument();
 
   // Pipeline State Context
   const { 
     selectedPipelineId, setSelectedPipelineId, 
-    pipelines, setPipelines, 
+    setPipelines, 
     selectedTaskId, setSelectedTaskId, 
     testing, setTesting, 
     showTestModal, setShowTestModal, 
@@ -56,7 +51,6 @@ function AppContent() {
   // Telemetry Store (Outside React Context)
   const workers = useTelemetry(s => s.workers);
   const queueStats = useTelemetry(s => s.queueStats);
-  const stats = useTelemetry(s => s.stats);
   const redisStatus = useTelemetry(s => s.redisStatus);
   const dbStatus = useTelemetry(s => s.dbStatus);
   const qdrantStatus = useTelemetry(s => s.qdrantStatus);
@@ -110,37 +104,11 @@ function AppContent() {
     }
   };
 
-  const handleUploadFile = async (file) => {
-    if (!file) return;
-    setUploading(true);
-    setUploadStatus('Ingesting file to ScaleFlow...');
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('pipeline_type', fileType);
-
-      const res = await uploadFile(formData);
-      setUploadStatus(`Upload success! Started pipeline #${res.pipeline_id}`);
-      setSelectedPipelineId(res.pipeline_id);
-      
-      // Refresh fast data
-      pollingManager.triggerFastUpdate();
-    } catch (err) {
-      console.error('File upload failed:', err);
-      setUploadStatus('Upload failed: ' + (err.response?.data?.error || err.message));
-    } finally {
-      setUploading(false);
-    }
-  };
 
   const handleNavigateToView = (viewName) => {
     setActiveView(viewName);
   };
 
-  const handleSelectPipeline = (pipelineId) => {
-    setSelectedPipelineId(pipelineId);
-    setActiveView('pipelines');
-  };
 
   const getQueuePressure = () => {
     const totalQueued = queueStats.total || 0;
@@ -188,27 +156,7 @@ function AppContent() {
             </div>
           )}
 
-          {activeView === 'overview' && (
-            <OverviewPage 
-              pipelines={pipelines}
-              workers={workers}
-              queueStats={queueStats}
-              stats={stats}
-              redisStatus={redisStatus}
-              dbStatus={dbStatus}
-              qdrantStatus={qdrantStatus}
-              onSelectPipeline={handleSelectPipeline}
-              onNavigateToView={handleNavigateToView}
-              onUploadFile={handleUploadFile}
-              fileType={fileType}
-              setFileType={setFileType}
-              uploading={uploading}
-              uploadStatus={uploadStatus}
-              selectedPipelineId={selectedPipelineId}
-              setSelectedPipelineId={setSelectedPipelineId}
-              onSelectTask={setSelectedTaskId}
-            />
-          )}
+          {activeView === 'overview' && <OverviewPage />}
 
           {activeView === 'pipelines' && (
             <PipelineDashboard 
@@ -365,7 +313,9 @@ function App() {
       <NotificationProvider>
         <DocumentProvider>
           <PipelineProvider>
-            <AppContent />
+            <WorkspaceProvider>
+              <AppContent />
+            </WorkspaceProvider>
           </PipelineProvider>
         </DocumentProvider>
       </NotificationProvider>
