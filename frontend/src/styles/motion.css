@@ -1,0 +1,19 @@
+/* --- MOTION & ANIMATION TRANSITIONS --- */
+
+:root {
+  /* Motion Speeds */
+  --transition-fast: 150ms;
+  --transition-normal: 250ms;
+  --transition-slow: 300ms;
+
+  /* Easing Curves */
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Combined Transitions */
+  --transition-fast-ease: all var(--transition-fast) var(--ease-default);
+  --transition-normal-ease: all var(--transition-normal) var(--ease-default);
+  --transition-slow-ease: all var(--transition-slow) var(--ease-default);
+}

@@ -1,5 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500;600;700&display=swap');
 @import './styles/tokens.css';
+@import './styles/typography.css';
+@import './styles/spacing.css';
+@import './styles/shadows.css';
+@import './styles/zindex.css';
+@import './styles/motion.css';
 
 * {
   margin: 0;

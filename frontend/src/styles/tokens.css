@@ -1,74 +1,72 @@
+/* --- SEMANTIC DESIGN TOKENS --- */
+
 :root {
-  /* --- COLOR SYSTEM --- */
-  /* Brand/Semantic Colors */
+  /* Brand/Semantic Colors - Dark Theme (Default) */
   --color-accent: #3b82f6;          /* Accent Blue */
+  --color-accent-hover: #2563eb;    /* Primary Hover */
   --color-success: #10b981;         /* Success Green */
   --color-warning: #f59e0b;         /* Warning Yellow */
   --color-failure: #ef4444;         /* Failure Red */
   --color-replay: #8b5cf6;          /* Replay Purple */
+  --color-info: #60a5fa;            /* Info Blue */
 
-  /* Dark Theme Palette (Base) */
-  --bg-primary: #090a0c;            /* App backdrop */
-  --bg-panel: #0f1115;              /* Panel containers */
-  --bg-input: #15181e;              /* Input fields fill */
-  --bg-hover: #1e222b;              /* Interactive item hover */
-  --border-subtle: #1c1f26;         /* Subtle borders */
+  /* Dark Theme Palette (Base Colors) */
+  --bg-primary: #090a0c;            /* Background App */
+  --bg-panel: #0f1115;              /* Surface */
+  --bg-input: #15181e;              /* Input Fill */
+  --bg-hover: #1e222b;              /* Surface Hover */
+  --border-subtle: #1c1f26;         /* Border Default */
+  --border-divider: #1e293b;        /* Divider */
   
   /* Text Contrast Scales */
-  --text-primary: #e2e8f0;          /* High contrast body text */
-  --text-muted: #52525b;            /* Low contrast sub-labels */
-  --text-muted-light: #94a3b8;      /* Mid contrast secondary text */
+  --text-primary: #e2e8f0;          /* Text Primary */
+  --text-secondary: #94a3b8;       /* Text Secondary */
+  --text-disabled: #52525b;        /* Text Disabled / Muted */
   --text-white: #ffffff;            /* Pure white */
+}
 
-  /* --- SPACING SCALE (4px base grid) --- */
-  --spacing-xxs: 4px;
-  --spacing-xs: 8px;
-  --spacing-sm: 12px;
-  --spacing-md: 16px;
-  --spacing-lg: 20px;
-  --spacing-xl: 24px;
-  --spacing-xxl: 32px;
-  --spacing-xxxl: 40px;
-  --spacing-giant: 60px;
+/* Light Theme Scaffold (Disabled by default) */
+.theme-light {
+  --color-accent: #1d4ed8;
+  --color-accent-hover: #1e40af;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-failure: #dc2626;
+  --color-replay: #7c3aed;
+  --color-info: #2563eb;
 
-  /* --- TYPOGRAPHY SCALE --- */
-  --font-family-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-family-mono: 'Geist Mono', Menlo, Monaco, Consolas, 'Courier New', monospace;
+  --bg-primary: #f8fafc;
+  --bg-panel: #ffffff;
+  --bg-input: #f1f5f9;
+  --bg-hover: #cbd5e1;
+  --border-subtle: #cbd5e1;
+  --border-divider: #e2e8f0;
   
-  --font-size-xs: 0.65rem;          /* Tiny labels */
-  --font-size-sm: 0.75rem;          /* Metadata / status */
-  --font-size-md: 0.85rem;          /* Default body text */
-  --font-size-lg: 0.9rem;           /* Titles / subheaders */
-  --font-size-xl: 1.05rem;          /* Sidebar brand title */
-  --font-size-xxl: 1.25rem;         /* Dashboard section headers */
-  --font-size-giant: 1.5rem;        /* Main page headers */
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-disabled: #94a3b8;
+  --text-white: #ffffff;
+}
 
-  --font-weight-regular: 400;
-  --font-weight-medium: 500;
-  --font-weight-semibold: 600;
-  --font-weight-bold: 700;
-  --font-weight-heavy: 800;
+/* High Contrast Theme Scaffold (Disabled by default) */
+.theme-high-contrast {
+  --color-accent: #00ff00;          /* Neon Green */
+  --color-accent-hover: #00ff00;
+  --color-success: #00ff00;
+  --color-warning: #ffff00;
+  --color-failure: #ff0000;
+  --color-replay: #ffff00;
+  --color-info: #00ffff;
 
-  /* --- BORDER RADIUS SCALE --- */
-  --radius-xs: 2px;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
-
-  /* --- ELEVATION & SHADOWS --- */
-  --shadow-soft: none;              /* Flat aesthetic default */
-  --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
-  --shadow-popover: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
-
-  /* --- MOTION & TRANSITIONS --- */
-  --transition-fast: all 0.1s ease;
-  --transition-normal: all 0.15s ease;
-  --transition-slow: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-
-  /* --- Z-INDEX SCALE --- */
-  --z-index-base: 1;
-  --z-index-header: 9;
-  --z-index-sidebar: 10;
-  --z-index-overlay: 1000;
+  --bg-primary: #000000;
+  --bg-panel: #000000;
+  --bg-input: #000000;
+  --bg-hover: #333333;
+  --border-subtle: #ffffff;
+  --border-divider: #ffffff;
+  
+  --text-primary: #ffffff;
+  --text-secondary: #ffffff;
+  --text-disabled: #888888;
+  --text-white: #ffffff;
 }
