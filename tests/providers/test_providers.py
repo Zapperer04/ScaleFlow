@@ -2,6 +2,8 @@ import pytest
 import time
 from unittest.mock import MagicMock, patch
 
+pytestmark = [pytest.mark.regression]
+
 from backend.infrastructure.providers.base_provider import BaseParserProvider
 from backend.infrastructure.providers.gemini_provider import GeminiProvider, VLMCompatibilityAdapter
 from backend.infrastructure.providers.openrouter_provider import OpenRouterProvider
