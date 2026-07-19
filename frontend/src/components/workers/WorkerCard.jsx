@@ -7,7 +7,7 @@ import Button from '../ui/Button';
 /**
  * Presentational card showing capacities and lifecycle triggers for one processing worker.
  */
-export const WorkerCard = ({ worker, onExecuteAction }) => {
+export const WorkerCard = React.memo(({ worker, onExecuteAction }) => {
   const isOnline = worker.status !== 'offline';
   const isBusy = worker.status === 'busy';
 
@@ -121,5 +121,5 @@ export const WorkerCard = ({ worker, onExecuteAction }) => {
       </div>
     </Card>
   );
-};
+});
 export default WorkerCard;

@@ -3,7 +3,7 @@ import React from 'react';
 /**
  * Presentational row component displaying a normalized timeline trace node.
  */
-export const TimelineEvent = ({ event }) => {
+export const TimelineEvent = React.memo(({ event }) => {
   const isError = event.severity === 'error' || event.severity === 'failed' || event.type === 'error';
   const isWarning = event.severity === 'warning' || event.type === 'warning';
   
@@ -41,5 +41,5 @@ export const TimelineEvent = ({ event }) => {
       </div>
     </div>
   );
-};
+});
 export default TimelineEvent;

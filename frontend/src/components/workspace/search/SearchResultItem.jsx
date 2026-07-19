@@ -5,7 +5,7 @@ import Badge from '../../ui/Badge';
 /**
  * Renders an individual chunk matched during vector similarity retrieval.
  */
-export const SearchResultItem = ({ citation, index }) => {
+export const SearchResultItem = React.memo(({ citation, index }) => {
   const score = citation.score || citation.distance || 0.0;
   const chunkId = citation.chunk_id || citation.id || index;
   const content = citation.content || citation.text || citation.excerpt || '';
@@ -28,5 +28,5 @@ export const SearchResultItem = ({ citation, index }) => {
       </p>
     </Card>
   );
-};
+});
 export default SearchResultItem;

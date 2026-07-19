@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import SearchInput from './SearchInput';
-import useFocusTrap from '../../hooks/useFocusTrap';
-import useEscapeKey from '../../hooks/useEscapeKey';
+import useDialog from '../../hooks/useDialog';
 
 /**
  * Reusable Command Palette overlay component.
@@ -14,8 +13,7 @@ export const CommandPalette = ({
 }) => {
   const [search, setSearch] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
-  const containerRef = useFocusTrap(isOpen);
-  useEscapeKey(onClose, isOpen);
+  const containerRef = useDialog({ open: isOpen, onClose });
 
   // Filter actions based on query
   const filteredActions = actions.filter(action =>

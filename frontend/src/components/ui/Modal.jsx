@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom';
-import useFocusTrap from '../../hooks/useFocusTrap';
-import useEscapeKey from '../../hooks/useEscapeKey';
+import useDialog from '../../hooks/useDialog';
 
 /**
  * Reusable Modal component utilizing React Portals.
@@ -14,8 +13,7 @@ export const Modal = ({
   children,
   ...rest
 }) => {
-  const containerRef = useFocusTrap(isOpen);
-  useEscapeKey(onClose, isOpen);
+  const containerRef = useDialog({ open: isOpen, onClose });
 
   useEffect(() => {
     if (isOpen) {

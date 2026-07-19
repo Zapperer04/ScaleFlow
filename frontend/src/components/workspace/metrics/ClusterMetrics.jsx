@@ -3,7 +3,7 @@ import React from 'react';
 /**
  * Cluster database and broker status indicator widget.
  */
-export const ClusterMetrics = ({ redisStatus, dbStatus, qdrantStatus, leaderId, orchestratorCount }) => {
+export const ClusterMetrics = React.memo(({ redisStatus, dbStatus, qdrantStatus, leaderId, orchestratorCount }) => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-12)' }}>
       <span className="text-caption" style={{ fontWeight: 'var(--font-weight-bold)', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
@@ -31,5 +31,5 @@ export const ClusterMetrics = ({ redisStatus, dbStatus, qdrantStatus, leaderId, 
       </div>
     </div>
   );
-};
+});
 export default ClusterMetrics;

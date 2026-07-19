@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { 
   ShieldAlert
 } from 'lucide-react';
@@ -6,17 +6,11 @@ import {
   runIntegrationTests
 } from './services/api';
 import OverviewPage from './components/OverviewPage';
-import PipelineDashboard from './components/PipelineDashboard';
-import WorkersPage from './components/WorkersPage';
-import ReplayPage from './components/ReplayPage';
-import ArchitectureOverview from './components/ArchitectureOverview';
-import DiagnosticsPage from './components/DiagnosticsPage';
 import TaskModal from './components/TaskModal';
-import ValidationLab from './components/ValidationLab';
-import DesignSystemShowcase from './components/ui/showcase/DesignSystemShowcase';
 import AppShell from './components/layout/AppShell';
 import CommandPalette from './components/ui/CommandPalette';
 import ErrorBoundary from './components/ui/ErrorBoundary';
+import WorkspaceSkeleton from './components/workspace/WorkspaceSkeleton';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { DocumentProvider } from './contexts/DocumentContext';
 import { PipelineProvider, usePipeline } from './contexts/PipelineContext';
@@ -25,6 +19,15 @@ import { WorkspaceProvider } from './contexts/WorkspaceContext';
 import { useTelemetry } from './services/telemetryStore';
 import { pollingManager } from './services/pollingManager';
 import './App.css';
+
+// Lazy-load secondary feature modules
+const PipelineDashboard = lazy(() => import('./components/PipelineDashboard'));
+const WorkersPage = lazy(() => import('./components/WorkersPage'));
+const ReplayPage = lazy(() => import('./components/ReplayPage'));
+const ArchitectureOverview = lazy(() => import('./components/ArchitectureOverview'));
+const DiagnosticsPage = lazy(() => import('./components/DiagnosticsPage'));
+const ValidationLab = lazy(() => import('./components/ValidationLab'));
+const DesignSystemShowcase = lazy(() => import('./components/ui/showcase/DesignSystemShowcase'));
 
 const POLL_INTERVAL = parseInt(process.env.REACT_APP_POLL_INTERVAL_MS || "3000");
 
@@ -156,26 +159,28 @@ function AppContent() {
             </div>
           )}
 
-          {activeView === 'overview' && <OverviewPage />}
+          <Suspense fallback={<WorkspaceSkeleton />}>
+            {activeView === 'overview' && <OverviewPage />}
 
-          {activeView === 'pipelines' && (
-            <PipelineDashboard 
-              selectedPipelineId={selectedPipelineId} 
-              setSelectedPipelineId={setSelectedPipelineId} 
-            />
-          )}
+            {activeView === 'pipelines' && (
+              <PipelineDashboard 
+                selectedPipelineId={selectedPipelineId} 
+                setSelectedPipelineId={setSelectedPipelineId} 
+              />
+            )}
 
-          {activeView === 'workers' && <WorkersPage />}
+            {activeView === 'workers' && <WorkersPage />}
 
-          {activeView === 'validation-lab' && <ValidationLab />}
+            {activeView === 'validation-lab' && <ValidationLab />}
 
-          {activeView === 'replay' && <ReplayPage />}
+            {activeView === 'replay' && <ReplayPage />}
 
-          {activeView === 'architecture' && <ArchitectureOverview />}
+            {activeView === 'architecture' && <ArchitectureOverview />}
 
-          {activeView === 'diagnostics' && <DiagnosticsPage />}
+            {activeView === 'diagnostics' && <DiagnosticsPage />}
 
-          {activeView === 'design-system' && <DesignSystemShowcase />}
+            {activeView === 'design-system' && <DesignSystemShowcase />}
+          </Suspense>
         </ErrorBoundary>
       </AppShell>
 

@@ -9,7 +9,7 @@ import React from 'react';
  * @param {string} [props.className=''] - Custom overrides
  * @param {React.ReactNode} [props.change] - Optional delta indicator (e.g. +5%)
  */
-export const Metric = ({
+export const Metric = React.memo(({
   label,
   value,
   className = '',
@@ -25,5 +25,5 @@ export const Metric = ({
       </div>
     </div>
   );
-};
+});
 export default Metric;

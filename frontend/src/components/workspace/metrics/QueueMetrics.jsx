@@ -4,7 +4,7 @@ import ProgressBar from '../../ui/ProgressBar';
 /**
  * Queue capacity and system pressure visualization widget.
  */
-export const QueueMetrics = ({ totalQueueSize, queuePressure, activeWorkersCount }) => {
+export const QueueMetrics = React.memo(({ totalQueueSize, queuePressure, activeWorkersCount }) => {
   const pressureColor = 
     queuePressure > 60 ? 'var(--color-failure)' : 
     queuePressure > 30 ? 'var(--color-warning)' : 'var(--color-success)';
@@ -35,5 +35,5 @@ export const QueueMetrics = ({ totalQueueSize, queuePressure, activeWorkersCount
       </div>
     </div>
   );
-};
+});
 export default QueueMetrics;
