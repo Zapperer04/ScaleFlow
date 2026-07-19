@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 from backend.domain.aggregates.document import Document
 
@@ -10,19 +9,6 @@ class ParsingService(ABC):
         """Parse document and return Domain model representation."""
         pass
 
-# TODO(Phase 5):
-# Remove after worker and API migrate to DTOs.
-@dataclass(frozen=True)
-class CompatibleDocument(Document):
-    document_graph: Dict[str, Any] = field(default_factory=dict)
-    stats: Dict[str, Any] = field(default_factory=dict)
-    raw_pages: List[Any] = field(default_factory=list)
-    domain_pages: List[Any] = field(default_factory=list)
-
-    def __getattribute__(self, name):
-        if name == "pages":
-            return object.__getattribute__(self, "raw_pages")
-        return object.__getattribute__(self, name)
 
 class ParsingServiceImpl(ParsingService):
     def __init__(
@@ -52,7 +38,7 @@ class ParsingServiceImpl(ParsingService):
         parse_method_hint: str = "vlm_document_graph",
         enhanced_pages_path: Optional[str] = None,
         on_page_completed: Optional[Callable[[int, Dict[str, Any]], None]] = None,
-    ) -> CompatibleDocument:
+    ) -> Document:
         """Parse document using the injected provider/router and return Domain representation."""
         provider = self.parser_provider
         if hasattr(provider, "route"):
@@ -75,7 +61,15 @@ class ParsingServiceImpl(ParsingService):
         )
 
         from backend.adapters.parser_adapter import ParserAdapter
-        # Create legacy report dict structure expected by ParserAdapter
+        import os
+        filename = os.path.basename(file_path)
+
+        # Build metadata dict carrying both domain data and raw parser outputs.
+        # document_graph and stats are parser-layer outputs (not domain entities)
+        # and are stored here for downstream worker pipeline consumption.
+        # pages (raw list) and domain pages (Page entities) are separated:
+        #   - Document.pages  : typed domain Page entities (via ParserAdapter)
+        #   - metadata["pages"]: raw list from the parser provider
         legacy_report = {
             "document_type": document_type,
             "pages": result.pages,
@@ -84,22 +78,21 @@ class ParsingServiceImpl(ParsingService):
             "stats": result.stats,
             "metadata": result.stats,
         }
-        # In ParserAdapter, legacy_to_domain expects: legacy_report, filename, doc_id
-        import os
-        filename = os.path.basename(file_path)
         domain_doc = ParserAdapter.legacy_to_domain(legacy_report, filename, 1)
-        
-        # Construct CompatibleDocument with both Document attributes and legacy helper attributes
-        return CompatibleDocument(
+
+        # Augment metadata with raw parser outputs so the worker can retrieve
+        # them without relying on CompatibleDocument legacy attributes.
+        metadata = dict(domain_doc.metadata)
+        metadata["document_graph"] = result.document_graph
+        metadata["stats"] = result.stats
+        metadata["pages"] = result.pages
+
+        return Document(
             document_id=domain_doc.document_id,
             filename=domain_doc.filename,
             pages=domain_doc.pages,
             chunks=domain_doc.chunks,
             graph=domain_doc.graph,
-            metadata=domain_doc.metadata,
+            metadata=metadata,
             artifacts=domain_doc.artifacts,
-            document_graph=result.document_graph,
-            stats=result.stats,
-            raw_pages=result.pages,
-            domain_pages=domain_doc.pages,
         )

@@ -4,8 +4,8 @@ from backend.infrastructure.providers.base_provider import BaseParserProvider
 from backend.infrastructure.providers.metrics import ProviderMetrics
 from backend.infrastructure.providers.retry_policy import RetryPolicy
 from backend.infrastructure.providers.circuit_breaker import CircuitBreaker
-from backend.infrastructure.providers.gemini_provider import VLMCompatibilityAdapter
 from services.pdf_parser import parse_pdf, ParseResult
+
 
 class OpenRouterProvider(BaseParserProvider):
     def __init__(self):
@@ -30,25 +30,24 @@ class OpenRouterProvider(BaseParserProvider):
         on_page_completed: Optional[Callable[[int, Dict[str, Any]], None]] = None,
     ) -> ParseResult:
         start_time = time.time()
-        
+
         def run_parsing():
-            with VLMCompatibilityAdapter("openrouter"):
-                return parse_pdf(
-                    filepath=filepath,
-                    task_id=task_id,
-                    lease_token=lease_token,
-                    progress_json=progress_json,
-                    trace_fn=trace_fn,
-                    api_url=api_url,
-                    api_headers=api_headers,
-                    skip_ocr=skip_ocr,
-                    document_type=document_type,
-                    routing_confidence=routing_confidence,
-                    parse_method_hint=parse_method_hint,
-                    enhanced_pages_path=enhanced_pages_path,
-                    on_page_completed=on_page_completed,
-                    vlm_provider_name="openrouter",
-                )
+            return parse_pdf(
+                filepath=filepath,
+                task_id=task_id,
+                lease_token=lease_token,
+                progress_json=progress_json,
+                trace_fn=trace_fn,
+                api_url=api_url,
+                api_headers=api_headers,
+                skip_ocr=skip_ocr,
+                document_type=document_type,
+                routing_confidence=routing_confidence,
+                parse_method_hint=parse_method_hint,
+                enhanced_pages_path=enhanced_pages_path,
+                on_page_completed=on_page_completed,
+                vlm_provider_name="openrouter",
+            )
 
         try:
             result = self.circuit_breaker.execute(

@@ -879,8 +879,8 @@ def update_task_progress(task_id):
         task.progress_json = json.dumps(current_progress)
 
         # Save checkpoint to CheckpointStore via container
-        from backend.infrastructure.providers.bootstrap import get_container
-        get_container().checkpoint_store.save_checkpoint(task.id, current_progress)
+        from flask import current_app
+        current_app.config["CONTAINER"].checkpoint_store.save_checkpoint(task.id, current_progress)
 
 
         create_task_log(
@@ -2517,8 +2517,8 @@ def retry_pipeline(pipeline_id):
 
 @app.route('/files', methods=['GET'])
 def get_files():
-    from backend.infrastructure.providers.bootstrap import get_container
-    uow = get_container().unit_of_work
+    from flask import current_app
+    uow = current_app.config["CONTAINER"].unit_of_work
     try:
         docs = uow.documents.list()
         docs_sorted = sorted(docs, key=lambda d: d.document_id.value, reverse=True)[:50]
@@ -2528,10 +2528,10 @@ def get_files():
 
 @app.route('/files/<int:file_id>', methods=['GET'])
 def get_file_detail(file_id):
-    from backend.infrastructure.providers.bootstrap import get_container
+    from flask import current_app
     from backend.domain.value_objects.document_id import DocumentId
     from backend.domain.value_objects.pipeline_id import PipelineId
-    uow = get_container().unit_of_work
+    uow = current_app.config["CONTAINER"].unit_of_work
     try:
         doc = uow.documents.get(DocumentId(file_id))
         if not doc:

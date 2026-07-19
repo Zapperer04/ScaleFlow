@@ -567,9 +567,9 @@ def handle_parse_document(payload, input_artifacts):
             # Final checkpoint after successful parse
             save_checkpoint()
 
-            document_graph = result.document_graph
-            parse_stats = result.stats
-            pages = result.pages
+            document_graph = result.metadata.get("document_graph", {})
+            parse_stats = result.metadata.get("stats", {})
+            pages = result.metadata.get("pages", [])
             _trace(f"[PARSER] VLM parsing complete. Nodes: {parse_stats.get('node_count', 0)}, edges: {parse_stats.get('edge_count', 0)}")
             return {
                 "document_graph": document_graph,

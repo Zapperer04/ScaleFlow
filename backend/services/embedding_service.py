@@ -89,16 +89,16 @@ def _get_redis_client():
         return None
 
 def _cache_embedding(text_hash: str, vector: List[float]):
-    """Store embedding in Redis or in‑memory LRU."""
+    """Store embedding in CacheStore or in-memory LRU.
+
+    NOTE (Deferred DI): This module is a flat functional module, not a class.
+    Constructor injection of the CacheStore is deferred to a future refactor
+    that wraps this module in an EmbeddingService class.
+    Until then, embedding cache writes fall through to the in-memory LRU.
+    See: docs/architecture/adr/007_constructor_dependency_injection_only.md
+    """
     global _embedding_cache
-    from backend.infrastructure.providers.bootstrap import get_container
-    cache = get_container().cache
-    try:
-        cache.set(f"embed:{text_hash}", vector, ttl=_REDIS_CACHE_TTL)
-        return
-    except Exception:
-        pass
-    # Fallback: in‑memory LRU (simple bounded dict)
+    # Fallback: in-memory LRU (simple bounded dict)
     with _cache_lock:
         _embedding_cache[text_hash] = vector
         if len(_embedding_cache) > 10000:
@@ -106,15 +106,10 @@ def _cache_embedding(text_hash: str, vector: List[float]):
             _embedding_cache.pop(next(iter(_embedding_cache)))
 
 def _lookup_embedding(text_hash: str) -> Optional[List[float]]:
-    """Lookup embedding in Redis or in‑memory cache."""
-    from backend.infrastructure.providers.bootstrap import get_container
-    cache = get_container().cache
-    try:
-        data = cache.get(f"embed:{text_hash}")
-        if data:
-            return data
-    except Exception:
-        pass
+    """Lookup embedding in in-memory cache.
+
+    NOTE (Deferred DI): CacheStore injection deferred — see _cache_embedding.
+    """
     with _cache_lock:
         return _embedding_cache.get(text_hash)
 

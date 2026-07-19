@@ -97,7 +97,8 @@ def _store_graph(
     graph_pages: List[Dict[str, Any]],
     parser: str = "gemini_vlm",
     version: str = GRAPH_SCHEMA_VERSION,
-    timings: Optional[Dict[str, Any]] = None
+    timings: Optional[Dict[str, Any]] = None,
+    provider_name: str = "openrouter",
 ) -> None:
     """
     Persist the rich document graph as a first-class artifact.
@@ -127,7 +128,7 @@ def _store_graph(
             "parser": parser,
             "schema_version": version,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "model_used": os.getenv("OPENROUTER_MODEL" if os.getenv("VLM_PROVIDER", "openrouter").lower() == "openrouter" else "GEMINI_MODEL", "unknown"),
+            "model_used": os.getenv("OPENROUTER_MODEL" if provider_name == "openrouter" else "GEMINI_MODEL", "unknown"),
         }
     }
     if timings:
@@ -898,6 +899,7 @@ def _adaptive_plan(
     file_path: str,
     pages_to_transcribe: List[int],
     report: Optional[PreprocessingReport] = None,
+    provider_name: str = "openrouter",
 ) -> Dict[str, Any]:
     num_pages = len(pages_to_transcribe)
     file_size = os.path.getsize(file_path)
@@ -921,7 +923,6 @@ def _adaptive_plan(
         batch_size = min(batch_size, 2)  # scanned docs may be heavier
 
     # Cap batch size to 1 for OpenRouter to prevent token limit/truncation errors
-    provider_name = os.getenv("VLM_PROVIDER", "gemini").lower()
     if provider_name == "openrouter":
         batch_size = min(batch_size, 1)
 
@@ -1064,7 +1065,7 @@ def _execute_adaptive_transcription(
         api_key, model = _get_gemini_api_key_and_model()
     else:
         api_key, model = None, None
-    plan = _adaptive_plan(file_path, pages_to_transcribe, report)
+    plan = _adaptive_plan(file_path, pages_to_transcribe, report, provider_name=provider_name)
     strategy = plan["strategy"]
     recommended_batch = plan.get("recommended_batch_size", 0)
     actual_batch = plan.get("actual_batch_size", 0)
@@ -1122,7 +1123,6 @@ def _execute_adaptive_transcription(
             start_page = pages_in_chunk[0]
             end_page = pages_in_chunk[-1]
 
-            provider_name = os.getenv("VLM_PROVIDER", "openrouter").lower()
             parser_name = f"{provider_name}_vlm"
             if provider_name == "openrouter":
                 chunk_path = _get_temp_chunk(pages_in_chunk)
@@ -1252,7 +1252,6 @@ def _execute_adaptive_transcription(
 
     recursion_depth = 0
     subdivision_count = 0
-    provider_name = os.getenv("VLM_PROVIDER", "openrouter").lower()
 
     def _process_batch_recursive(batch_pages: List[int], depth: int = 0) -> None:
         nonlocal recursion_depth, subdivision_count
@@ -1280,7 +1279,7 @@ def _execute_adaptive_transcription(
             # Single page fallback (last resort after all subdivision)
             p = batch_pages[0]
             _t(f"[ADAPTIVE] Processing single page {p} via image fallback")
-            page_text = _transcribe_single_page_fallback(file_path, p, trace_fn, rate_mgr)
+            page_text = _transcribe_single_page_fallback(file_path, p, trace_fn, rate_mgr, provider_name=provider_name)
             if page_text:
                 result[p] = page_text
                 if on_page_completed:
@@ -1390,7 +1389,7 @@ def _execute_adaptive_transcription(
             _t(f"[ADAPTIVE] Missing pages: {missing}; falling back to single-page fallback")
             for p in sorted(missing):
                 try:
-                    page_text = _transcribe_single_page_fallback(file_path, p, trace_fn, rate_mgr)
+                    page_text = _transcribe_single_page_fallback(file_path, p, trace_fn, rate_mgr, provider_name=provider_name)
                     if page_text:
                         result[p] = page_text
                         minimal_page = {
@@ -1493,6 +1492,7 @@ def _transcribe_single_page_fallback(
     page_num: int,
     trace_fn: Optional[Callable] = None,
     rate_mgr: Optional[GeminiRateManager] = None,
+    provider_name: str = "openrouter",
 ) -> Optional[str]:
     """Fallback to old image-based single page transcription, with Tesseract fallback on error/block."""
     def _t(msg: str):
@@ -1505,7 +1505,6 @@ def _transcribe_single_page_fallback(
     if rate_mgr is None:
         rate_mgr = GeminiRateManager()
 
-    provider_name = os.getenv("VLM_PROVIDER", "openrouter").lower()
     if provider_name == "gemini":
         api_key, model = _get_gemini_api_key_and_model()
         endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
@@ -1544,7 +1543,8 @@ def _transcribe_single_page_fallback(
                     gemini_endpoint=endpoint,
                     rate_mgr=rate_mgr,
                     trace_fn=trace_fn,
-                    max_retries=3
+                    max_retries=3,
+                    provider_name=provider_name,
                 )
                 if text:
                     return text
@@ -1581,6 +1581,7 @@ def _transcribe_single_page(
     rate_mgr: GeminiRateManager,
     trace_fn: Optional[Callable] = None,
     max_retries: int = 3,
+    provider_name: str = "openrouter",
 ) -> Tuple[int, Optional[str]]:
     """
     Transcribe a single page using Gemini or OpenRouter (image-based). Assumes a slot is already acquired.
@@ -1594,7 +1595,6 @@ def _transcribe_single_page(
                 pass
 
     last_error = None
-    provider_name = os.getenv("VLM_PROVIDER", "openrouter").lower()
     for attempt in range(max_retries):
         try:
             _, buffer = cv2.imencode(".png", cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR))

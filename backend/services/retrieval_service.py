@@ -18,7 +18,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
-from services.vector_store import search_similar
+from services.vector_store import search_similar, get_client
 from services.bm25_service import retrieve_bm25
 from services.graph_expansion_service import expand_graph_context
 from services.reranker_service import rerank
@@ -30,10 +30,11 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------------------
 def _qdrant_chunk_lookup(pipeline_id: int, file_id: int, chunk_id: str) -> dict | None:
     try:
-        from backend.infrastructure.providers.bootstrap import get_container
         import qdrant_client.models as qmodels
-        # TODO(Phase 5): Remove direct QdrantClient use after worker and API migrate to DTOs.
-        client = get_container().vector_store.client
+        # NOTE (Deferred DI): retrieval_service.py is a flat functional module.
+        # Full class-based VectorStore injection deferred to a future refactor.
+        # See: docs/architecture/adr/007_constructor_dependency_injection_only.md
+        client = get_client()
         must_filters = [
             qmodels.FieldCondition(
                 key="chunk_id",
