@@ -442,10 +442,16 @@ def upsert_document_chunks(
             offset = last_successful_offset
             while offset < total_points:
                 batch_points = points[offset:offset + batch_size]
-                client.upsert(
+                from backend.infrastructure.providers.bootstrap import get_container
+                from backend.infrastructure.storage.vector_store import VectorPoint
+                v_store = get_container().vector_store
+                v_points = [
+                    VectorPoint(id=p.id, vector=p.vector, payload=p.payload)
+                    for p in batch_points
+                ]
+                v_store.upsert(
                     collection_name=collection_name,
-                    points=batch_points,
-                    wait=True
+                    points=v_points
                 )
                 batch_count = len(batch_points)
                 attempt_inserted += batch_count
@@ -517,18 +523,27 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
             if conditions:
                 q_filter = qmodels.Filter(must=conditions)
 
-        search_result = client.search(
+        from backend.infrastructure.providers.bootstrap import get_container
+        from backend.infrastructure.storage.vector_store import VectorQueryFilter
+        v_store = get_container().vector_store
+        
+        # Build matching filter for VectorQueryFilter
+        raw_filters = {}
+        if filters:
+            raw_filters = dict(filters)
+        v_filter = VectorQueryFilter(conditions=raw_filters) if raw_filters else None
+
+        payloads = v_store.query(
             collection_name=collection_name,
-            query_vector=query_vector,
+            vector=query_vector,
             limit=top_k,
-            query_filter=q_filter
+            filter=v_filter
         )
 
         results = []
-        for hit in search_result:
-            payload = hit.payload
+        for payload in payloads:
             result = {
-                "score": round(hit.score, 4),
+                "score": payload.get("score", 0.0),
                 "chunk_text": payload.get("chunk_text"),
                 "section": payload.get("section", "unknown"),
                 "pipeline_id": payload.get("pipeline_id"),
@@ -564,7 +579,7 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
                 "filename": payload.get("filename"),
                 "retrieval_type": "dense",
                 "retrieval_backend": "qdrant",
-                "retrieval_score": round(hit.score, 4),
+                "retrieval_score": payload.get("score", 0.0),
             }
             result = {k: v for k, v in result.items() if v is not None}
             results.append(result)

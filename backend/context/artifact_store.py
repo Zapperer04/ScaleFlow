@@ -27,9 +27,12 @@ def save_artifact_to_disk(pipeline_id, task_id, artifact_type, data):
     checksum = calculate_checksum(data_str)
     file_path, storage_uri = get_artifact_filepath(pipeline_id, task_id, artifact_type)
     
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(data_str)
+    from backend.infrastructure.providers.bootstrap import get_container
+    from backend.infrastructure.repositories.legacy_storage_adapter import LegacyStorageAdapter
+    
+    art_store = get_container().artifact_store
+    data_bytes = LegacyStorageAdapter.to_bytes(data)
+    art_store.save_artifact(storage_uri, data_bytes)
         
     return storage_uri, checksum
 
@@ -37,57 +40,62 @@ def load_artifact_from_disk(storage_uri):
     """
     Loads JSON data from filesystem using storage_uri.
     """
-    # Normalize separators for cross-platform compliance and resolve absolute paths
-    normalized = storage_uri.replace("\\", "/")
-    if "storage/" in normalized:
-        rel_path = normalized.split("storage/", 1)[1]
-    else:
-        rel_path = os.path.basename(normalized)
-        
-    file_path = os.path.normpath(os.path.join(BASE_STORAGE_DIR, rel_path))
+    from backend.infrastructure.providers.bootstrap import get_container
+    from backend.infrastructure.repositories.legacy_storage_adapter import LegacyStorageAdapter
     
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"Artifact file not found at {file_path}")
-        
-    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-        data_str = f.read()
-        
-    try:
-        return json.loads(data_str)
-    except json.JSONDecodeError:
-        return data_str
+    art_store = get_container().artifact_store
+    data_bytes = art_store.load_artifact(storage_uri)
+    return LegacyStorageAdapter.from_bytes(data_bytes)
 
 def save_artifact(db, pipeline_id, task_id, artifact_type, data, metadata=None):
     """
     Saves artifact data to disk and registers it in the DB.
     Only called by the backend since it requires db connection.
     """
-    from models import Artifact
+    from backend.repositories.unit_of_work import UnitOfWork
+    from backend.infrastructure.persistence.sqlalchemy.sqlalchemy_unit_of_work import SqlAlchemyUnitOfWork
+    from backend.domain.entities.artifact import Artifact as DomainArtifact
+    from backend.domain.value_objects.pipeline_id import PipelineId
     
     storage_uri, checksum = save_artifact_to_disk(pipeline_id, task_id, artifact_type, data)
     
+    if isinstance(db, UnitOfWork):
+        uow = db
+    else:
+        uow = SqlAlchemyUnitOfWork(db)
+        
     metadata_json = json.dumps(metadata) if metadata else None
-    artifact = Artifact(
-        pipeline_id=pipeline_id,
+    domain_art = DomainArtifact(
+        artifact_id=None,
+        pipeline_id=PipelineId(pipeline_id),
         task_id=task_id,
         artifact_type=artifact_type,
         storage_uri=storage_uri,
         metadata_json=metadata_json,
         checksum=checksum
     )
-    db.add(artifact)
-    db.flush()
-    return artifact
+    uow.artifacts.create(domain_art)
+    if not isinstance(db, UnitOfWork):
+        db.flush()
+    return domain_art
 
 def load_artifact(db, artifact_id):
     """
     Loads artifact DB record and its content from disk.
     Only called by the backend.
     """
-    from models import Artifact
-    artifact = db.query(Artifact).filter(Artifact.id == artifact_id).first()
+    from backend.repositories.unit_of_work import UnitOfWork
+    from backend.infrastructure.persistence.sqlalchemy.sqlalchemy_unit_of_work import SqlAlchemyUnitOfWork
+    
+    if isinstance(db, UnitOfWork):
+        uow = db
+    else:
+        uow = SqlAlchemyUnitOfWork(db)
+        
+    artifact = uow.artifacts.get(artifact_id)
     if not artifact:
         raise ValueError(f"Artifact with ID {artifact_id} not found")
         
     data = load_artifact_from_disk(artifact.storage_uri)
     return artifact, data
+

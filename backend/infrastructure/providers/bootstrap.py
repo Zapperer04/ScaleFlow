@@ -56,9 +56,6 @@ def bootstrap_app() -> ApplicationContainer:
     # 4. Build router
     router = ProviderRouter(registry)
 
-    # 5. Construct ParsingService
-    parsing_service = ParsingServiceImpl(parser_provider=router)
-
     # 6. Instantiate Phase 4A Storage, Cache, Vector Store, and Unit of Work
     # Check environment/config database mode
     db_mode = os.environ.get("DB_MODE", "sqlite")
@@ -77,7 +74,13 @@ def bootstrap_app() -> ApplicationContainer:
     session = SessionLocal()
     unit_of_work = RepositoryFactory.create_unit_of_work(session)
 
-    return ApplicationContainer(
+    # 7. Construct ParsingService with injected checkpoint_store
+    parsing_service = ParsingServiceImpl(
+        parser_provider=router,
+        checkpoint_service=checkpoint_store
+    )
+
+    container = ApplicationContainer(
         registry=registry,
         router=router,
         parsing_service=parsing_service,
@@ -88,3 +91,16 @@ def bootstrap_app() -> ApplicationContainer:
         vector_store=vector_store,
         unit_of_work=unit_of_work
     )
+    
+    global _container
+    _container = container
+    return container
+
+_container = None
+
+def get_container() -> ApplicationContainer:
+    global _container
+    if _container is None:
+        _container = bootstrap_app()
+    return _container
+
