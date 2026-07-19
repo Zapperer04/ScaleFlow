@@ -21,10 +21,10 @@ jobs:
         pip install pytest black ruff flake8 isort mypy requests sqlalchemy jsonschema
         if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
     - name: Run Architecture Fitness Tests
-      run: pytest -m architecture
+      run: python -m pytest -m architecture
     - name: Run Schema Contract Tests
-      run: pytest -m contracts
+      run: python -m pytest -m contracts
     - name: Run Behavioral Regression Tests
-      run: pytest -m regression
+      run: python -m pytest -m regression
     - name: Run E2E Integration Tests
-      run: pytest -m integration
+      run: python -m pytest -m integration
