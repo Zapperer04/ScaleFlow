@@ -48,3 +48,13 @@ The remaining style debt consists of **992 inline styles** and **621 hardcoded c
 | **Medium** | `ReplayPage.js` | ~250 styles / ~150 colors | Re-route event playbacks to centralized CSS rules. |
 | **Medium** | `DiagnosticsPage.js` / `ArchitectureOverview.js` | ~300 styles / ~200 colors | Convert hardcoded layout hex codes to design tokens. |
 | **Low** | Miscellaneous atomic views | < 92 styles / < 71 colors | Minor alignment attributes; convert to class helper selectors. |
+
+---
+
+## 5. Known Limitations & Future Work
+
+As part of the ongoing optimization roadmap, future contributors should focus on the following targets:
+1. **Unmigrated Legacy Views:** Pages such as `PipelineDashboard.js`, `ReplayPage.js`, `DiagnosticsPage.js`, and `ArchitectureOverview.js` still utilize legacy styling and states, and are candidates for future migrations.
+2. **Inline Styling purge:** 992 inline layout style flags remain present in legacy view elements and should be converted to utility classes inside `components.css`.
+3. **Hardcoded Color Conversion:** 621 hardcoded hex color values should be converted to design token variables from `tokens.css`.
+
