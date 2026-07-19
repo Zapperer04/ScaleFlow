@@ -91,13 +91,13 @@ def _get_redis_client():
 def _cache_embedding(text_hash: str, vector: List[float]):
     """Store embedding in Redis or in‑memory LRU."""
     global _embedding_cache
-    client = _get_redis_client()
-    if client:
-        try:
-            client.setex(f"embed:{text_hash}", _REDIS_CACHE_TTL, json.dumps(vector))
-            return
-        except Exception:
-            pass
+    from backend.infrastructure.providers.bootstrap import get_container
+    cache = get_container().cache
+    try:
+        cache.set(f"embed:{text_hash}", vector, ttl=_REDIS_CACHE_TTL)
+        return
+    except Exception:
+        pass
     # Fallback: in‑memory LRU (simple bounded dict)
     with _cache_lock:
         _embedding_cache[text_hash] = vector
@@ -107,14 +107,14 @@ def _cache_embedding(text_hash: str, vector: List[float]):
 
 def _lookup_embedding(text_hash: str) -> Optional[List[float]]:
     """Lookup embedding in Redis or in‑memory cache."""
-    client = _get_redis_client()
-    if client:
-        try:
-            data = client.get(f"embed:{text_hash}")
-            if data:
-                return json.loads(data)
-        except Exception:
-            pass
+    from backend.infrastructure.providers.bootstrap import get_container
+    cache = get_container().cache
+    try:
+        data = cache.get(f"embed:{text_hash}")
+        if data:
+            return data
+    except Exception:
+        pass
     with _cache_lock:
         return _embedding_cache.get(text_hash)
 

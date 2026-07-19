@@ -19,11 +19,21 @@ def get_standardized_metadata(db, pipeline_id: int) -> dict:
     -------
     Dictionary of standardized metadata fields.
     """
-    pipeline = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
+    from backend.repositories.unit_of_work import UnitOfWork
+    from backend.infrastructure.persistence.sqlalchemy.sqlalchemy_unit_of_work import SqlAlchemyUnitOfWork
+    from backend.domain.value_objects.pipeline_id import PipelineId
+
+    if isinstance(db, UnitOfWork):
+        uow = db
+    else:
+        uow = SqlAlchemyUnitOfWork(db)
+
+    pipeline = uow.pipelines.get(PipelineId(pipeline_id))
     if not pipeline:
         return {}
         
-    artifacts = db.query(Artifact).filter(Artifact.pipeline_id == pipeline_id).all()
+    artifacts = uow.artifacts.get_by_pipeline_id(PipelineId(pipeline_id))
+
     
     document_type = "generic"
     parser_used = "unknown"

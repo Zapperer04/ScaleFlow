@@ -878,6 +878,11 @@ def update_task_progress(task_id):
         
         task.progress_json = json.dumps(current_progress)
 
+        # Save checkpoint to CheckpointStore via container
+        from backend.infrastructure.providers.bootstrap import get_container
+        get_container().checkpoint_store.save_checkpoint(task.id, current_progress)
+
+
         create_task_log(
             db, task.id, "task_progress",
             "Task progress updated",
@@ -2512,41 +2517,45 @@ def retry_pipeline(pipeline_id):
 
 @app.route('/files', methods=['GET'])
 def get_files():
-    db = SessionLocal()
+    from backend.infrastructure.providers.bootstrap import get_container
+    uow = get_container().unit_of_work
     try:
-        files = db.query(FileRecord).order_by(FileRecord.id.desc()).limit(50).all()
-        return jsonify([f.to_dict() for f in files]), 200
+        docs = uow.documents.list()
+        docs_sorted = sorted(docs, key=lambda d: d.document_id.value, reverse=True)[:50]
+        return jsonify([d.metadata for d in docs_sorted]), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    finally:
-        db.close()
 
 @app.route('/files/<int:file_id>', methods=['GET'])
 def get_file_detail(file_id):
-    db = SessionLocal()
+    from backend.infrastructure.providers.bootstrap import get_container
+    from backend.domain.value_objects.document_id import DocumentId
+    from backend.domain.value_objects.pipeline_id import PipelineId
+    uow = get_container().unit_of_work
     try:
-        file_record = db.query(FileRecord).filter(FileRecord.id == file_id).first()
-        if not file_record:
+        doc = uow.documents.get(DocumentId(file_id))
+        if not doc:
             return jsonify({"error": "File not found"}), 404
             
         pipeline = None
         artifacts = []
-        if file_record.pipeline_id:
-            pipeline_obj = db.query(Pipeline).filter(Pipeline.id == file_record.pipeline_id).first()
-            if pipeline_obj:
-                pipeline = pipeline_obj.to_dict()
-            artifacts_objs = db.query(Artifact).filter(Artifact.pipeline_id == file_record.pipeline_id).all()
-            artifacts = [a.to_dict() for a in artifacts_objs]
+        pipeline_id_val = doc.metadata.get("pipeline_id")
+        if pipeline_id_val:
+            from backend.adapters.pipeline_adapter import PipelineAdapter
+            pipeline_domain = uow.pipelines.get(PipelineId(pipeline_id_val))
+            if pipeline_domain:
+                pipeline = PipelineAdapter.domain_to_legacy(pipeline_domain)
+                pipeline["pipeline_type"] = "document_processing_demo"
+            domain_artifacts = uow.artifacts.get_by_pipeline_id(PipelineId(pipeline_id_val))
+            artifacts = [a.to_dict() for a in domain_artifacts]
             
         return jsonify({
-            "file": file_record.to_dict(),
+            "file": doc.metadata,
             "pipeline": pipeline,
             "artifacts": artifacts
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    finally:
-        db.close()
 
 @app.route('/files/test-ingestion', methods=['POST', 'GET'])
 def test_ingestion_flow():

@@ -30,9 +30,10 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------------------
 def _qdrant_chunk_lookup(pipeline_id: int, file_id: int, chunk_id: str) -> dict | None:
     try:
-        from services.vector_store import get_client
+        from backend.infrastructure.providers.bootstrap import get_container
         import qdrant_client.models as qmodels
-        client = get_client()
+        # TODO(Phase 5): Remove direct QdrantClient use after worker and API migrate to DTOs.
+        client = get_container().vector_store.client
         must_filters = [
             qmodels.FieldCondition(
                 key="chunk_id",
