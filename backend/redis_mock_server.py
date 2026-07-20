@@ -210,7 +210,7 @@ class RedisMockServer:
                     b_val = val.encode('utf-8')
                     conn.sendall(f"${len(b_val)}\r\n".encode() + b_val + b"\r\n")
                     
-            elif cmd == "BRPOP":
+            elif cmd in ["BLPOP", "BRPOP"]:
                 # Timeout is the last argument
                 keys = args[1:-1]
                 val = None
@@ -218,7 +218,10 @@ class RedisMockServer:
                 for k in keys:
                     q = self.queues.get(k, [])
                     if q:
-                        val = q.pop()
+                        if cmd == "BLPOP":
+                            val = q.pop(0)
+                        else:
+                            val = q.pop()
                         popped_key = k
                         break
                 
@@ -234,6 +237,91 @@ class RedisMockServer:
                         f"${len(b_val)}\r\n".encode() + b_val + b"\r\n"
                     )
                     
+            elif cmd == "SCRIPT":
+                subcmd = args[1].upper()
+                if subcmd == "LOAD":
+                    # Return a dummy SHA
+                    conn.sendall(b"$40\r\n0123456789abcdef0123456789abcdef01234567\r\n")
+                else:
+                    conn.sendall(b"+OK\r\n")
+
+            elif cmd == "EVAL":
+                script = args[1]
+                numkeys = int(args[2])
+                keys = args[3:3+numkeys]
+                argv = args[3+numkeys:]
+                
+                if "rpm_val" in script or "concurrent_val" in script:
+                    rpm_key = keys[0]
+                    rpd_key = keys[1]
+                    concurrent_key = keys[2]
+                    cost = int(argv[0])
+                    max_concurrent = int(argv[1])
+                    
+                    rpm_val = int(self.db.get(rpm_key, "0"))
+                    rpd_val = int(self.db.get(rpd_key, "0"))
+                    concurrent_val = int(self.db.get(concurrent_key, "0"))
+                    
+                    if rpm_val >= cost and rpd_val >= cost and concurrent_val < max_concurrent:
+                        self.db[rpm_key] = str(rpm_val - cost)
+                        self.db[rpd_key] = str(rpd_val - cost)
+                        self.db[concurrent_key] = str(concurrent_val + 1)
+                        conn.sendall(b":1\r\n")
+                    else:
+                        conn.sendall(b":0\r\n")
+                elif "GET" in script and "DEL" in script:
+                    lease_key = keys[0]
+                    lease_id = argv[0]
+                    if self.db.get(lease_key) == lease_id:
+                        if lease_key in self.db:
+                            del self.db[lease_key]
+                        conn.sendall(b":1\r\n")
+                    else:
+                        conn.sendall(b":0\r\n")
+                else:
+                    conn.sendall(b"+OK\r\n")
+
+            elif cmd == "EVALSHA":
+                numkeys = int(args[2])
+                keys = args[3:3+numkeys]
+                argv = args[3+numkeys:]
+                
+                if keys[0].startswith("lease:"):
+                    lease_key = keys[0]
+                    lease_id = argv[0]
+                    if self.db.get(lease_key) == lease_id:
+                        if lease_key in self.db:
+                            del self.db[lease_key]
+                        conn.sendall(b":1\r\n")
+                    else:
+                        conn.sendall(b":0\r\n")
+                else:
+                    rpm_key = keys[0]
+                    rpd_key = keys[1]
+                    concurrent_key = keys[2]
+                    cost = int(argv[0])
+                    max_concurrent = int(argv[1])
+                    
+                    rpm_val = int(self.db.get(rpm_key, "0"))
+                    rpd_val = int(self.db.get(rpd_key, "0"))
+                    concurrent_val = int(self.db.get(concurrent_key, "0"))
+                    
+                    if rpm_val >= cost and rpd_val >= cost and concurrent_val < max_concurrent:
+                        self.db[rpm_key] = str(rpm_val - cost)
+                        self.db[rpd_key] = str(rpd_val - cost)
+                        self.db[concurrent_key] = str(concurrent_val + 1)
+                        conn.sendall(b":1\r\n")
+                    else:
+                        conn.sendall(b":0\r\n")
+
+            elif cmd in ["DECR", "DECRBY"]:
+                key = args[1]
+                decrement = int(args[2]) if cmd == "DECRBY" else 1
+                val = int(self.db.get(key, "0"))
+                val -= decrement
+                self.db[key] = str(val)
+                conn.sendall(f":{val}\r\n".encode())
+
             elif cmd == "INCR":
                 key = args[1]
                 val = int(self.db.get(key, "0"))

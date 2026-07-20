@@ -9,6 +9,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 # Import execution engine core & control plane components
 from execution_engine.worker import ExecutionWorker
 from execution_engine.control_plane.broker import DefaultResourceBroker
+from execution_engine.control_plane.interfaces import ResourceBroker
 from execution_engine.control_plane.capabilities import YamlCapabilityRegistry
 from execution_engine.control_plane.health import ProviderStatusService, ProviderHealthService
 from execution_engine.control_plane.lease_manager import RedisLeaseManager
@@ -18,6 +19,7 @@ from execution_engine.data_plane.validator.pipeline import ValidationPipeline
 from execution_engine.data_plane.normalizer.graph import GraphNormalizer
 from execution_engine.simulation.sim_adapters import SimulatedGeminiAdapter, SimulatedOpenRouterAdapter
 from execution_engine.core.job import JobSpec
+from execution_engine.core.requirements import ProviderRequirements
 from execution_engine.core.events import EventEmitter, ExecutionEvent
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -109,12 +111,132 @@ class MetricLeaseManager(RedisLeaseManager):
         metrics["lease_acquires_count"] += 1
         if res:
             metrics["lease_active_leases"] += 1
+            # Push a precise lease metric event to Redis
+            try:
+                r.rpush("simulation:events", json.dumps({
+                    "type": "LEASE_METRIC",
+                    "job_id": job_id,
+                    "timestamp": time.time(),
+                    "payload": {"acquisition_latency_ms": latency * 1000.0}
+                }))
+            except Exception:
+                pass
         return res
 
     def release_lease(self, job_id: str, lease_id: str):
         res = super().release_lease(job_id, lease_id)
         if res and metrics["lease_active_leases"] > 0:
             metrics["lease_active_leases"] -= 1
+        return res
+
+class MetricResourceBroker(ResourceBroker):
+    def __init__(self, delegate: ResourceBroker):
+        self.delegate = delegate
+
+    def acquire(self, requirements: ProviderRequirements):
+        start = time.time()
+        
+        job_id = getattr(r, "current_job_id", "unknown")
+        trace_id = getattr(r, "current_trace_id", "unknown")
+        
+        if "-page-" in job_id:
+            parts = job_id.split("-page-")
+            document_id = parts[0]
+            page_id = parts[1]
+        else:
+            document_id = "unknown"
+            page_id = "unknown"
+            
+        candidates = []
+        for pid, provider in self.delegate.providers.items():
+            health = self.delegate.health.get_health_score(pid)
+            available = self.delegate.status.is_available(pid)
+            
+            try:
+                rpm_remaining = int(r.get(f"quota:{pid}:rpm") or 0)
+                current_concurrent = int(r.get(f"quota:{pid}:concurrent") or 0)
+                concurrency_remaining = max(0, 3 - current_concurrent)
+            except Exception:
+                rpm_remaining = 0
+                concurrency_remaining = 0
+                
+            try:
+                score = self.delegate._score_provider(pid, requirements)
+            except Exception:
+                score = -1
+                
+            rejected = False
+            rejection_reason = None
+            if not available:
+                rejected = True
+                rejection_reason = "status_unavailable"
+            elif score < 0:
+                rejected = True
+                rejection_reason = "requirements_mismatch"
+            elif rpm_remaining <= 0:
+                rejected = True
+                rejection_reason = "rpm_quota_exhausted"
+            elif concurrency_remaining <= 0:
+                rejected = True
+                rejection_reason = "concurrency_limit_reached"
+                
+            candidates.append({
+                "provider": pid,
+                "available": available,
+                "health": health,
+                "rpm_remaining": rpm_remaining,
+                "concurrency_remaining": concurrency_remaining,
+                "score": score,
+                "rejected": rejected,
+                "rejection_reason": rejection_reason
+            })
+            
+        try:
+            res = self.delegate.acquire(requirements)
+            selected_provider = res.get_provider_id()
+            selection_reason = "highest_score"
+            exc = None
+        except Exception as e:
+            res = None
+            selected_provider = None
+            selection_reason = "no_available_provider"
+            exc = e
+            
+        latency = (time.time() - start) * 1000.0
+        
+        snapshot = {
+            "trace_id": trace_id,
+            "job_id": job_id,
+            "document_id": document_id,
+            "page_id": page_id,
+            "decision_time_ms": latency,
+            "broker_version": "v1",
+            "capability_manifest_version": "v1.0.0",
+            "quota_snapshot_time": time.time(),
+            "selected_provider": selected_provider,
+            "selection_reason": selection_reason,
+            "requirements": {
+                "context": requirements.context_window,
+                "streaming": requirements.streaming,
+                "multimodal": requirements.multimodal
+            },
+            "candidates": candidates,
+            "selected": selected_provider
+        }
+        
+        try:
+            r.rpush("simulation:broker_decisions", json.dumps(snapshot))
+            r.rpush("simulation:events", json.dumps({
+                "type": "BROKER_METRIC",
+                "job_id": job_id,
+                "timestamp": time.time(),
+                "payload": {"decision_latency_ms": latency}
+            }))
+        except Exception:
+            pass
+            
+        if exc:
+            raise exc
         return res
 
 # Prometheus Metrics HTTP Server
@@ -233,7 +355,7 @@ def main():
     
     # Worker
     worker = ExecutionWorker(
-        broker=broker,
+        broker=MetricResourceBroker(broker),
         quota_manager=quota_manager,
         lease_manager=lease_manager,
         artifact_registry=artifact_registry,
@@ -257,6 +379,8 @@ def main():
             trace_id = f"sim-trace-{job.id}-{int(time.time())}"
             logger.info(f"[{WORKER_ID}] Picked up job {job.id}. Executing...")
             
+            r.current_job_id = job.id
+            r.current_trace_id = trace_id
             success = worker.execute_job(job, trace_id)
             metrics["jobs_processed"] += 1
             logger.info(f"[{WORKER_ID}] Job {job.id} execution result: {success}")
