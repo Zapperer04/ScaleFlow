@@ -1,0 +1,12 @@
+'429':
+  probability: 0.0
+latency:
+  mean_ms: 100
+  stddev_ms: 20
+provider: gemini
+stream:
+  disconnect_probability: 0.0
+  first_token_delay_ms: 500
+  malformed_after_token: 99999
+  timeout_probability: 0.0
+  tokens_per_second: 50

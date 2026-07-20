@@ -1,0 +1,13 @@
+policy_version: "1.0.0"
+approved_by: "Lead Distributed Systems Architect"
+effective_date: "2026-07-20"
+git_commit_sha: "7f267369d3cbc159aeb45629e566b7733f67deb4"
+
+shadow:
+  min_structural_parity: 90.0
+  min_textual_parity: 90.0
+  min_semantic_parity: 60.0
+  max_duplicate_executions: 0
+  max_lease_leaks: 0
+  max_429_triggers: 0
+  min_replay_pass: true

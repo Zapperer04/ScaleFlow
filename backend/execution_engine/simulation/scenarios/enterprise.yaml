@@ -1,0 +1,12 @@
+name: enterprise
+events:
+  - at: 10s
+    kill: worker-2
+  - at: 15s
+    gemini:
+      429_probability: 0.80
+  - at: 20s
+    redis:
+      latency_ms: 250
+  - at: 35s
+    restore: all

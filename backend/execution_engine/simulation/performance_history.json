@@ -130,5 +130,29 @@
     "lease_leaks": 0,
     "scheduler_429": 0,
     "timestamp": "2026-07-20T11:37:04.358132"
+  },
+  {
+    "commit_sha": "7f267369d3cbc159aeb45629e566b7733f67deb4",
+    "scenario": "small-office",
+    "broker_latency_ms": 3.372,
+    "lease_latency_ms": 0.446,
+    "fairness": 0.875,
+    "efficiency": 92.11,
+    "duplicates": 0,
+    "lease_leaks": 0,
+    "scheduler_429": 0,
+    "timestamp": "2026-07-20T11:50:32.241322"
+  },
+  {
+    "commit_sha": "7f267369d3cbc159aeb45629e566b7733f67deb4",
+    "scenario": "small-office",
+    "broker_latency_ms": 3.222,
+    "lease_latency_ms": 0.546,
+    "fairness": 0.886,
+    "efficiency": 91.81,
+    "duplicates": 0,
+    "lease_leaks": 0,
+    "scheduler_429": 0,
+    "timestamp": "2026-07-20T12:40:04.608135"
   }
 ]

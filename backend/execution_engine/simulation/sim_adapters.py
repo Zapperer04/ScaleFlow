@@ -21,7 +21,8 @@ class SimulatedGeminiAdapter(ResourceProvider):
                 return res.json()
             except Exception:
                 raise Exception("Malformed JSON")
-        return {"raw_provider_ast": "gemini_output"}
+        return {"nodes": [{"chunk_id": "p1_n_1", "text": "Extracted text content from document", "structural_type": "paragraph", "semantic_category": "body_text"}]}
+
 
     def parse_stream(self, artifact: ArtifactRef, prompt_payload: dict) -> Generator[Dict[str, Any], None, None]:
         url = os.environ.get("GEMINI_MOCK_URL", "")

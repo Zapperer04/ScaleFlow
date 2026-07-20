@@ -1,0 +1,13 @@
+cost:
+  estimated_latency: medium
+  quota_weight: high
+health: 100.0
+limits:
+  max_context: 1000000
+  max_image_resolution: 4096
+provider: gemini
+quota_available: 100.0
+supports:
+  json_schema: true
+  multimodal: true
+  streaming: true

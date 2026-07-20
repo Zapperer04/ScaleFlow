@@ -1,0 +1,4 @@
+document_id,pages,completion_time_sec,throughput_pages_per_sec
+Doc_A,30,1.84,16.34
+Doc_B,3,0.49,6.08
+Doc_C,10,1.12,8.97

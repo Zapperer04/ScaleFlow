@@ -1,0 +1,12 @@
+{
+  "commit_sha": "809dc120cd62a1e54c37b93065da6b1a5f343ad0",
+  "simulation_version": "1.0.0",
+  "schema_version": "1.0.0",
+  "prompt_version": "1.0.0",
+  "broker_version": "v1",
+  "redis_version": "mock-redis-server",
+  "python_version": "3.10.11",
+  "random_seed": 1784527556,
+  "scenario": "small-office",
+  "timestamp": "2026-07-20T11:37:04.351383"
+}

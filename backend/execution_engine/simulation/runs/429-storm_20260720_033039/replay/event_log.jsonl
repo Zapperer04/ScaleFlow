@@ -1,0 +1,344 @@
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-0", "timestamp": 1784498441.6101491, "payload": {"acquisition_latency_ms": 0.6830692291259766}}
+{"type": "LEASE_METRIC", "job_id": "Doc_B-page-0", "timestamp": 1784498441.610243, "payload": {"acquisition_latency_ms": 0.6771087646484375}}
+{"type": "LEASE_METRIC", "job_id": "Doc_C-page-0", "timestamp": 1784498441.610332, "payload": {"acquisition_latency_ms": 0.6310939788818359}}
+{"event_id":"b69788e4-c511-4761-b174-177fa922211b","timestamp":1784498441.610708,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-0-1784498441","job_id":"Doc_A-page-0","payload":{}}
+{"event_id":"48e4afdf-99bd-4e82-a99a-1bfd4e5f767c","timestamp":1784498441.610773,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_C-page-0-1784498441","job_id":"Doc_C-page-0","payload":{}}
+{"event_id":"89c5fb45-e003-4649-ab5b-45358f6e65d9","timestamp":1784498441.610837,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_B-page-0-1784498441","job_id":"Doc_B-page-0","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-0", "timestamp": 1784498441.612876, "payload": {"decision_latency_ms": 1.6460418701171875}}
+{"type": "BROKER_METRIC", "job_id": "Doc_B-page-0", "timestamp": 1784498441.612989, "payload": {"decision_latency_ms": 1.600027084350586}}
+{"type": "BROKER_METRIC", "job_id": "Doc_C-page-0", "timestamp": 1784498441.613046, "payload": {"decision_latency_ms": 1.714944839477539}}
+{"event_id":"4d9a9e40-935f-4028-a38b-d206ba5be8ba","timestamp":1784498441.6133819,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-0-1784498441","job_id":"Doc_A-page-0","payload":{"provider":"gemini"}}
+{"event_id":"4c2c7314-0631-4d0d-afee-70bf1b34cf18","timestamp":1784498441.613472,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_B-page-0-1784498441","job_id":"Doc_B-page-0","payload":{"provider":"gemini"}}
+{"event_id":"304733df-b926-46bf-8820-a44bec09725c","timestamp":1784498441.613554,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_C-page-0-1784498441","job_id":"Doc_C-page-0","payload":{"provider":"gemini"}}
+{"event_id":"097371b4-49a1-4de6-a1cf-9196f2a52a4b","timestamp":1784498441.6144462,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_B-page-0-1784498441","job_id":"Doc_B-page-0","payload":{}}
+{"event_id":"38552641-8abb-413e-b6f3-b1e5acff86d2","timestamp":1784498441.614544,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_C-page-0-1784498441","job_id":"Doc_C-page-0","payload":{}}
+{"event_id":"3c960a5d-8e8f-41d7-b17a-77304088eee8","timestamp":1784498441.6146,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-0-1784498441","job_id":"Doc_A-page-0","payload":{}}
+{"event_id":"8fa16bf0-a436-468c-b2e2-e147002b3a74","timestamp":1784498441.687896,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_B-page-0-1784498441","job_id":"Doc_B-page-0","payload":{}}
+{"event_id":"24ceed0d-0198-4233-9b98-73d50b5c0bb3","timestamp":1784498441.6895602,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_B-page-0-1784498441","job_id":"Doc_B-page-0","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-9b40af4f-745c-4c78-b24e-2526f054d0b0.bin","inference_time_ms":72,"total_time_ms":78}}
+{"event_id":"c56eb6d2-4254-4b48-a650-2accc51bf3c9","timestamp":1784498441.690625,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_B-page-0-1784498441","job_id":"Doc_B-page-0","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-1", "timestamp": 1784498441.69172, "payload": {"acquisition_latency_ms": 0.3046989440917969}}
+{"event_id":"1df6c09e-e952-4c27-bb79-56fe347678e2","timestamp":1784498441.692035,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-1-1784498441","job_id":"Doc_A-page-1","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-1", "timestamp": 1784498441.692692, "payload": {"decision_latency_ms": 0.3440380096435547}}
+{"event_id":"f13c43b8-5027-411c-9aa9-dd1332393b27","timestamp":1784498441.693002,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-1-1784498441","job_id":"Doc_A-page-1","payload":{"provider":"gemini"}}
+{"event_id":"d1402b6e-b2ec-45e8-89d5-fe0b42da3cc8","timestamp":1784498441.693673,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-1-1784498441","job_id":"Doc_A-page-1","payload":{}}
+{"event_id":"dda219f7-dc71-4b3e-bfbb-439aa9c94d97","timestamp":1784498441.7309482,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_C-page-0-1784498441","job_id":"Doc_C-page-0","payload":{}}
+{"event_id":"04e7a8e7-ff44-4e5e-be20-75206af0bfd8","timestamp":1784498441.732498,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_C-page-0-1784498441","job_id":"Doc_C-page-0","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-1cf1b333-b72d-4be7-a5ba-b7ccb920a3a8.bin","inference_time_ms":115,"total_time_ms":121}}
+{"event_id":"a43ca934-c45d-4fd3-b826-49379f682cf6","timestamp":1784498441.733584,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_C-page-0-1784498441","job_id":"Doc_C-page-0","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_B-page-1", "timestamp": 1784498441.734665, "payload": {"acquisition_latency_ms": 0.3178119659423828}}
+{"event_id":"290e6ed1-d06c-4fff-896c-4dfda9f165e3","timestamp":1784498441.7349849,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_B-page-1-1784498441","job_id":"Doc_B-page-1","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_B-page-1", "timestamp": 1784498441.7356281, "payload": {"decision_latency_ms": 0.3008842468261719}}
+{"event_id":"eef53f56-06b7-4ee4-9c16-01f205b1c3ba","timestamp":1784498441.735919,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_B-page-1-1784498441","job_id":"Doc_B-page-1","payload":{"provider":"gemini"}}
+{"event_id":"6b92e652-6dfe-4bad-81fc-2b180e6e7b11","timestamp":1784498441.736608,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_B-page-1-1784498441","job_id":"Doc_B-page-1","payload":{}}
+{"event_id":"0fc64f16-0e02-404d-b8e6-e9fbd8d92b8f","timestamp":1784498441.7372422,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-0-1784498441","job_id":"Doc_A-page-0","payload":{}}
+{"event_id":"6b2da684-7c72-4ba1-8180-1ba16d70254a","timestamp":1784498441.738413,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-0-1784498441","job_id":"Doc_A-page-0","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-ae04f823-96b0-47d3-a058-5ba3f2c7e49d.bin","inference_time_ms":122,"total_time_ms":127}}
+{"event_id":"ebc68f7e-5a91-4e0c-be3f-e921ad6151fd","timestamp":1784498441.739336,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-0-1784498441","job_id":"Doc_A-page-0","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_C-page-1", "timestamp": 1784498441.7403772, "payload": {"acquisition_latency_ms": 0.34999847412109375}}
+{"event_id":"4886fba6-8cd5-4e74-aee4-5aaa622a3f7d","timestamp":1784498441.740698,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_C-page-1-1784498441","job_id":"Doc_C-page-1","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_C-page-1", "timestamp": 1784498441.7413251, "payload": {"decision_latency_ms": 0.3032684326171875}}
+{"event_id":"0e9dd51d-386d-4d7d-aa23-115864a7786d","timestamp":1784498441.741615,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_C-page-1-1784498441","job_id":"Doc_C-page-1","payload":{"provider":"gemini"}}
+{"event_id":"4b111f65-ece3-425c-8893-2a68ad5e4dfa","timestamp":1784498441.742259,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_C-page-1-1784498441","job_id":"Doc_C-page-1","payload":{}}
+{"event_id":"2e84592a-12f0-4b11-ae3d-46fb09d19b06","timestamp":1784498441.7886689,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-1-1784498441","job_id":"Doc_A-page-1","payload":{}}
+{"event_id":"50be0942-3301-4584-a6d2-aa74710b326a","timestamp":1784498441.790139,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-1-1784498441","job_id":"Doc_A-page-1","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-5b6dbeb1-c030-4d74-8a02-cc6e8645a717.bin","inference_time_ms":94,"total_time_ms":97}}
+{"event_id":"eff97ea7-37ee-4b8c-afae-5a8ac76d0e88","timestamp":1784498441.79121,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-1-1784498441","job_id":"Doc_A-page-1","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-2", "timestamp": 1784498441.7922828, "payload": {"acquisition_latency_ms": 0.3192424774169922}}
+{"event_id":"5617b350-5330-4df1-be16-05c66f8adf9a","timestamp":1784498441.792634,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-2-1784498441","job_id":"Doc_A-page-2","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-2", "timestamp": 1784498441.793302, "payload": {"decision_latency_ms": 0.3132820129394531}}
+{"event_id":"ba21e858-cf20-4c59-9bab-e2fe7366657e","timestamp":1784498441.7936032,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-2-1784498441","job_id":"Doc_A-page-2","payload":{"provider":"gemini"}}
+{"event_id":"2fc139ca-eb95-427c-b08b-deb81416acbe","timestamp":1784498441.7942731,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-2-1784498441","job_id":"Doc_A-page-2","payload":{}}
+{"event_id":"69eb4759-f2e2-474b-b531-8371d142380a","timestamp":1784498441.842587,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_B-page-1-1784498441","job_id":"Doc_B-page-1","payload":{}}
+{"event_id":"3889480f-711a-403a-ad75-d10b603932bc","timestamp":1784498441.8440802,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_B-page-1-1784498441","job_id":"Doc_B-page-1","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-29a7f556-052e-4127-b6a9-90e39b560b9d.bin","inference_time_ms":105,"total_time_ms":108}}
+{"event_id":"0dc29769-6238-4ca8-9d15-98197f3a25d1","timestamp":1784498441.8451588,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_B-page-1-1784498441","job_id":"Doc_B-page-1","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_B-page-2", "timestamp": 1784498441.846375, "payload": {"acquisition_latency_ms": 0.3437995910644531}}
+{"event_id":"e061b87b-bfa6-4a51-a868-dec318b580c9","timestamp":1784498441.846724,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_B-page-2-1784498441","job_id":"Doc_B-page-2","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_B-page-2", "timestamp": 1784498441.847441, "payload": {"decision_latency_ms": 0.3368854522705078}}
+{"event_id":"8fedd02c-3a72-4244-82ef-541b8656463a","timestamp":1784498441.847748,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_B-page-2-1784498441","job_id":"Doc_B-page-2","payload":{"provider":"gemini"}}
+{"event_id":"b40234ae-a53d-4737-97d5-2a1426b38a7b","timestamp":1784498441.848432,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_B-page-2-1784498441","job_id":"Doc_B-page-2","payload":{}}
+{"event_id":"6128ec3e-93b9-43d8-b475-8665ea01132e","timestamp":1784498441.856658,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_C-page-1-1784498441","job_id":"Doc_C-page-1","payload":{}}
+{"event_id":"cac1834c-c11f-44d8-8432-b50a483b6e88","timestamp":1784498441.861737,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_C-page-1-1784498441","job_id":"Doc_C-page-1","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-de11fa11-ea3c-4048-92bd-c13d0730bb93.bin","inference_time_ms":114,"total_time_ms":120}}
+{"event_id":"ffd68b42-310b-47ac-af05-d28cd8334d75","timestamp":1784498441.8628411,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_C-page-1-1784498441","job_id":"Doc_C-page-1","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_C-page-2", "timestamp": 1784498441.863876, "payload": {"acquisition_latency_ms": 0.30612945556640625}}
+{"event_id":"7b9914c2-5694-4510-b9b1-9f3d96842602","timestamp":1784498441.8641942,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_C-page-2-1784498441","job_id":"Doc_C-page-2","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_C-page-2", "timestamp": 1784498441.8648489, "payload": {"decision_latency_ms": 0.30803680419921875}}
+{"event_id":"d093fda7-b38b-49cb-9677-56c1a7567b5c","timestamp":1784498441.8651268,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_C-page-2-1784498441","job_id":"Doc_C-page-2","payload":{"provider":"gemini"}}
+{"event_id":"6f00247b-8218-4f52-aa05-6f58d3d6da09","timestamp":1784498441.8657322,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_C-page-2-1784498441","job_id":"Doc_C-page-2","payload":{}}
+{"event_id":"5706adad-0e58-4eb7-89e8-d0a7c1ea6dbf","timestamp":1784498441.908094,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-2-1784498441","job_id":"Doc_A-page-2","payload":{}}
+{"event_id":"f9765b52-c184-478b-a4c3-a764c2900739","timestamp":1784498441.909929,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-2-1784498441","job_id":"Doc_A-page-2","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-ed3b7397-c36e-438d-8e8d-44df1d275294.bin","inference_time_ms":113,"total_time_ms":116}}
+{"event_id":"d351db7c-7333-4e56-a798-dbf613579a46","timestamp":1784498441.9110222,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-2-1784498441","job_id":"Doc_A-page-2","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-3", "timestamp": 1784498441.912089, "payload": {"acquisition_latency_ms": 0.3230571746826172}}
+{"event_id":"cfe1591e-7861-4366-82da-bd96f03564e5","timestamp":1784498441.912404,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-3-1784498441","job_id":"Doc_A-page-3","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-3", "timestamp": 1784498441.913057, "payload": {"decision_latency_ms": 0.3390312194824219}}
+{"event_id":"5b1f9cd5-c4b9-4416-b048-48bf2711f680","timestamp":1784498441.9134011,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-3-1784498441","job_id":"Doc_A-page-3","payload":{"provider":"gemini"}}
+{"event_id":"d6828203-075f-4c62-9f56-b7786f408731","timestamp":1784498441.914138,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-3-1784498441","job_id":"Doc_A-page-3","payload":{}}
+{"event_id":"59d70ef1-7965-4db8-b461-e298fb0cf328","timestamp":1784498441.944245,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_B-page-2-1784498441","job_id":"Doc_B-page-2","payload":{}}
+{"event_id":"080b0b30-4e0f-4887-9965-0f1c37cd06a4","timestamp":1784498441.945798,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_B-page-2-1784498441","job_id":"Doc_B-page-2","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-b2ee1b8f-b83b-4a2c-a40a-283018a9487d.bin","inference_time_ms":95,"total_time_ms":98}}
+{"event_id":"9d0f987a-3b0e-46f4-9c5a-522204ad55cf","timestamp":1784498441.94688,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_B-page-2-1784498441","job_id":"Doc_B-page-2","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_C-page-3", "timestamp": 1784498441.9479191, "payload": {"acquisition_latency_ms": 0.30112266540527344}}
+{"event_id":"3566ea98-2a88-4cdc-aeeb-57986e3bd2a4","timestamp":1784498441.948218,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_C-page-3-1784498441","job_id":"Doc_C-page-3","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_C-page-3", "timestamp": 1784498441.9488242, "payload": {"decision_latency_ms": 0.30112266540527344}}
+{"event_id":"30ff7244-3380-405d-9ca0-f79fe5509336","timestamp":1784498441.949106,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_C-page-3-1784498441","job_id":"Doc_C-page-3","payload":{"provider":"gemini"}}
+{"event_id":"60805f33-3afb-41eb-98b6-832f0141e1eb","timestamp":1784498441.949742,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_C-page-3-1784498441","job_id":"Doc_C-page-3","payload":{}}
+{"event_id":"4d471e55-c497-44b5-a447-0b18328770ac","timestamp":1784498441.976661,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_C-page-2-1784498441","job_id":"Doc_C-page-2","payload":{}}
+{"event_id":"d064711d-b253-4651-91eb-186df658b65d","timestamp":1784498441.9781911,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_C-page-2-1784498441","job_id":"Doc_C-page-2","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-023bc72e-cd28-404e-8f8b-29e089dcea0e.bin","inference_time_ms":110,"total_time_ms":113}}
+{"event_id":"3fc5853a-37d9-4e86-a33f-dcc3c91dbcfb","timestamp":1784498441.979232,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_C-page-2-1784498441","job_id":"Doc_C-page-2","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-4", "timestamp": 1784498441.980315, "payload": {"acquisition_latency_ms": 0.31304359436035156}}
+{"event_id":"d5f8608c-f861-4b43-b586-dc434d60b610","timestamp":1784498441.9806342,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-4-1784498441","job_id":"Doc_A-page-4","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-4", "timestamp": 1784498441.981314, "payload": {"decision_latency_ms": 0.3559589385986328}}
+{"event_id":"fdb6d94e-bd17-43d6-ad79-a3c20fbb17f2","timestamp":1784498441.9816132,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-4-1784498441","job_id":"Doc_A-page-4","payload":{"provider":"gemini"}}
+{"event_id":"a80c84f2-d196-463f-b6c5-db8f684a99e7","timestamp":1784498441.98233,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-4-1784498441","job_id":"Doc_A-page-4","payload":{}}
+{"event_id":"0cc912fd-7dcf-45cc-aa09-1e4a95a7d529","timestamp":1784498442.042465,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-3-1784498441","job_id":"Doc_A-page-3","payload":{}}
+{"event_id":"b1470d0e-df51-4e86-ad2e-1b835b9a0644","timestamp":1784498442.044109,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-3-1784498441","job_id":"Doc_A-page-3","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-27b8f6ca-516b-48ec-9a9a-72717f6079d1.bin","inference_time_ms":127,"total_time_ms":131}}
+{"event_id":"b28f861f-1ba5-4ec2-8275-e1541d3a5979","timestamp":1784498442.0452302,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-3-1784498441","job_id":"Doc_A-page-3","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_C-page-4", "timestamp": 1784498442.0463822, "payload": {"acquisition_latency_ms": 0.3409385681152344}}
+{"event_id":"ddb856b7-29a9-49e1-89cc-c08aaae0d301","timestamp":1784498442.046738,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_C-page-4-1784498442","job_id":"Doc_C-page-4","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_C-page-4", "timestamp": 1784498442.047466, "payload": {"decision_latency_ms": 0.35572052001953125}}
+{"event_id":"c450f827-1a7f-4166-a08f-01b0290f63dd","timestamp":1784498442.0478332,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_C-page-4-1784498442","job_id":"Doc_C-page-4","payload":{"provider":"gemini"}}
+{"event_id":"708c1ef7-c322-4c37-a850-5e029588cc83","timestamp":1784498442.0486138,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_C-page-4-1784498442","job_id":"Doc_C-page-4","payload":{}}
+{"event_id":"a83b8043-f657-45bd-a232-735ed93515f7","timestamp":1784498442.055545,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_C-page-3-1784498441","job_id":"Doc_C-page-3","payload":{}}
+{"event_id":"fd966c24-71ce-4651-9ce0-29b05afa8e0a","timestamp":1784498442.056909,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_C-page-3-1784498441","job_id":"Doc_C-page-3","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-b297e5f2-b131-4fd3-89e2-2c92257c4793.bin","inference_time_ms":105,"total_time_ms":108}}
+{"event_id":"07443eda-fffa-41d8-96ef-2530f5e61e32","timestamp":1784498442.0579112,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_C-page-3-1784498441","job_id":"Doc_C-page-3","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-5", "timestamp": 1784498442.058933, "payload": {"acquisition_latency_ms": 0.3211498260498047}}
+{"event_id":"4286ff0a-4bfa-4f8c-8861-5189960670b4","timestamp":1784498442.0592499,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-5-1784498442","job_id":"Doc_A-page-5","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-5", "timestamp": 1784498442.05995, "payload": {"decision_latency_ms": 0.3871917724609375}}
+{"event_id":"42391568-6a63-40dd-af65-5e86c256fbeb","timestamp":1784498442.060323,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-5-1784498442","job_id":"Doc_A-page-5","payload":{"provider":"gemini"}}
+{"event_id":"fb233a31-566c-4bf3-998c-1093404081d6","timestamp":1784498442.0610602,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-5-1784498442","job_id":"Doc_A-page-5","payload":{}}
+{"event_id":"5eb9aa35-e039-4528-969c-7fe1f6483490","timestamp":1784498442.0824661,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-4-1784498441","job_id":"Doc_A-page-4","payload":{}}
+{"event_id":"f846f30d-7d94-4a6d-a4b1-c537eb3f6b12","timestamp":1784498442.0838442,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-4-1784498441","job_id":"Doc_A-page-4","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-15dc8540-4ce2-4c8c-a272-2f3f0203512f.bin","inference_time_ms":99,"total_time_ms":102}}
+{"event_id":"acce75d3-3f1e-4466-a07d-5100992b229c","timestamp":1784498442.084897,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-4-1784498441","job_id":"Doc_A-page-4","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_C-page-5", "timestamp": 1784498442.085875, "payload": {"acquisition_latency_ms": 0.3006458282470703}}
+{"event_id":"37d668cd-cbec-48fc-8291-e8a4499b8de7","timestamp":1784498442.086168,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_C-page-5-1784498442","job_id":"Doc_C-page-5","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_C-page-5", "timestamp": 1784498442.086745, "payload": {"decision_latency_ms": 0.2779960632324219}}
+{"event_id":"b7fcba23-9363-4bd6-91bb-e3314afd54e1","timestamp":1784498442.087021,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_C-page-5-1784498442","job_id":"Doc_C-page-5","payload":{"provider":"gemini"}}
+{"event_id":"75e3b742-3c5a-46c2-a035-214cbd40351d","timestamp":1784498442.087649,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_C-page-5-1784498442","job_id":"Doc_C-page-5","payload":{}}
+{"event_id":"d155665f-5463-4609-966d-55d09774d7c2","timestamp":1784498442.1416042,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_C-page-4-1784498442","job_id":"Doc_C-page-4","payload":{}}
+{"event_id":"914edb5d-2e53-408c-ab71-52ad5e9d0f6c","timestamp":1784498442.143181,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_C-page-4-1784498442","job_id":"Doc_C-page-4","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-487b53b7-2989-48f0-b70d-4bb699e5da46.bin","inference_time_ms":92,"total_time_ms":96}}
+{"event_id":"80a8d6fa-10c5-4b97-8093-b2d53cf7f996","timestamp":1784498442.144356,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_C-page-4-1784498442","job_id":"Doc_C-page-4","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-6", "timestamp": 1784498442.14547, "payload": {"acquisition_latency_ms": 0.3490447998046875}}
+{"event_id":"7a020d3b-a64f-48ba-97bb-fcd19f5cd9c6","timestamp":1784498442.1457999,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-6-1784498442","job_id":"Doc_A-page-6","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-6", "timestamp": 1784498442.146472, "payload": {"decision_latency_ms": 0.34308433532714844}}
+{"event_id":"6c32a51f-0919-425b-b5e2-7536e23758eb","timestamp":1784498442.146797,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-6-1784498442","job_id":"Doc_A-page-6","payload":{"provider":"gemini"}}
+{"event_id":"de291e34-d9b9-43f0-b99b-7171d35d22dd","timestamp":1784498442.1475542,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-6-1784498442","job_id":"Doc_A-page-6","payload":{}}
+{"event_id":"a951f60f-b843-443d-809e-2113ccafb0f2","timestamp":1784498442.194701,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_C-page-5-1784498442","job_id":"Doc_C-page-5","payload":{}}
+{"event_id":"10225354-870c-4ff7-a7fc-08c2880b00cf","timestamp":1784498442.1981492,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_C-page-5-1784498442","job_id":"Doc_C-page-5","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-6523f7b8-3f5f-43ad-9578-44db31a7069e.bin","inference_time_ms":106,"total_time_ms":111}}
+{"event_id":"59fbd73b-561e-4139-a629-78c933b344b1","timestamp":1784498442.199326,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_C-page-5-1784498442","job_id":"Doc_C-page-5","payload":{}}
+{"event_id":"b4b83ce2-8ddf-4714-9dc9-a4736653b9f4","timestamp":1784498442.199306,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-5-1784498442","job_id":"Doc_A-page-5","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_C-page-6", "timestamp": 1784498442.200973, "payload": {"acquisition_latency_ms": 0.5071163177490234}}
+{"event_id":"29277071-c389-403d-ac19-217f56240d70","timestamp":1784498442.2014022,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-5-1784498442","job_id":"Doc_A-page-5","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-6d29081f-0c1b-4495-a0f3-45507fbcd4f8.bin","inference_time_ms":137,"total_time_ms":141}}
+{"event_id":"5ff4788e-2b20-4e96-a9ca-e4cd9c839b4c","timestamp":1784498442.201569,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_C-page-6-1784498442","job_id":"Doc_C-page-6","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_C-page-6", "timestamp": 1784498442.2028, "payload": {"decision_latency_ms": 0.637054443359375}}
+{"event_id":"d1a0bdb6-718a-433c-84aa-96da1def290c","timestamp":1784498442.2031538,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-5-1784498442","job_id":"Doc_A-page-5","payload":{}}
+{"event_id":"ead5878a-60e7-48ed-bd5f-f609df9cad3e","timestamp":1784498442.2032661,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_C-page-6-1784498442","job_id":"Doc_C-page-6","payload":{"provider":"gemini"}}
+{"event_id":"11ace916-3a45-4d1c-adcf-89734eade15f","timestamp":1784498442.204203,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_C-page-6-1784498442","job_id":"Doc_C-page-6","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-7", "timestamp": 1784498442.204532, "payload": {"acquisition_latency_ms": 0.41604042053222656}}
+{"event_id":"b37fa2e0-c548-4612-8cf8-be9dc9355765","timestamp":1784498442.204894,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-7-1784498442","job_id":"Doc_A-page-7","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-7", "timestamp": 1784498442.2056231, "payload": {"decision_latency_ms": 0.3561973571777344}}
+{"event_id":"0adaab26-4493-4110-ae16-5990162326ce","timestamp":1784498442.205947,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-7-1784498442","job_id":"Doc_A-page-7","payload":{"provider":"gemini"}}
+{"event_id":"79578695-052e-47e0-86ce-9db9fb07b797","timestamp":1784498442.206657,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-7-1784498442","job_id":"Doc_A-page-7","payload":{}}
+{"event_id":"7be87aff-64d6-466e-bd09-92835d5a1a9c","timestamp":1784498442.245172,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-6-1784498442","job_id":"Doc_A-page-6","payload":{}}
+{"event_id":"ef4f9320-46f5-42a3-b2d3-ea46cb85c319","timestamp":1784498442.246725,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-6-1784498442","job_id":"Doc_A-page-6","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-5eb354e9-6336-4230-8652-f05e275470a8.bin","inference_time_ms":97,"total_time_ms":100}}
+{"event_id":"f73775ea-7843-4494-b950-05df8d321d6a","timestamp":1784498442.247818,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-6-1784498442","job_id":"Doc_A-page-6","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_C-page-7", "timestamp": 1784498442.2489111, "payload": {"acquisition_latency_ms": 0.324249267578125}}
+{"event_id":"521938e9-c315-4702-a299-a1041c8e9e55","timestamp":1784498442.249235,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_C-page-7-1784498442","job_id":"Doc_C-page-7","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_C-page-7", "timestamp": 1784498442.249939, "payload": {"decision_latency_ms": 0.3390312194824219}}
+{"event_id":"d036f6ea-4297-463e-bf1a-8c23f4503ef8","timestamp":1784498442.250242,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_C-page-7-1784498442","job_id":"Doc_C-page-7","payload":{"provider":"gemini"}}
+{"event_id":"29a4b26b-7d92-4017-b3b7-5403acccd040","timestamp":1784498442.250877,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_C-page-7-1784498442","job_id":"Doc_C-page-7","payload":{}}
+{"event_id":"e7a22a5b-7c29-45c2-9991-49bb59a19b8a","timestamp":1784498442.298711,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_C-page-6-1784498442","job_id":"Doc_C-page-6","payload":{}}
+{"event_id":"065b398d-984d-4bea-b809-8f4b5734e304","timestamp":1784498442.30027,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_C-page-6-1784498442","job_id":"Doc_C-page-6","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-7d9e2d18-792f-48be-ab6d-11653989226d.bin","inference_time_ms":94,"total_time_ms":98}}
+{"event_id":"0e3d003f-fd48-4ca3-bbe4-6458735d7d0b","timestamp":1784498442.3015108,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_C-page-6-1784498442","job_id":"Doc_C-page-6","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-8", "timestamp": 1784498442.3026528, "payload": {"acquisition_latency_ms": 0.3600120544433594}}
+{"event_id":"7a94a8f5-838a-41e0-9053-15efdf4c0d4b","timestamp":1784498442.303009,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-8-1784498442","job_id":"Doc_A-page-8","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-8", "timestamp": 1784498442.3036978, "payload": {"decision_latency_ms": 0.3218650817871094}}
+{"event_id":"dc49c11b-32bd-448a-a4dc-5e4d43bc2662","timestamp":1784498442.304013,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-8-1784498442","job_id":"Doc_A-page-8","payload":{"provider":"gemini"}}
+{"event_id":"df68f6e3-8aae-4489-bdda-d369c851422b","timestamp":1784498442.304718,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-8-1784498442","job_id":"Doc_A-page-8","payload":{}}
+{"event_id":"507182be-88d9-437f-a895-5ad3e8ccf1b7","timestamp":1784498442.3153589,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-7-1784498442","job_id":"Doc_A-page-7","payload":{}}
+{"event_id":"25f92654-3b58-415a-a6fd-54a1eb643529","timestamp":1784498442.318527,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-7-1784498442","job_id":"Doc_A-page-7","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-99cb2dde-f3c1-4887-a0bd-c6892bd3a2b9.bin","inference_time_ms":108,"total_time_ms":113}}
+{"event_id":"e105d1ce-d096-4e43-960d-64cedb6a81f7","timestamp":1784498442.319527,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-7-1784498442","job_id":"Doc_A-page-7","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_C-page-8", "timestamp": 1784498442.320498, "payload": {"acquisition_latency_ms": 0.31065940856933594}}
+{"event_id":"39534d79-099e-4b2c-b017-8792578f726f","timestamp":1784498442.3208141,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_C-page-8-1784498442","job_id":"Doc_C-page-8","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_C-page-8", "timestamp": 1784498442.321548, "payload": {"decision_latency_ms": 0.3800392150878906}}
+{"event_id":"b5b3b3d9-dc19-4fc4-b0d0-9c1b2b4849a9","timestamp":1784498442.3219042,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_C-page-8-1784498442","job_id":"Doc_C-page-8","payload":{"provider":"gemini"}}
+{"event_id":"8ed40e6b-1a40-49dc-bf7b-5f7a17f9c5e7","timestamp":1784498442.322624,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_C-page-8-1784498442","job_id":"Doc_C-page-8","payload":{}}
+{"event_id":"268dad06-ad88-4255-8e62-f628e31d4e24","timestamp":1784498442.3638248,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_C-page-7-1784498442","job_id":"Doc_C-page-7","payload":{}}
+{"event_id":"3eb89efa-f321-41a0-83d6-c0048dc0f65f","timestamp":1784498442.3653362,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_C-page-7-1784498442","job_id":"Doc_C-page-7","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-e6a800b3-6e84-497a-a0f4-1c31afb54c50.bin","inference_time_ms":112,"total_time_ms":115}}
+{"event_id":"5edbcc63-d697-45f3-ab8a-a61541d5b556","timestamp":1784498442.3663669,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_C-page-7-1784498442","job_id":"Doc_C-page-7","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-9", "timestamp": 1784498442.3674629, "payload": {"acquisition_latency_ms": 0.3368854522705078}}
+{"event_id":"10bc0596-a54a-43c6-b446-720d6ea120ee","timestamp":1784498442.367817,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-9-1784498442","job_id":"Doc_A-page-9","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-9", "timestamp": 1784498442.3685381, "payload": {"decision_latency_ms": 0.35309791564941406}}
+{"event_id":"53c5d606-7af5-40c8-9154-86cceda6b155","timestamp":1784498442.3688781,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-9-1784498442","job_id":"Doc_A-page-9","payload":{"provider":"gemini"}}
+{"event_id":"3d64f53e-33ed-475d-adc0-2e7575c39eac","timestamp":1784498442.36957,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-9-1784498442","job_id":"Doc_A-page-9","payload":{}}
+{"event_id":"647ca27b-e4a2-4107-b057-e560f19580b8","timestamp":1784498442.3957171,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_C-page-8-1784498442","job_id":"Doc_C-page-8","payload":{}}
+{"event_id":"a27ad94c-6f2c-4566-a757-3494dc830325","timestamp":1784498442.3970711,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_C-page-8-1784498442","job_id":"Doc_C-page-8","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-589f4f5c-146c-4bb9-8c51-b407a7fd8504.bin","inference_time_ms":72,"total_time_ms":75}}
+{"event_id":"9997fa83-38ac-47c1-8d0a-70ae2ce5fd09","timestamp":1784498442.3980632,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_C-page-8-1784498442","job_id":"Doc_C-page-8","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_C-page-9", "timestamp": 1784498442.3991308, "payload": {"acquisition_latency_ms": 0.34308433532714844}}
+{"event_id":"f6afa2aa-6eb3-4861-a0bc-a23144ab347b","timestamp":1784498442.399486,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_C-page-9-1784498442","job_id":"Doc_C-page-9","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_C-page-9", "timestamp": 1784498442.400206, "payload": {"decision_latency_ms": 0.34308433532714844}}
+{"event_id":"173e70a9-f1a3-4590-b268-d398d0009438","timestamp":1784498442.400537,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_C-page-9-1784498442","job_id":"Doc_C-page-9","payload":{"provider":"gemini"}}
+{"event_id":"7568740f-1feb-4f1b-a97a-85e19f957550","timestamp":1784498442.401205,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_C-page-9-1784498442","job_id":"Doc_C-page-9","payload":{}}
+{"event_id":"d1d7af41-2bcf-42ae-967b-d0fd2f430ff1","timestamp":1784498442.4362628,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-8-1784498442","job_id":"Doc_A-page-8","payload":{}}
+{"event_id":"7bd45b87-8ca8-4859-8a8c-c2a18494654a","timestamp":1784498442.437796,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-8-1784498442","job_id":"Doc_A-page-8","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-1b5ef75f-a1b6-4a61-a808-b11028b012ea.bin","inference_time_ms":131,"total_time_ms":134}}
+{"event_id":"ca117a16-f294-483f-8b24-686eefcc0e5a","timestamp":1784498442.438872,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-8-1784498442","job_id":"Doc_A-page-8","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-10", "timestamp": 1784498442.4399629, "payload": {"acquisition_latency_ms": 0.33283233642578125}}
+{"event_id":"dd7952fe-6e7e-4603-823e-dd1af61e54f9","timestamp":1784498442.440285,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-10-1784498442","job_id":"Doc_A-page-10","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-10", "timestamp": 1784498442.4409149, "payload": {"decision_latency_ms": 0.30803680419921875}}
+{"event_id":"8dd9a47f-e933-4f98-8b4e-fa491cf4e349","timestamp":1784498442.441192,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-10-1784498442","job_id":"Doc_A-page-10","payload":{"provider":"gemini"}}
+{"event_id":"36b314d7-fe9b-4272-9932-0f3e3ff5864d","timestamp":1784498442.441808,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-10-1784498442","job_id":"Doc_A-page-10","payload":{}}
+{"event_id":"283f8de0-b6a6-47f5-b67f-fa4b3ff19369","timestamp":1784498442.496008,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-9-1784498442","job_id":"Doc_A-page-9","payload":{}}
+{"event_id":"ab580c70-cb7b-4acc-b73d-66652f83863c","timestamp":1784498442.497695,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-9-1784498442","job_id":"Doc_A-page-9","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-d61129d4-32be-4542-97e3-b4e783e15ed6.bin","inference_time_ms":126,"total_time_ms":129}}
+{"event_id":"d026118b-c95e-4f8a-b0ea-82c69303b200","timestamp":1784498442.498642,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-9-1784498442","job_id":"Doc_A-page-9","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-11", "timestamp": 1784498442.4995751, "payload": {"acquisition_latency_ms": 0.26702880859375}}
+{"event_id":"1c40fdf4-6613-4d85-96e3-999ae8a7d5a5","timestamp":1784498442.499833,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-11-1784498442","job_id":"Doc_A-page-11","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-11", "timestamp": 1784498442.5003881, "payload": {"decision_latency_ms": 0.2830028533935547}}
+{"event_id":"a6c1bdaf-aa59-46cf-8421-aa59acb8f91d","timestamp":1784498442.500653,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-11-1784498442","job_id":"Doc_A-page-11","payload":{"provider":"gemini"}}
+{"event_id":"b7f24e78-324b-4293-8f67-3c58f86c410a","timestamp":1784498442.501209,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-11-1784498442","job_id":"Doc_A-page-11","payload":{}}
+{"event_id":"e1ef677a-2489-4bf2-b1f5-ddf47dd8f2fc","timestamp":1784498442.512141,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_C-page-9-1784498442","job_id":"Doc_C-page-9","payload":{}}
+{"event_id":"3290dccc-dc96-4ac1-a284-74996897c7e2","timestamp":1784498442.513312,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_C-page-9-1784498442","job_id":"Doc_C-page-9","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-b8f4b1d4-ffdf-4ef2-b6be-97114a09b395.bin","inference_time_ms":110,"total_time_ms":113}}
+{"event_id":"522f908b-f8d7-419f-afa9-fa9e08df9bea","timestamp":1784498442.514246,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_C-page-9-1784498442","job_id":"Doc_C-page-9","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-12", "timestamp": 1784498442.515136, "payload": {"acquisition_latency_ms": 0.2529621124267578}}
+{"event_id":"846a69af-62b3-48ff-bb41-05a2ea83f46b","timestamp":1784498442.515394,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-12-1784498442","job_id":"Doc_A-page-12","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-12", "timestamp": 1784498442.5159712, "payload": {"decision_latency_ms": 0.2841949462890625}}
+{"event_id":"8fd5e97f-fbd6-455c-b10f-8e469ded657e","timestamp":1784498442.516274,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-12-1784498442","job_id":"Doc_A-page-12","payload":{"provider":"gemini"}}
+{"event_id":"c2efa55e-e6ba-465a-be90-930328620a39","timestamp":1784498442.5169039,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-12-1784498442","job_id":"Doc_A-page-12","payload":{}}
+{"event_id":"bb0a1177-9288-4277-a92d-24f3472a3423","timestamp":1784498442.5269818,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-10-1784498442","job_id":"Doc_A-page-10","payload":{}}
+{"event_id":"0b58ed56-9bcb-4a3e-96d3-e1d433a0e066","timestamp":1784498442.528264,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-10-1784498442","job_id":"Doc_A-page-10","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-9ac5ffcf-ffb0-415e-965c-a36f3ceb62a2.bin","inference_time_ms":84,"total_time_ms":87}}
+{"event_id":"3ece2627-97e6-444c-9323-ad74c2ab08dd","timestamp":1784498442.529205,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-10-1784498442","job_id":"Doc_A-page-10","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-13", "timestamp": 1784498442.5302248, "payload": {"acquisition_latency_ms": 0.33092498779296875}}
+{"event_id":"50c79f47-960b-4274-8227-de21e19eea16","timestamp":1784498442.5304708,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-13-1784498442","job_id":"Doc_A-page-13","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-13", "timestamp": 1784498442.530993, "payload": {"decision_latency_ms": 0.2651214599609375}}
+{"event_id":"c39aba65-d521-4900-ac8a-057b88bc7eac","timestamp":1784498442.531248,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-13-1784498442","job_id":"Doc_A-page-13","payload":{"provider":"gemini"}}
+{"event_id":"c4f2499b-f4cd-4de6-b3f0-b5f0d3dd0949","timestamp":1784498442.531832,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-13-1784498442","job_id":"Doc_A-page-13","payload":{}}
+{"event_id":"a49b9f04-791a-4583-bee7-47362b76b535","timestamp":1784498442.59841,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-11-1784498442","job_id":"Doc_A-page-11","payload":{}}
+{"event_id":"83f266d7-8757-4c6c-8b14-2fb3bce79513","timestamp":1784498442.601981,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-11-1784498442","job_id":"Doc_A-page-11","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-1294ab6e-53d0-4692-9776-b527a4ffff64.bin","inference_time_ms":96,"total_time_ms":101}}
+{"event_id":"6f519004-a4ec-46a4-96e4-f9aae420905b","timestamp":1784498442.6030421,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-11-1784498442","job_id":"Doc_A-page-11","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-14", "timestamp": 1784498442.6041012, "payload": {"acquisition_latency_ms": 0.34499168395996094}}
+{"event_id":"1b4f5fc1-d248-45ce-8e46-5f20b497c712","timestamp":1784498442.6044302,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-14-1784498442","job_id":"Doc_A-page-14","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-14", "timestamp": 1784498442.605161, "payload": {"decision_latency_ms": 0.3540515899658203}}
+{"event_id":"e9895f2d-b88b-4c3f-ac0f-abab74f2fa93","timestamp":1784498442.6055171,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-14-1784498442","job_id":"Doc_A-page-14","payload":{"provider":"gemini"}}
+{"event_id":"35674d0d-7cd9-4400-a7a5-530e62f04b6d","timestamp":1784498442.606255,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-14-1784498442","job_id":"Doc_A-page-14","payload":{}}
+{"event_id":"f3bccfb3-e006-436a-865a-1d49c7762033","timestamp":1784498442.63236,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-13-1784498442","job_id":"Doc_A-page-13","payload":{}}
+{"event_id":"c7fb0533-6cbc-4d32-bbf3-b2dba72222f1","timestamp":1784498442.63373,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-13-1784498442","job_id":"Doc_A-page-13","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-d42d8d08-68cb-4fca-be4f-a886309fa73e.bin","inference_time_ms":100,"total_time_ms":102}}
+{"event_id":"b7de4b54-1f6f-427f-97af-ccdb608b541a","timestamp":1784498442.634856,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-13-1784498442","job_id":"Doc_A-page-13","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-15", "timestamp": 1784498442.635932, "payload": {"acquisition_latency_ms": 0.3159046173095703}}
+{"event_id":"3af9a270-6416-457d-9dcc-4aa013d4ccd3","timestamp":1784498442.6362538,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-15-1784498442","job_id":"Doc_A-page-15","payload":{}}
+{"event_id":"7d5a53ed-b55f-4341-9c15-02c35b3521c1","timestamp":1784498442.6374762,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-12-1784498442","job_id":"Doc_A-page-12","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-15", "timestamp": 1784498442.637592, "payload": {"decision_latency_ms": 0.9672641754150391}}
+{"event_id":"2007526b-dab6-43a8-a3c6-1d5a9adca114","timestamp":1784498442.638039,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-15-1784498442","job_id":"Doc_A-page-15","payload":{"provider":"gemini"}}
+{"event_id":"546af5b2-92ce-4935-9c42-8be67c63752d","timestamp":1784498442.638884,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-15-1784498442","job_id":"Doc_A-page-15","payload":{}}
+{"event_id":"7d1cf75e-0a3d-41a8-88e9-7704f0e5dded","timestamp":1784498442.639007,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-12-1784498442","job_id":"Doc_A-page-12","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-1e2d7c62-1d7f-444e-addf-d25413e9f0ce.bin","inference_time_ms":120,"total_time_ms":123}}
+{"event_id":"8794d393-a508-4d59-8fb2-2e8bfd8fd934","timestamp":1784498442.640042,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-12-1784498442","job_id":"Doc_A-page-12","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-16", "timestamp": 1784498442.641066, "payload": {"acquisition_latency_ms": 0.3020763397216797}}
+{"event_id":"b455b09f-6ced-4db0-8e11-c34790f7b741","timestamp":1784498442.641355,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-16-1784498442","job_id":"Doc_A-page-16","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-16", "timestamp": 1784498442.6425579, "payload": {"decision_latency_ms": 0.90789794921875}}
+{"event_id":"c92bd9d1-b883-4387-9676-d7793b634d19","timestamp":1784498442.6428668,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-16-1784498442","job_id":"Doc_A-page-16","payload":{"provider":"gemini"}}
+{"event_id":"ec3ce616-3905-4627-8cf2-599c8afec0c0","timestamp":1784498442.6435032,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-16-1784498442","job_id":"Doc_A-page-16","payload":{}}
+{"event_id":"c684447f-3e52-4f8c-b6ea-b35adbf9119d","timestamp":1784498442.704879,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-14-1784498442","job_id":"Doc_A-page-14","payload":{}}
+{"event_id":"106603af-1eb8-4c11-8caf-d98c02268e0a","timestamp":1784498442.706464,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-14-1784498442","job_id":"Doc_A-page-14","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-50b099f3-5ff6-49d1-8a9d-2331c8fb84e6.bin","inference_time_ms":98,"total_time_ms":101}}
+{"event_id":"4edd4a1f-0fa9-4dd9-8f3f-28829080a22b","timestamp":1784498442.707602,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-14-1784498442","job_id":"Doc_A-page-14","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-17", "timestamp": 1784498442.70876, "payload": {"acquisition_latency_ms": 0.3371238708496094}}
+{"event_id":"835306a1-eff1-486c-971a-9a98a6440401","timestamp":1784498442.70912,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-17-1784498442","job_id":"Doc_A-page-17","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-17", "timestamp": 1784498442.710436, "payload": {"decision_latency_ms": 0.9410381317138672}}
+{"event_id":"edbecdfe-0f4f-4445-adb8-625fdc4c8ae9","timestamp":1784498442.7107751,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-17-1784498442","job_id":"Doc_A-page-17","payload":{"provider":"gemini"}}
+{"event_id":"2a03408a-576c-497d-9adf-ce4ee534aef7","timestamp":1784498442.711487,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-17-1784498442","job_id":"Doc_A-page-17","payload":{}}
+{"event_id":"5fb49ee1-296c-42d1-972c-c67157846464","timestamp":1784498442.735754,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-16-1784498442","job_id":"Doc_A-page-16","payload":{}}
+{"event_id":"cd7ff3c7-cd9b-474d-ab6c-1fcdb610a7f7","timestamp":1784498442.7371562,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-16-1784498442","job_id":"Doc_A-page-16","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-38420ed9-621c-443e-b9dd-7f78d09cd250.bin","inference_time_ms":91,"total_time_ms":95}}
+{"event_id":"bad25ff5-f5f9-4862-a5c3-067929507b4b","timestamp":1784498442.738353,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-16-1784498442","job_id":"Doc_A-page-16","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-18", "timestamp": 1784498442.73948, "payload": {"acquisition_latency_ms": 0.3261566162109375}}
+{"event_id":"04bf0d66-b049-415a-9440-821ba3f11c07","timestamp":1784498442.739813,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-18-1784498442","job_id":"Doc_A-page-18","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-18", "timestamp": 1784498442.740445, "payload": {"decision_latency_ms": 0.3018379211425781}}
+{"event_id":"77e6a58e-3144-4b44-aa0f-519e04388862","timestamp":1784498442.740732,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-18-1784498442","job_id":"Doc_A-page-18","payload":{"provider":"gemini"}}
+{"event_id":"7ed3410d-b27d-4bd3-adfc-0982d70774c3","timestamp":1784498442.741417,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-18-1784498442","job_id":"Doc_A-page-18","payload":{}}
+{"event_id":"d43c1cd7-d3bf-40a1-b06f-bdb5f8254e00","timestamp":1784498442.746485,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-15-1784498442","job_id":"Doc_A-page-15","payload":{}}
+{"event_id":"a14ea4b7-4a25-4d38-9165-548ce946a52a","timestamp":1784498442.747709,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-15-1784498442","job_id":"Doc_A-page-15","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-2b1a9e4a-1683-45ad-9da2-d03ed924661d.bin","inference_time_ms":107,"total_time_ms":111}}
+{"event_id":"dcbdda2a-eef5-49dd-9bb6-efcedd44f452","timestamp":1784498442.748692,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-15-1784498442","job_id":"Doc_A-page-15","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-19", "timestamp": 1784498442.749613, "payload": {"acquisition_latency_ms": 0.2770423889160156}}
+{"event_id":"c3e415fa-4c8b-4e46-a322-075da7df0859","timestamp":1784498442.749894,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-19-1784498442","job_id":"Doc_A-page-19","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-19", "timestamp": 1784498442.7505238, "payload": {"decision_latency_ms": 0.2999305725097656}}
+{"event_id":"2aa9efad-3641-470c-8401-896a2208b977","timestamp":1784498442.7508008,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-19-1784498442","job_id":"Doc_A-page-19","payload":{"provider":"gemini"}}
+{"event_id":"0086ca28-d7ea-481a-b004-214c8cbc7bba","timestamp":1784498442.7513611,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-19-1784498442","job_id":"Doc_A-page-19","payload":{}}
+{"event_id":"645c4cbd-6f96-4382-a5fd-296a3444a656","timestamp":1784498442.8094459,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-17-1784498442","job_id":"Doc_A-page-17","payload":{}}
+{"event_id":"449bc488-e851-4d57-baf2-920e6f7e02d0","timestamp":1784498442.811015,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-17-1784498442","job_id":"Doc_A-page-17","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-4ea6bb49-cbca-493f-a69d-26b08f1a8e6f.bin","inference_time_ms":97,"total_time_ms":101}}
+{"event_id":"30cc1e95-56c1-4e37-9e61-62792942d208","timestamp":1784498442.812118,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-17-1784498442","job_id":"Doc_A-page-17","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-20", "timestamp": 1784498442.813299, "payload": {"acquisition_latency_ms": 0.36025047302246094}}
+{"event_id":"5503ae68-dfe1-4d54-998c-35e92dbaa7ba","timestamp":1784498442.813648,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-20-1784498442","job_id":"Doc_A-page-20","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-20", "timestamp": 1784498442.814442, "payload": {"decision_latency_ms": 0.392913818359375}}
+{"event_id":"61d14e2d-f8af-4a03-9500-3a05312cae2f","timestamp":1784498442.814799,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-20-1784498442","job_id":"Doc_A-page-20","payload":{"provider":"gemini"}}
+{"event_id":"a0c85f8b-a2b0-469a-b3a6-9d7266c407fc","timestamp":1784498442.815491,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-20-1784498442","job_id":"Doc_A-page-20","payload":{}}
+{"event_id":"8f0157d1-5e53-4df9-a08b-11c97b406795","timestamp":1784498442.877364,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-19-1784498442","job_id":"Doc_A-page-19","payload":{}}
+{"event_id":"f5a30094-a917-4f24-a4a9-889e87113d43","timestamp":1784498442.877515,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-18-1784498442","job_id":"Doc_A-page-18","payload":{}}
+{"event_id":"03477d3a-24d9-4bb7-b895-3a5e3ebaa519","timestamp":1784498442.879445,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-19-1784498442","job_id":"Doc_A-page-19","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-6d41f03d-ba8a-45d0-aef1-d732881e47ac.bin","inference_time_ms":125,"total_time_ms":129}}
+{"event_id":"2ff591de-53ae-41d3-af91-2039c7c30f61","timestamp":1784498442.879575,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-18-1784498442","job_id":"Doc_A-page-18","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-a3b01def-0729-4f3e-b27b-33340e778aa2.bin","inference_time_ms":135,"total_time_ms":139}}
+{"event_id":"de0bc732-f80b-46a3-ab04-190b0ad4312a","timestamp":1784498442.881096,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-19-1784498442","job_id":"Doc_A-page-19","payload":{}}
+{"event_id":"4d1d16b5-f33e-46fb-9e42-50db857cb4fb","timestamp":1784498442.8812149,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-18-1784498442","job_id":"Doc_A-page-18","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-21", "timestamp": 1784498442.882773, "payload": {"acquisition_latency_ms": 0.5321502685546875}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-22", "timestamp": 1784498442.8829162, "payload": {"acquisition_latency_ms": 0.5638599395751953}}
+{"event_id":"740f2127-a1c8-4c5d-bee9-d5b95d4fa012","timestamp":1784498442.8833501,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-21-1784498442","job_id":"Doc_A-page-21","payload":{}}
+{"event_id":"6431df43-3698-461c-b127-011acc781e75","timestamp":1784498442.8834481,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-22-1784498442","job_id":"Doc_A-page-22","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-21", "timestamp": 1784498442.8842041, "payload": {"decision_latency_ms": 0.37598609924316406}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-22", "timestamp": 1784498442.884355, "payload": {"decision_latency_ms": 0.4200935363769531}}
+{"event_id":"e43b9c7f-4d9a-4092-82a0-d2efe61c2304","timestamp":1784498442.884734,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-21-1784498442","job_id":"Doc_A-page-21","payload":{"provider":"gemini"}}
+{"event_id":"27097cae-5f9e-4082-bbe2-b930dba91ded","timestamp":1784498442.884833,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-22-1784498442","job_id":"Doc_A-page-22","payload":{"provider":"gemini"}}
+{"event_id":"79ca1661-e60d-4a0d-bb5e-8b2b4bcf7ec9","timestamp":1784498442.885746,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-21-1784498442","job_id":"Doc_A-page-21","payload":{}}
+{"event_id":"b37d6298-ad61-446c-8d4f-45c46dd7de55","timestamp":1784498442.8858519,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-22-1784498442","job_id":"Doc_A-page-22","payload":{}}
+{"event_id":"52061e69-1be4-4552-a47b-4e2311374392","timestamp":1784498442.893002,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-20-1784498442","job_id":"Doc_A-page-20","payload":{}}
+{"event_id":"db6a944c-0e98-4b44-878e-f4521c699bc7","timestamp":1784498442.894238,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-20-1784498442","job_id":"Doc_A-page-20","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-a0608423-db62-496a-9e3f-c4612883ed61.bin","inference_time_ms":77,"total_time_ms":80}}
+{"event_id":"2bcb0bd6-f2ca-4e55-9e9e-b692d492adea","timestamp":1784498442.895288,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-20-1784498442","job_id":"Doc_A-page-20","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-23", "timestamp": 1784498442.896367, "payload": {"acquisition_latency_ms": 0.3142356872558594}}
+{"event_id":"18e7d004-fba9-4e05-b2a0-7e8e62a38a81","timestamp":1784498442.896678,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-23-1784498442","job_id":"Doc_A-page-23","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-23", "timestamp": 1784498442.8972921, "payload": {"decision_latency_ms": 0.3070831298828125}}
+{"event_id":"7065b24f-4780-46d8-87fa-364b6571aceb","timestamp":1784498442.897585,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-23-1784498442","job_id":"Doc_A-page-23","payload":{"provider":"gemini"}}
+{"event_id":"dd6736b3-7416-4a91-8b4e-7131fd15c81f","timestamp":1784498442.8982332,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-23-1784498442","job_id":"Doc_A-page-23","payload":{}}
+{"event_id":"e5edb0fb-4805-4eff-b56e-749395b97c49","timestamp":1784498442.970104,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-22-1784498442","job_id":"Doc_A-page-22","payload":{}}
+{"event_id":"a8f4d03d-5937-4ef7-9db0-a3b774ddb365","timestamp":1784498442.971797,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-22-1784498442","job_id":"Doc_A-page-22","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-563b14fb-500b-48c6-926a-07ea1b536dea.bin","inference_time_ms":83,"total_time_ms":87}}
+{"event_id":"dff560c5-a457-4147-bc1b-a476b31df96e","timestamp":1784498442.973127,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-22-1784498442","job_id":"Doc_A-page-22","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-24", "timestamp": 1784498442.974494, "payload": {"acquisition_latency_ms": 0.4229545593261719}}
+{"event_id":"f966ec77-2b9c-4a07-9369-37f35c02e4cc","timestamp":1784498442.97491,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-24-1784498442","job_id":"Doc_A-page-24","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-24", "timestamp": 1784498442.975719, "payload": {"decision_latency_ms": 0.37789344787597656}}
+{"event_id":"9a2b8f10-37e0-48be-a0ed-0b339b5d6b3e","timestamp":1784498442.9761012,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-24-1784498442","job_id":"Doc_A-page-24","payload":{"provider":"gemini"}}
+{"event_id":"52f5da65-20a1-4a54-a2db-7338cb542f9e","timestamp":1784498442.9769611,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-24-1784498442","job_id":"Doc_A-page-24","payload":{}}
+{"event_id":"e0bbd3ce-6eac-499c-8d3a-193d29df6aac","timestamp":1784498443.023581,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-21-1784498442","job_id":"Doc_A-page-21","payload":{}}
+{"event_id":"944c77b2-a865-4f35-bed5-1a4473b947eb","timestamp":1784498443.0251808,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-21-1784498442","job_id":"Doc_A-page-21","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-0ec23e1c-a728-4f1a-b6f1-0faf5d0e2dc9.bin","inference_time_ms":137,"total_time_ms":141}}
+{"event_id":"cfef5efc-04d3-49f9-8caa-fe4187d3e7fe","timestamp":1784498443.026416,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-21-1784498442","job_id":"Doc_A-page-21","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-25", "timestamp": 1784498443.027831, "payload": {"acquisition_latency_ms": 0.41031837463378906}}
+{"event_id":"5fcfbaf1-c47f-4ebe-b01f-b9f0cf1c970f","timestamp":1784498443.028237,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-25-1784498443","job_id":"Doc_A-page-25","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-25", "timestamp": 1784498443.0290601, "payload": {"decision_latency_ms": 0.3771781921386719}}
+{"event_id":"4ab22660-40d1-4013-bedd-58d8128e3a0a","timestamp":1784498443.029435,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-25-1784498443","job_id":"Doc_A-page-25","payload":{"provider":"gemini"}}
+{"event_id":"6f082a9f-e903-4e80-8748-1e4a5ac79239","timestamp":1784498443.030354,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-25-1784498443","job_id":"Doc_A-page-25","payload":{}}
+{"event_id":"6559c88d-63a3-42f7-8218-cdfb756ad0ab","timestamp":1784498443.034367,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-23-1784498442","job_id":"Doc_A-page-23","payload":{}}
+{"event_id":"2743bf3e-74f9-4902-a9fb-29268cdfd7f0","timestamp":1784498443.0357308,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-23-1784498442","job_id":"Doc_A-page-23","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-1915ff3d-cba0-44d3-98f5-ca7baf944be5.bin","inference_time_ms":135,"total_time_ms":138}}
+{"event_id":"a9b50eaf-82db-4a21-852a-25d210d99ee0","timestamp":1784498443.036756,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-23-1784498442","job_id":"Doc_A-page-23","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-26", "timestamp": 1784498443.037767, "payload": {"acquisition_latency_ms": 0.30612945556640625}}
+{"event_id":"a598342d-3e71-4375-ba92-d1933b57df75","timestamp":1784498443.0380821,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-26-1784498443","job_id":"Doc_A-page-26","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-26", "timestamp": 1784498443.03874, "payload": {"decision_latency_ms": 0.34308433532714844}}
+{"event_id":"37ab4d4b-5c80-4293-8a9c-4df7d14ecdbe","timestamp":1784498443.039047,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-26-1784498443","job_id":"Doc_A-page-26","payload":{"provider":"gemini"}}
+{"event_id":"47e17a1f-3d30-4106-983f-fff512585f89","timestamp":1784498443.039694,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-26-1784498443","job_id":"Doc_A-page-26","payload":{}}
+{"event_id":"3fa2aa77-9af3-4ca3-b9d7-eca9bb04fb51","timestamp":1784498443.059409,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-24-1784498442","job_id":"Doc_A-page-24","payload":{}}
+{"event_id":"056fe54a-a16e-4fdd-97b9-5b470d35e955","timestamp":1784498443.0610921,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-24-1784498442","job_id":"Doc_A-page-24","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-e838f236-de6e-4d4f-9452-294580370d2e.bin","inference_time_ms":82,"total_time_ms":85}}
+{"event_id":"9ef24d33-f4b3-43de-a14c-8ac3ab8c3eab","timestamp":1784498443.062101,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-24-1784498442","job_id":"Doc_A-page-24","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-27", "timestamp": 1784498443.063085, "payload": {"acquisition_latency_ms": 0.2932548522949219}}
+{"event_id":"23189817-e5f6-4e39-8acd-8f0308961530","timestamp":1784498443.063383,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-27-1784498443","job_id":"Doc_A-page-27","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-27", "timestamp": 1784498443.0640042, "payload": {"decision_latency_ms": 0.2932548522949219}}
+{"event_id":"ec781f5e-a918-48f8-9619-0fe32504f7dd","timestamp":1784498443.064288,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-27-1784498443","job_id":"Doc_A-page-27","payload":{"provider":"gemini"}}
+{"event_id":"93c37b7f-2152-4991-9011-228228ba8d4e","timestamp":1784498443.06493,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-27-1784498443","job_id":"Doc_A-page-27","payload":{}}
+{"event_id":"b5b1782c-9383-4efb-bc33-7e1546529449","timestamp":1784498443.108296,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-25-1784498443","job_id":"Doc_A-page-25","payload":{}}
+{"event_id":"1e23a197-efc2-468e-915d-84a2077c4d9c","timestamp":1784498443.109813,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-25-1784498443","job_id":"Doc_A-page-25","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-818b2d82-50e4-4d98-bfa5-b1f2f8f80d3d.bin","inference_time_ms":77,"total_time_ms":81}}
+{"event_id":"7041917c-79a6-4076-9997-b59e8e2834ae","timestamp":1784498443.110982,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-25-1784498443","job_id":"Doc_A-page-25","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-28", "timestamp": 1784498443.1121652, "payload": {"acquisition_latency_ms": 0.35500526428222656}}
+{"event_id":"b7e3e99b-008f-4584-90bf-a96db5dfcb1c","timestamp":1784498443.1124952,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-28-1784498443","job_id":"Doc_A-page-28","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-28", "timestamp": 1784498443.113164, "payload": {"decision_latency_ms": 0.32520294189453125}}
+{"event_id":"26d605d0-8355-4921-8c45-d0a33d893979","timestamp":1784498443.113499,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-28-1784498443","job_id":"Doc_A-page-28","payload":{"provider":"gemini"}}
+{"event_id":"0fe20865-2abb-4f22-8e92-651d6a696e25","timestamp":1784498443.114186,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-28-1784498443","job_id":"Doc_A-page-28","payload":{}}
+{"event_id":"4ea38d45-12b3-4ca2-80f2-4c068b8ccc2e","timestamp":1784498443.1459131,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-26-1784498443","job_id":"Doc_A-page-26","payload":{}}
+{"event_id":"131a19d5-c02d-4d3f-b8e3-51eb626bfee2","timestamp":1784498443.1474292,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-26-1784498443","job_id":"Doc_A-page-26","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-8e3b569b-0d96-4fbc-bfda-29573439e18f.bin","inference_time_ms":105,"total_time_ms":109}}
+{"event_id":"1b14bb21-c24a-4cda-9847-d076334c8fb9","timestamp":1784498443.1485598,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-26-1784498443","job_id":"Doc_A-page-26","payload":{}}
+{"type": "LEASE_METRIC", "job_id": "Doc_A-page-29", "timestamp": 1784498443.149662, "payload": {"acquisition_latency_ms": 0.3178119659423828}}
+{"event_id":"8f4e6d3e-1eb2-4eac-abc5-6390c7b006d3","timestamp":1784498443.1499798,"type":"LEASE_ACQUIRED","trace_id":"sim-trace-Doc_A-page-29-1784498443","job_id":"Doc_A-page-29","payload":{}}
+{"type": "BROKER_METRIC", "job_id": "Doc_A-page-29", "timestamp": 1784498443.150651, "payload": {"decision_latency_ms": 0.3380775451660156}}
+{"event_id":"7a4ae525-a437-4201-a217-c1a7a406f07f","timestamp":1784498443.150972,"type":"PROVIDER_SELECTED","trace_id":"sim-trace-Doc_A-page-29-1784498443","job_id":"Doc_A-page-29","payload":{"provider":"gemini"}}
+{"event_id":"4c3c93f6-8054-424c-86c4-09524d518280","timestamp":1784498443.151652,"type":"PROMPT_SENT","trace_id":"sim-trace-Doc_A-page-29-1784498443","job_id":"Doc_A-page-29","payload":{}}
+{"event_id":"463e2673-d0b9-47ba-94f2-79cacfbdda05","timestamp":1784498443.1566038,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-27-1784498443","job_id":"Doc_A-page-27","payload":{}}
+{"event_id":"b2e42520-652c-46da-ac85-1518876c3a80","timestamp":1784498443.15778,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-27-1784498443","job_id":"Doc_A-page-27","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-0c475123-ff8e-4b3a-83d5-4f58f54e5121.bin","inference_time_ms":91,"total_time_ms":94}}
+{"event_id":"1919c3a3-953b-4f06-bd35-eddf6a37cbf6","timestamp":1784498443.158766,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-27-1784498443","job_id":"Doc_A-page-27","payload":{}}
+{"event_id":"659b3a8d-4cc8-4cf5-ab49-0e996c1f8619","timestamp":1784498443.192862,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-28-1784498443","job_id":"Doc_A-page-28","payload":{}}
+{"event_id":"3f91df2a-91b5-4228-b726-949edc150050","timestamp":1784498443.194127,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-28-1784498443","job_id":"Doc_A-page-28","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-ba44a2d4-5a29-407c-9962-d346b8cedc62.bin","inference_time_ms":78,"total_time_ms":81}}
+{"event_id":"29d511ae-1686-41fb-b334-169fadc291d6","timestamp":1784498443.1950169,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-28-1784498443","job_id":"Doc_A-page-28","payload":{}}
+{"event_id":"bcb6c51d-065d-4c9d-9b0c-8a6b7d7f94d0","timestamp":1784498443.22491,"type":"JSON_VALIDATED","trace_id":"sim-trace-Doc_A-page-29-1784498443","job_id":"Doc_A-page-29","payload":{}}
+{"event_id":"51a56541-2e14-4b80-ba07-10e6d8781d4d","timestamp":1784498443.226658,"type":"ARTIFACT_WRITTEN","trace_id":"sim-trace-Doc_A-page-29-1784498443","job_id":"Doc_A-page-29","payload":{"uri":"file:///tmp/scaleflow/artifacts/art-6c267a99-57a9-4671-9ccb-8a4883a63d6b.bin","inference_time_ms":72,"total_time_ms":76}}
+{"event_id":"72dbe9c3-6daf-46f7-b623-7f47a05b5967","timestamp":1784498443.2284648,"type":"LEASE_RELEASED","trace_id":"sim-trace-Doc_A-page-29-1784498443","job_id":"Doc_A-page-29","payload":{}}

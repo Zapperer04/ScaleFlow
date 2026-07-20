@@ -1,0 +1,6 @@
+name: worker-crash
+events:
+  - at: 5s
+    kill: worker-2
+  - at: 20s
+    restore: worker-2

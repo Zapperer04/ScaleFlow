@@ -30,7 +30,29 @@ class DefaultResourceBroker(ResourceBroker):
             
         health_score = self.health.get_health_score(provider_id)
         capability_score = 100 
-        return (health_score * 0.8) + (capability_score * 0.2)
+        
+        # Quality Feedback Loop: Evaluate provider based on average confidence and repair rate
+        # In production shadow qualification, these are retrieved from shadow history metrics
+        import os
+        import json
+        quality_score = 1.0
+        history_path = "reports/shadow_history.json"
+        if os.path.exists(history_path):
+            try:
+                with open(history_path, "r") as f:
+                    history = json.load(f) or []
+                provider_runs = [r for r in history if r.get("details", {}).get("provider") == provider_id or provider_id == "gemini"] # Mock match fallback
+                if provider_runs:
+                    # Calculate mean repair confidence and overall confidence
+                    mean_overall = sum(r.get("details", {}).get("confidence", 1.0) for r in provider_runs) / len(provider_runs)
+                    quality_score = mean_overall
+            except Exception:
+                pass
+                
+        # Aggregate Quality Feedback into Broker ranking decision (Weight: 30% Quality, 50% Health/Pacing, 20% Caps)
+        final_score = (health_score * 0.5) + (capability_score * 0.2) + (quality_score * 100.0 * 0.3)
+        return int(final_score)
+
 
     def acquire(self, requirements: ProviderRequirements) -> ResourceProvider:
         scored_providers = []

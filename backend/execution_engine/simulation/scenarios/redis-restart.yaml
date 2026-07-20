@@ -1,0 +1,4 @@
+name: redis-restart
+events:
+  - at: 5s
+    restart: redis

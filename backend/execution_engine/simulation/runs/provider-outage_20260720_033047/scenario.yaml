@@ -1,0 +1,6 @@
+events:
+- at: 5s
+  gemini:
+    429_probability: 1.0
+    timeout_probability: 1.0
+name: provider-outage

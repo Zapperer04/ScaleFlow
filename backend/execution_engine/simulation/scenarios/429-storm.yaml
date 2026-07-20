@@ -1,0 +1,7 @@
+name: 429-storm
+events:
+  - at: 5s
+    gemini:
+      429_probability: 0.95
+    openrouter:
+      429_probability: 0.95
