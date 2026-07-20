@@ -1,0 +1,14 @@
+{
+    "added_nodes": [
+        "node3"
+    ],
+    "removed_nodes": [],
+    "changed_attributes": [
+        "Node 'node1' attribute 'structural_type' mismatched: Legacy='heading', Engine='paragraph'",
+        "Node 'node1' attribute 'semantic_category' mismatched: Legacy='header', Engine='body_text'"
+    ],
+    "edge_changes": {
+        "added_edges": [],
+        "removed_edges": []
+    }
+}

@@ -1,0 +1,16 @@
+{
+    "added_nodes": [
+        "node4",
+        "node6",
+        "node3",
+        "node5"
+    ],
+    "removed_nodes": [],
+    "changed_attributes": [
+        "Node 'node2' attribute 'structural_type' mismatched: Legacy='paragraph', Engine='list_item'"
+    ],
+    "edge_changes": {
+        "added_edges": [],
+        "removed_edges": []
+    }
+}

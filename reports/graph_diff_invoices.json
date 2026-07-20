@@ -1,0 +1,11 @@
+{
+    "added_nodes": [
+        "node3"
+    ],
+    "removed_nodes": [],
+    "changed_attributes": [],
+    "edge_changes": {
+        "added_edges": [],
+        "removed_edges": []
+    }
+}

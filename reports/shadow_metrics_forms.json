@@ -1,0 +1,59 @@
+{
+    "document": "category_A_simple.pdf",
+    "category": "forms",
+    "structural_match": 86.66666666666667,
+    "text_match": 3.125,
+    "semantic_match": 0.0,
+    "legacy_time_sec": 0.017586946487426758,
+    "engine_time_sec": 8.892683029174805,
+    "legacy_node_count": 2,
+    "engine_node_count": 3,
+    "delta": -1,
+    "passed": false,
+    "details": {
+        "structural": {
+            "legacy_node_count": 2,
+            "engine_node_count": 3,
+            "legacy_edge_count": 1,
+            "engine_edge_count": 1,
+            "orphans_detected": 2,
+            "cycles_detected": 0,
+            "differences": [
+                "Node count mismatch: Legacy=2, Engine=3."
+            ]
+        },
+        "textual": {
+            "legacy_char_count": 220,
+            "engine_char_count": 229,
+            "table_similarity": 100.0,
+            "differences": []
+        },
+        "semantic": {
+            "legacy_entity_count": 5,
+            "engine_entity_count": 0,
+            "matching_entities": 0,
+            "differences": [
+                "Missing key entities in Engine: ['invoicedate', 'paymentmethod', 'invoicenumber']"
+            ]
+        },
+        "graph_diff": {
+            "added_nodes": [
+                "node3"
+            ],
+            "removed_nodes": [],
+            "changed_attributes": [],
+            "edge_changes": {
+                "added_edges": [],
+                "removed_edges": []
+            }
+        },
+        "confidence_factors": {
+            "structural_confidence": 0.9,
+            "table_confidence": 1.0,
+            "entity_confidence": 0.5,
+            "repair_confidence": 1.0,
+            "overall_confidence": 0.67
+        },
+        "confidence": 0.67
+    }
+}

@@ -1,0 +1,55 @@
+{
+    "document": "category_B_academic.pdf",
+    "category": "research_papers",
+    "structural_match": 100.0,
+    "text_match": 93.75,
+    "semantic_match": 66.66666666666666,
+    "legacy_time_sec": 0.009670257568359375,
+    "engine_time_sec": 0.0,
+    "legacy_node_count": 2,
+    "engine_node_count": 2,
+    "delta": 0,
+    "passed": true,
+    "details": {
+        "structural": {
+            "legacy_node_count": 2,
+            "engine_node_count": 2,
+            "legacy_edge_count": 1,
+            "engine_edge_count": 1,
+            "orphans_detected": 1,
+            "cycles_detected": 0,
+            "differences": []
+        },
+        "textual": {
+            "legacy_char_count": 220,
+            "engine_char_count": 220,
+            "table_similarity": 100.0,
+            "differences": []
+        },
+        "semantic": {
+            "legacy_entity_count": 5,
+            "engine_entity_count": 5,
+            "matching_entities": 4,
+            "differences": [
+                "Missing key entities in Engine: ['08\\nsubtotal']"
+            ]
+        },
+        "graph_diff": {
+            "added_nodes": [],
+            "removed_nodes": [],
+            "changed_attributes": [],
+            "edge_changes": {
+                "added_edges": [],
+                "removed_edges": []
+            }
+        },
+        "confidence_factors": {
+            "structural_confidence": 0.95,
+            "table_confidence": 1.0,
+            "entity_confidence": 0.6666666666666665,
+            "repair_confidence": 1.0,
+            "overall_confidence": 0.885
+        },
+        "confidence": 0.885
+    }
+}

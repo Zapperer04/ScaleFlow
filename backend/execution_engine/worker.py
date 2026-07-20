@@ -70,9 +70,23 @@ class ExecutionWorker:
                 # Mock Prompt Payload
                 prompt = {"action": "parse", "schema": job.requirements.schema_version}
                 
+                from execution_engine.core.provider_session import ProviderSession
+                session = ProviderSession(
+                    provider_id=provider_id,
+                    trace_id=trace_id
+                )
+                job.metadata['session_metrics'] = session.metrics
+                
+                import inspect
                 inference_start = time.time()
-                raw_ast = provider.parse(job.payload, prompt_payload=prompt)
+                sig = inspect.signature(provider.parse)
+                if "session" in sig.parameters:
+                    raw_ast = provider.parse(job.payload, prompt_payload=prompt, session=session)
+                else:
+                    raw_ast = provider.parse(job.payload, prompt_payload=prompt)
                 inference_time = time.time() - inference_start
+                session.record_duration("inference_time_ms", inference_time)
+                session.finalize()
                 
                 raw_json_str = json.dumps(raw_ast)
                 

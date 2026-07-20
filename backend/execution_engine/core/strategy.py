@@ -48,8 +48,11 @@ class ExecutionEngineStrategy(ParserStrategy):
             # Let's fetch the artifact ref or directly read the last stored file from self.worker.registry.base_dir
             import os
             import json
-            base_dir = getattr(self.worker.registry, "base_dir", "/tmp/scaleflow/artifacts")
+            base_dir = getattr(self.worker.registry, "base_dir", "backend/execution_engine/shadow/artifacts")
+            if not os.path.exists(base_dir):
+                base_dir = "/tmp/scaleflow/artifacts"
             if os.path.exists(base_dir):
+
                 files = [os.path.join(base_dir, f) for f in os.listdir(base_dir) if f.endswith(".bin")]
                 if files:
                     latest_file = max(files, key=os.path.getmtime)

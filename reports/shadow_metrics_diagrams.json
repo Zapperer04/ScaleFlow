@@ -1,0 +1,66 @@
+{
+    "document": "photographed_notes.pdf",
+    "category": "diagrams",
+    "structural_match": 73.33333333333334,
+    "text_match": 0.0,
+    "semantic_match": 0.0,
+    "legacy_time_sec": 0.02112102508544922,
+    "engine_time_sec": 11.807140827178955,
+    "legacy_node_count": 2,
+    "engine_node_count": 6,
+    "delta": -4,
+    "passed": false,
+    "details": {
+        "structural": {
+            "legacy_node_count": 2,
+            "engine_node_count": 6,
+            "legacy_edge_count": 1,
+            "engine_edge_count": 1,
+            "orphans_detected": 5,
+            "cycles_detected": 0,
+            "differences": [
+                "Node count mismatch: Legacy=2, Engine=6."
+            ]
+        },
+        "textual": {
+            "legacy_char_count": 220,
+            "engine_char_count": 407,
+            "table_similarity": 100.0,
+            "differences": [
+                "Text length delta: Legacy=220 chars, Engine=407 chars."
+            ]
+        },
+        "semantic": {
+            "legacy_entity_count": 5,
+            "engine_entity_count": 1,
+            "matching_entities": 0,
+            "differences": [
+                "Missing key entities in Engine: ['invoicedate', 'paymentmethod', 'invoicenumber']"
+            ]
+        },
+        "graph_diff": {
+            "added_nodes": [
+                "node4",
+                "node6",
+                "node3",
+                "node5"
+            ],
+            "removed_nodes": [],
+            "changed_attributes": [
+                "Node 'node2' attribute 'structural_type' mismatched: Legacy='paragraph', Engine='list_item'"
+            ],
+            "edge_changes": {
+                "added_edges": [],
+                "removed_edges": []
+            }
+        },
+        "confidence_factors": {
+            "structural_confidence": 0.75,
+            "table_confidence": 1.0,
+            "entity_confidence": 0.5,
+            "repair_confidence": 0.95,
+            "overall_confidence": 0.615
+        },
+        "confidence": 0.615
+    }
+}

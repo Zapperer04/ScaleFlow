@@ -1450,7 +1450,8 @@ def _execute_adaptive_transcription(
         overall_timings["uploads_saved"] = upload_reuse_count
         overall_timings["recommended_batch_size"] = recommended_batch
         overall_timings["actual_batch_size"] = actual_batch
-        overall_timings["429_classification"] = rate_mgr.get_last_429_classification()
+        overall_timings["429_classification"] = rate_mgr.get_last_429_classification() if hasattr(rate_mgr, "get_last_429_classification") else "normal"
+
 
         _store_graph(file_path, pages_to_transcribe, all_graph_pages, parser=parser_used, timings=overall_timings)
         _t(f"[ADAPTIVE] Full graph artifact persisted for {len(all_graph_pages)} pages with parser {parser_used}")

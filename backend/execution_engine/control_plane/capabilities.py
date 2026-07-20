@@ -1,6 +1,6 @@
 import os
 import yaml
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from execution_engine.control_plane.interfaces import CapabilityRegistry
 
 class YamlCapabilityRegistry(CapabilityRegistry):
@@ -8,7 +8,9 @@ class YamlCapabilityRegistry(CapabilityRegistry):
     CapabilityRegistry that loads provider capabilities dynamically
     from YAML manifest files, decoupling provider configurations from scheduler logic.
     """
-    def __init__(self, manifests_dir: str = "execution_engine/core/manifests"):
+    def __init__(self, manifests_dir: Optional[str] = None):
+        if not manifests_dir:
+            manifests_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "manifests")
         self.manifests_dir = manifests_dir
         self.capabilities: Dict[str, Dict[str, Any]] = {}
         self.load_manifests()

@@ -45,8 +45,13 @@ class ProviderStatusService:
                 
         # Cache miss or expired: Fetch from Redis
         avail_key = f"provider:{provider_id}:available"
-        val_bytes = self.redis.get(avail_key)
-        is_avail = val_bytes is None or val_bytes.decode('utf-8') == "1"
+        val = self.redis.get(avail_key)
+        if val is None:
+            is_avail = True
+        else:
+            if isinstance(val, bytes):
+                val = val.decode('utf-8')
+            is_avail = (val == "1")
         
         # Write back to local memory cache
         self._cache[provider_id] = (is_avail, now)

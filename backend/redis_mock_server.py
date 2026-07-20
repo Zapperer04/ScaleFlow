@@ -333,7 +333,14 @@ class RedisMockServer:
                 conn.sendall(b"+OK\r\n")
 
 if __name__ == "__main__":
-    server = RedisMockServer()
+    import sys
+    port = 6379
+    if len(sys.argv) > 1:
+        try:
+            port = int(sys.argv[1])
+        except ValueError:
+            pass
+    server = RedisMockServer(port=port)
     if server.start():
         try:
             # Keep main thread alive
