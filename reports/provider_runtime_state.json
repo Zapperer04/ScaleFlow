@@ -1,0 +1,61 @@
+{
+  "gemini": {
+    "observed_rpm": 1.0,
+    "observed_rpm_cap": 15,
+    "cooldown": 0.0,
+    "429_rate": 0.5,
+    "health": 0.99,
+    "cooldown_remaining_sec": 0.0,
+    "cooldown_count": 0,
+    "attempt_outcomes": [
+      false,
+      true
+    ],
+    "retry_delays": [
+      42.0
+    ],
+    "last_success": "2026-07-21T19:32:42Z",
+    "last_failure": "N/A",
+    "avg_latency_ms": 100.0,
+    "avg_queue_wait_ms": 10.0,
+    "breaker_open_count": 0,
+    "breaker_half_open_success": 0,
+    "broker_selected": 1,
+    "broker_rejected": 1,
+    "selection_rate": 50.0,
+    "latencies": [
+      100.0
+    ],
+    "queue_waits": [
+      10.0
+    ]
+  },
+  "mock-provider": {
+    "observed_rpm": 1.0,
+    "observed_rpm_cap": 10,
+    "cooldown": 0.0,
+    "429_rate": 0.0,
+    "health": 1.0,
+    "cooldown_remaining_sec": 0.0,
+    "cooldown_count": 0,
+    "attempt_outcomes": [
+      true
+    ],
+    "retry_delays": [],
+    "last_success": "2026-07-21T19:32:42Z",
+    "last_failure": "N/A",
+    "avg_latency_ms": 0.4,
+    "avg_queue_wait_ms": 0.9,
+    "breaker_open_count": 0,
+    "breaker_half_open_success": 0,
+    "broker_selected": 0,
+    "broker_rejected": 0,
+    "selection_rate": 0.0,
+    "latencies": [
+      0.4417896270751953
+    ],
+    "queue_waits": [
+      0.9105205535888672
+    ]
+  }
+}

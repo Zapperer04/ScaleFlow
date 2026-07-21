@@ -58,8 +58,9 @@ def test_gemini_client_retry_exhausted(mock_request):
     mock_resp_500.status_code = 500
     mock_request.return_value = mock_resp_500
     
+    from execution_engine.data_plane.adapters.gemini_client import TransportError
     client = GeminiClient(api_key="fake-key", model="gemini-2.5-flash")
-    with pytest.raises(requests.RequestException):
+    with pytest.raises(TransportError):
         client.generate_content("hello")
         
     assert mock_request.call_count == 3
@@ -79,6 +80,7 @@ def test_openrouter_client_retry_success(mock_request):
     
     mock_request.side_effect = [mock_resp_504, mock_resp_200]
     
+    from execution_engine.data_plane.adapters.gemini_client import TransportError
     client = OpenRouterClient(api_key="fake-key", model="gemma")
     parsed, in_tok, out_tok = client.generate_content("hello")
     

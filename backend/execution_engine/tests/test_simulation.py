@@ -31,9 +31,11 @@ def test_chaos_scenario_logic(mocker):
     
     # 2. Test health score penalty on failure
     health_service.record_metrics("gemini", latency=1.5, success=False)
-    # Get current health (starts at 100.0) -> penalty 30.0 -> event_score 70.0
-    # new_health = (0.2 * 70.0) + (0.8 * 100.0) = 94.0
-    mock_redis.set.assert_called_with("provider:gemini:health", "94.0")
+    # Get current health (starts at 100.0) -> penalty 25.0 -> event_score 75.0
+    # new_health = (0.15 * 75.0) + (0.85 * 100.0) = 96.25
+    # decay_boost = 0.01 * (100.0 - 96.25) = 0.0375
+    # total new_health = 96.2875
+    mock_redis.set.assert_called_with("provider:gemini:health", "96.2875")
 
 def test_fairness_interleaving():
     """

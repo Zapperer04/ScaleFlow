@@ -1,0 +1,68 @@
+{
+  "openrouter": {
+    "provider_id": "openrouter",
+    "health_score": 86.84,
+    "health_detail": {
+      "provider_id": "openrouter",
+      "health_score": 86.84,
+      "avg_latency_sec": 9.853,
+      "timeout_rate": 0.0,
+      "rate_429": 0.1667,
+      "retry_success_rate": 1.0,
+      "recovery_count": 0,
+      "request_count": 6
+    },
+    "rate_state": {
+      "provider_id": "openrouter",
+      "observed_rpm": 1.0,
+      "observed_rpm_cap": 20,
+      "observed_tpm": 195.0,
+      "moving_429_rate": 0.2,
+      "average_retry_delay_sec": 60.0,
+      "burst_capacity": 6,
+      "in_cooldown": false,
+      "cooldown_remaining_sec": 0.0,
+      "cooldown_count": 0,
+      "inter_request_gap_sec": 4.5
+    },
+    "circuit_breaker": {
+      "state": "CLOSED",
+      "open_count": 0,
+      "recovery_count": 0
+    },
+    "generated_at": "2026-07-21T19:00:22Z"
+  },
+  "gemini": {
+    "provider_id": "gemini",
+    "health_score": 98.8,
+    "health_detail": {
+      "provider_id": "gemini",
+      "health_score": 98.8,
+      "avg_latency_sec": 19.045,
+      "timeout_rate": 0.0,
+      "rate_429": 0.0,
+      "retry_success_rate": 1.0,
+      "recovery_count": 0,
+      "request_count": 15
+    },
+    "rate_state": {
+      "provider_id": "gemini",
+      "observed_rpm": 3.0,
+      "observed_rpm_cap": 15,
+      "observed_tpm": 1269.0,
+      "moving_429_rate": 0.0,
+      "average_retry_delay_sec": 0.0,
+      "burst_capacity": 5,
+      "in_cooldown": false,
+      "cooldown_remaining_sec": 0.0,
+      "cooldown_count": 0,
+      "inter_request_gap_sec": 4.0
+    },
+    "circuit_breaker": {
+      "state": "CLOSED",
+      "open_count": 0,
+      "recovery_count": 0
+    },
+    "generated_at": "2026-07-21T19:00:22Z"
+  }
+}

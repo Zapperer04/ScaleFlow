@@ -1,0 +1,19 @@
+{
+  "git_sha": "55439f30f96fd1fcf17156b851c3300abeffa943",
+  "python_version": "3.10.11",
+  "dependencies": {
+    "pydantic": "2.13.4",
+    "pytest": "9.1.1",
+    "redis": "7.1.0",
+    "numpy": "1.26.4",
+    "flask": "3.1.2"
+  },
+  "prompt_hash": "e84d4e02561348110136dd60d6bd42fdde22112231c76eb527740cd4710229c9",
+  "schema_version": "3d8e6d0fc069e41670ec7691114030de492b784ba344f7078ab390439695f714",
+  "normalizer_version": "aee6042fd040840082bc61d9e93ed15692ae1604df00bde538a6091f1347a866",
+  "validator_version": "3d8e6d0fc069e41670ec7691114030de492b784ba344f7078ab390439695f714",
+  "capability_manifest_version": "5f4c2c9b3fe9b2989f68f89fb09c7162ecbb0c4725c53bcdabe9b11e618a2cc5",
+  "broker_version": "ff01acaeeed1da01870a9a30a00a808a738d1638e394fbdff05b5c68d2f0c904",
+  "replay_version": "a99be218effdb949ef2a6e38d798a4561e2e69df1755fbe656a0b931261a6b38",
+  "qualification_policy_version": "a99be218effdb949ef2a6e38d798a4561e2e69df1755fbe656a0b931261a6b38"
+}

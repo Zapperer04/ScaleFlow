@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-07-21T19:00:22Z",
+  "cooldowns": {
+    "gemini": {
+      "provider_id": "gemini",
+      "in_cooldown": true,
+      "cooldown_remaining_sec": 32.87,
+      "cooldown_until_iso": "2026-07-21T19:00:55Z",
+      "event_count": 2
+    },
+    "openrouter": {
+      "provider_id": "openrouter",
+      "in_cooldown": true,
+      "cooldown_remaining_sec": 27.08,
+      "cooldown_until_iso": "2026-07-21T19:00:49Z",
+      "event_count": 2
+    }
+  },
+  "recent_cooldown_events": [
+    {
+      "provider": "openrouter",
+      "cooldown_sec": 66.0,
+      "retry_after_hint": 60.0,
+      "cooldown_until": "2026-07-21T19:00:49Z",
+      "timestamp": 1784660383.357826
+    },
+    {
+      "provider": "gemini",
+      "cooldown_sec": 33.0,
+      "retry_after_hint": 30.0,
+      "cooldown_until": "2026-07-21T19:00:55Z",
+      "timestamp": 1784660422.150354
+    }
+  ]
+}

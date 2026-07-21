@@ -1,0 +1,29 @@
+{
+  "generated_at": "2026-07-21T19:00:22Z",
+  "circuit_breakers": {
+    "gemini": {
+      "provider_id": "gemini",
+      "state": "CLOSED",
+      "consecutive_failures": 1,
+      "failure_threshold": 5,
+      "open_count": 0,
+      "recovery_count": 0,
+      "time_until_open_sec": 0.0,
+      "adaptive_reset_timeout_sec": 60.0,
+      "last_failure_reason": "HTTP_429",
+      "recent_transitions": []
+    },
+    "openrouter": {
+      "provider_id": "openrouter",
+      "state": "CLOSED",
+      "consecutive_failures": 1,
+      "failure_threshold": 5,
+      "open_count": 0,
+      "recovery_count": 0,
+      "time_until_open_sec": 0.0,
+      "adaptive_reset_timeout_sec": 72.0,
+      "last_failure_reason": "HTTP_429",
+      "recent_transitions": []
+    }
+  }
+}

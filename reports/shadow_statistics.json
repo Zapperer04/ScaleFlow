@@ -1,0 +1,19 @@
+{
+  "generated_at": "2026-07-21T19:00:22Z",
+  "statistics": {
+    "total_provider_calls": 60,
+    "successful_calls": 19,
+    "total_retries": 0,
+    "total_429s": 0,
+    "total_timeouts": 0,
+    "total_cooldown_events": 0,
+    "cb_open_events": 0,
+    "cb_recovery_events": 0,
+    "documents": 12,
+    "pages": 12,
+    "avg_provider_latency_sec": 6.8838833333333325,
+    "avg_broker_latency_ms": 0.0,
+    "avg_cost": 0.010152791666666668,
+    "avg_tokens": 2467.016666666667
+  }
+}
