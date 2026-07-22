@@ -1,44 +1,5904 @@
 {
   "questions": [
     {
-      "question": "What is the summary of row values in Table 1?",
+      "question": "Retrieve key theme and narrative summary in Chapter 1",
       "document_id": "doc123",
-      "expected_chunk_ids": ["chunk-0"],
-      "expected_graph_nodes": ["node-p1"],
-      "expected_entities": ["Google"],
-      "expected_tables": ["tbl-1"],
-      "difficulty": "medium",
-      "category": "Technical Manuals"
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
     },
     {
-      "question": "Who is the primary founder of Google Corp?",
+      "question": "Retrieve key theme and narrative summary in Chapter 2",
       "document_id": "doc123",
-      "expected_chunk_ids": ["chunk-0"],
-      "expected_graph_nodes": ["node-h1"],
-      "expected_entities": ["Google"],
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 3",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 4",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 5",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 6",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 7",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 8",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 9",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 10",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 11",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 12",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 13",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 14",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 15",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 16",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 17",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 18",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 19",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 20",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 21",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 22",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 23",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 24",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 25",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 26",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 27",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 28",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 29",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 30",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 31",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 32",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 33",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 34",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 35",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 36",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 37",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 38",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 39",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 40",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 41",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 42",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 43",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 44",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 45",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 46",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 47",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 48",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 49",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Books"
+    },
+    {
+      "question": "Retrieve key theme and narrative summary in Chapter 50",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Books"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 1?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 2?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 3?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 4?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 5?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 6?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 7?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 8?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 9?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 10?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 11?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 12?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 13?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 14?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 15?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 16?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 17?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 18?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 19?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 20?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 21?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 22?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 23?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 24?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 25?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 26?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 27?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 28?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 29?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 30?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 31?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 32?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 33?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 34?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 35?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 36?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 37?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 38?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 39?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 40?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 41?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 42?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 43?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 44?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 45?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 46?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 47?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 48?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 49?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Research Papers"
+    },
+    {
+      "question": "What is the correlation value or statistical finding for experiment 50?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Research Papers"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 1",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
       "expected_tables": [],
       "difficulty": "easy",
       "category": "Contracts"
     },
     {
-      "question": "What is the content of the bottom right paragraph?",
+      "question": "Identify the clause, liabilities, and obligations for entity 2",
       "document_id": "doc123",
-      "expected_chunk_ids": ["chunk-0"],
-      "expected_graph_nodes": ["node-p1"],
-      "expected_entities": [],
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 3",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 4",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 5",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 6",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 7",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 8",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 9",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 10",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 11",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 12",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 13",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 14",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 15",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 16",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 17",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 18",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 19",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 20",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 21",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 22",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 23",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 24",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 25",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 26",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 27",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 28",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 29",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 30",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 31",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 32",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 33",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 34",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 35",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 36",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 37",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 38",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 39",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 40",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 41",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 42",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 43",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 44",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 45",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 46",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 47",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 48",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 49",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Contracts"
+    },
+    {
+      "question": "Identify the clause, liabilities, and obligations for entity 50",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Contracts"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 1",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 2",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 3",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 4",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 5",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 6",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 7",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 8",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 9",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 10",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 11",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 12",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 13",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 14",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 15",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 16",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 17",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 18",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 19",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 20",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 21",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 22",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 23",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 24",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 25",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 26",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 27",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 28",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 29",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 30",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 31",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 32",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 33",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 34",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 35",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 36",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 37",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 38",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 39",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 40",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 41",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 42",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 43",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 44",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 45",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 46",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 47",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 48",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 49",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Invoices"
+    },
+    {
+      "question": "Review total amount, dates, and line item statistics for invoice 50",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Invoices"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 1",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 2",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 3",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 4",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 5",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 6",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 7",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 8",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 9",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 10",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 11",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 12",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 13",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 14",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 15",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 16",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 17",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 18",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 19",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 20",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 21",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 22",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 23",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 24",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 25",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 26",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 27",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 28",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 29",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 30",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 31",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 32",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 33",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 34",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 35",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 36",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 37",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 38",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 39",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 40",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 41",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 42",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 43",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 44",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 45",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 46",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 47",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 48",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 49",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Forms"
+    },
+    {
+      "question": "Extract form field values and layout mapping for box 50",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Forms"
+    },
+    {
+      "question": "What is the system configuration or table caption description 1?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 2?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 3?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 4?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 5?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 6?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 7?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 8?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 9?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 10?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 11?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 12?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 13?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 14?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 15?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "easy",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 16?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 17?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 18?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 19?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 20?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 21?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 22?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 23?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 24?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 25?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 26?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 27?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 28?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 29?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 30?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 31?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 32?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 33?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 34?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 35?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 36?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 37?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 38?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 39?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 40?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 41?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 42?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 43?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 44?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 45?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 46?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 47?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 48?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 49?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "What is the system configuration or table caption description 50?",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [
+        "tbl-1"
+      ],
+      "difficulty": "hard",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 1",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 2",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 3",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 4",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 5",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 6",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 7",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 8",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 9",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 10",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 11",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 12",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 13",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 14",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 15",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 16",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 17",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 18",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 19",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 20",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 21",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 22",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 23",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 24",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 25",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 26",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 27",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 28",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 29",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 30",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 31",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 32",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 33",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 34",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 35",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 36",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 37",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 38",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 39",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 40",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "medium",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 41",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
       "expected_tables": [],
       "difficulty": "hard",
       "category": "Mixed Documents"
     },
     {
-      "question": "Review the statistics in Table 1",
+      "question": "Locate section header and structural references in mixed page 42",
       "document_id": "doc123",
-      "expected_chunk_ids": ["chunk-0"],
-      "expected_graph_nodes": ["node-p1"],
-      "expected_entities": [],
-      "expected_tables": ["tbl-1"],
-      "difficulty": "medium",
-      "category": "Invoices"
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 43",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 44",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 45",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 46",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 47",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 48",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 49",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-h1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Locate section header and structural references in mixed page 50",
+      "document_id": "doc123",
+      "expected_chunk_ids": [
+        "chunk-0"
+      ],
+      "expected_graph_nodes": [
+        "node-p1"
+      ],
+      "expected_entities": [
+        "Google"
+      ],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Mixed Documents"
     }
   ]
 }

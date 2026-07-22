@@ -10,9 +10,59 @@
     "ndcg_5": 1.0,
     "graph_coverage": 1.0,
     "entity_coverage": 1.0,
-    "table_coverage": 0.5,
+    "table_coverage": 0.5714285714285714,
     "context_recall": 1.0,
     "context_precision": 1.0
   },
-  "summary": "Hybrid Multi-Representation Retrieval Performance Analysis"
+  "comparative_summary": {
+    "Vector-Only": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "latency": 0.000347663334437779,
+      "tokens": 16.0
+    },
+    "Graph-Only": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "latency": 0.0003359835488455636,
+      "tokens": 16.0
+    },
+    "Entity-Only": {
+      "recall": 0.0,
+      "precision": 0.0,
+      "mrr": 0.0,
+      "ndcg": 0.0,
+      "latency": 0.00012038639613560268,
+      "tokens": 0.0
+    },
+    "Table-Only": {
+      "recall": 0.14285714285714285,
+      "precision": 0.14285714285714285,
+      "mrr": 0.14285714285714285,
+      "ndcg": 0.14285714285714285,
+      "latency": 0.00013040270124162946,
+      "tokens": 2.2857142857142856
+    },
+    "Layout-Only": {
+      "recall": 0.0,
+      "precision": 0.0,
+      "mrr": 0.0,
+      "ndcg": 0.0,
+      "latency": 0.00011494227818080357,
+      "tokens": 0.0
+    },
+    "Hybrid": {
+      "recall": 1.0,
+      "precision": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "latency": 0.000807767595563616,
+      "tokens": 16.0
+    }
+  },
+  "total_queries": 350
 }

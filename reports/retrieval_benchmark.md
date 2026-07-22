@@ -12,29 +12,17 @@
 - **ndcg_5**: 1.0000
 - **graph_coverage**: 1.0000
 - **entity_coverage**: 1.0000
-- **table_coverage**: 0.5000
+- **table_coverage**: 0.5714
 - **context_recall**: 1.0000
 - **context_precision**: 1.0000
 
-## E2E Query Evaluation
+## Comparative Expert configurations
 
-### Query: What is the summary of row values in Table 1?
-- **Category**: Technical Manuals
-- **Latency**: 0.0012s
-- **Token Usage**: 16 words
-
-### Query: Who is the primary founder of Google Corp?
-- **Category**: Contracts
-- **Latency**: 0.0009s
-- **Token Usage**: 16 words
-
-### Query: What is the content of the bottom right paragraph?
-- **Category**: Mixed Documents
-- **Latency**: 0.0009s
-- **Token Usage**: 16 words
-
-### Query: Review the statistics in Table 1
-- **Category**: Invoices
-- **Latency**: 0.0009s
-- **Token Usage**: 16 words
-
+| Config | Recall@5 | Precision@5 | MRR | NDCG@5 | Latency (s) |
+| --- | --- | --- | --- | --- | --- |
+| Vector-Only | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 0.0003 |
+| Graph-Only | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 0.0003 |
+| Entity-Only | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0001 |
+| Table-Only | 0.1429 | 0.1429 | 0.1429 | 0.1429 | 0.0001 |
+| Layout-Only | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0001 |
+| Hybrid | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 0.0008 |
