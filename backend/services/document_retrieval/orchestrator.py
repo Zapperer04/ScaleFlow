@@ -50,7 +50,7 @@ class RetrievalOrchestrator:
         if session_id:
             mem = self.session_memory.get_memory(session_id)
             # Add past memory targets directly as seeds in evidence pool
-            for chunk_id in mem.get("chunk_ids", []):
+            for chunk_id in mem.chunk_ids:
                 memory_evidence.append(Evidence(
                     id=chunk_id,
                     source="memory",
@@ -146,12 +146,25 @@ class RetrievalOrchestrator:
             retrieved_entities = []
             for c in final_context:
                 retrieved_entities.extend(c.entities)
+            retrieved_sections = []
+            for c in final_context:
+                retrieved_sections.extend(c.section_path or [])
+            retrieved_tables = []
+            for c in final_context:
+                tbl = c.metadata.get("table")
+                if tbl and tbl.get("id"):
+                    retrieved_tables.append(tbl["id"])
+
             self.session_memory.add_turn(
                 session_id=session_id,
                 chunk_ids=retrieved_chunk_ids,
                 node_ids=retrieved_node_ids,
                 entity_ids=retrieved_entities,
-                answer=""
+                answer="",
+                document_id=doc_id,
+                sections=retrieved_sections,
+                tables=retrieved_tables,
+                query=query
             )
 
         # 8. Calibration & Metrics Logging

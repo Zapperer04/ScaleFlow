@@ -96,7 +96,7 @@ def test_retrieval_orchestrator_session_memory_and_multihop():
     
     # Verify memory is updated
     mem = orchestrator.session_memory.get_memory(session_id)
-    assert "chunk-0" in mem["chunk_ids"]
+    assert "chunk-0" in mem.chunk_ids
     
     # 2. Retrieve second turn utilizing memory context and triggering multi-hop (force high multi_hop probability)
     # Mock analyzer to return high multi_hop_probability
