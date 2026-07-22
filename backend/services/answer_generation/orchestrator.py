@@ -13,6 +13,8 @@ from services.answer_generation.verifier import AnswerVerifier
 from services.answer_generation.confidence import ConfidenceEngine
 from services.answer_generation.answer_postprocessor import AnswerPostprocessor
 from services.answer_generation.generation_metrics import GenerationMetricsCollector
+from services.answer_generation.answer_planner import AnswerPlanner
+from services.answer_generation.context_validator import ContextValidator
 
 class AnswerOrchestrator:
     def __init__(self):
@@ -24,6 +26,8 @@ class AnswerOrchestrator:
         self.confidence_engine = ConfidenceEngine()
         self.postprocessor = AnswerPostprocessor()
         self.metrics_collector = GenerationMetricsCollector()
+        self.planner = AnswerPlanner()
+        self.context_validator = ContextValidator()
 
     def generate_answer(
         self,
@@ -35,8 +39,15 @@ class AnswerOrchestrator:
     ) -> AnswerResult:
         start_time = time.time()
         
-        # 1. Build prompt
-        prompt = self.prompt_builder.build_prompt(query, qu, candidates)
+        # 1. Validate Context Candidates
+        validated_candidates = self.context_validator.validate_context(candidates)
+
+        # 2. Answer Planning
+        plan = self.planner.create_plan(query, qu, validated_candidates)
+
+        # 3. Build prompt incorporating plan
+        prompt = self.prompt_builder.build_prompt(query, qu, validated_candidates)
+        prompt += f"\n\nFollow this Execution Plan step-by-step:\n" + "\n".join(plan.plan_steps)
 
         draft_answer = ""
         prompt_tokens = 0
