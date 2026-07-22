@@ -1,0 +1,21 @@
+[
+  {
+    "chunk_id": "chunk-0",
+    "text": "This is standard introduction text mentioning Google Corp and Table 1 statistics.",
+    "graph_node_ids": [
+      "node-h1",
+      "node-p1"
+    ],
+    "entities": [
+      "Google"
+    ],
+    "page_range": [
+      1
+    ],
+    "best_for": [
+      "semantic",
+      "definition"
+    ],
+    "importance_score": 1.2
+  }
+]

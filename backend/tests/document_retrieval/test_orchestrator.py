@@ -82,3 +82,32 @@ def test_retrieval_orchestrator_e2e():
     assert "fusion" in response["latencies"]
     assert "experts" in response["latencies"]
     assert "total" in response["latencies"]
+
+def test_retrieval_orchestrator_session_memory_and_multihop():
+    store = MockStore()
+    orchestrator = RetrievalOrchestrator(store=store)
+    
+    # Enable session id
+    session_id = "test-session-123"
+    
+    # 1. Retrieve first turn
+    res1 = orchestrator.retrieve("Find Google metrics", doc_id="doc123", session_id=session_id)
+    assert len(res1["final_context"]) > 0
+    
+    # Verify memory is updated
+    mem = orchestrator.session_memory.get_memory(session_id)
+    assert "chunk-0" in mem["chunk_ids"]
+    
+    # 2. Retrieve second turn utilizing memory context and triggering multi-hop (force high multi_hop probability)
+    # Mock analyzer to return high multi_hop_probability
+    original_analyze = orchestrator.query_analyzer.analyze
+    def mock_analyze(q):
+        qu = original_analyze(q)
+        qu.multi_hop_probability = 0.8
+        return qu
+    orchestrator.query_analyzer.analyze = mock_analyze
+    
+    res2 = orchestrator.retrieve("Explain the correlation comparison", doc_id="doc123", session_id=session_id)
+    assert len(res2["final_context"]) > 0
+    # Hop 2 latency keys should be present in expert latencies
+    assert any("hop2" in k for k in res2["latencies"]["experts"])

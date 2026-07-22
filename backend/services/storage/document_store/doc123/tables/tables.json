@@ -1,0 +1,11 @@
+[
+  {
+    "id": "tbl-1",
+    "caption": "Table 1",
+    "headers": [
+      "A",
+      "B"
+    ],
+    "graph_node_id": "node-p1"
+  }
+]

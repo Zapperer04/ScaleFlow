@@ -78,6 +78,16 @@ class AnswerOrchestrator:
             # If valid, break and return
             if verification.is_valid:
                 break
+            elif attempt < max_retries:
+                # Append reflection warning as LLM feedback for next retry
+                feedback = (
+                    f"\n\n[Verification Attempt {attempt+1} Failed]\n"
+                    f"Your draft answer has verification errors:\n"
+                    f"Unsupported Claims: {verification.unsupported_claims}\n"
+                    f"Contradictions: {verification.contradictions}\n"
+                    f"Please rewrite the answer to resolve all listed issues cleanly."
+                )
+                prompt += feedback
 
         # 3. Postprocess answer text
         final_text = self.postprocessor.postprocess(draft_answer)

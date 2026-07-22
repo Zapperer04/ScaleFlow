@@ -1,0 +1,17 @@
+{
+  "entities": [
+    {
+      "id": "ent-1",
+      "name": "Google",
+      "type": "Organization",
+      "normalized_value": "Google",
+      "aliases": [
+        "Google Corp"
+      ],
+      "graph_node_ids": [
+        "node-p1"
+      ]
+    }
+  ],
+  "edges": []
+}

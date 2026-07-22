@@ -1,0 +1,12 @@
+[
+  {
+    "id": "node-h1",
+    "type": "Heading",
+    "text": "Introduction"
+  },
+  {
+    "id": "node-p1",
+    "type": "Paragraph",
+    "text": "This relates to Table 1"
+  }
+]

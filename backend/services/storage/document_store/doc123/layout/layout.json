@@ -1,0 +1,14 @@
+{
+  "visual_blocks": {
+    "node-p1": {
+      "page": 1,
+      "type": "paragraph",
+      "bbox": {
+        "ymin": 0.8,
+        "xmin": 0.8,
+        "ymax": 0.9,
+        "xmax": 0.9
+      }
+    }
+  }
+}

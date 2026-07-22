@@ -18,6 +18,7 @@ from services.document_retrieval.experts.graph_expert import GraphExpert
 from services.document_retrieval.experts.entity_expert import EntityExpert
 from services.document_retrieval.experts.table_expert import TableExpert
 from services.document_retrieval.experts.layout_expert import LayoutExpert
+from services.document_retrieval.retrieval_memory import RetrievalSessionMemory
 
 class RetrievalOrchestrator:
     def __init__(self, store: DocumentStore = None):
@@ -30,6 +31,7 @@ class RetrievalOrchestrator:
         self.context_optimizer = ContextOptimizer()
         self.confidence_calibrator = ConfidenceCalibrator()
         self.metrics_collector = RetrievalMetricsCollector()
+        self.session_memory = RetrievalSessionMemory()
 
         # Initialize parallel experts
         self.experts = [
@@ -40,9 +42,27 @@ class RetrievalOrchestrator:
             LayoutExpert()
         ]
 
-    def retrieve(self, query: str, doc_id: str, top_k: int = 5, token_limit: int = 4000) -> Dict[str, Any]:
+    def retrieve(self, query: str, doc_id: str, top_k: int = 5, token_limit: int = 4000, session_id: str = None) -> Dict[str, Any]:
         start_time = time.time()
         
+        # Load memory context if session_id is provided
+        memory_evidence = []
+        if session_id:
+            mem = self.session_memory.get_memory(session_id)
+            # Add past memory targets directly as seeds in evidence pool
+            for chunk_id in mem.get("chunk_ids", []):
+                memory_evidence.append(Evidence(
+                    id=chunk_id,
+                    source="memory",
+                    evidence_type="chunk",
+                    score=0.8,
+                    confidence=0.8,
+                    metadata={
+                        "chunk_id": chunk_id,
+                        "reason": "Retrieved from conversation session memory context"
+                    }
+                ))
+
         # 1. Query Understanding
         qu = self.query_analyzer.analyze(query)
 
@@ -65,6 +85,32 @@ class RetrievalOrchestrator:
                 name, results, latency = future.result()
                 evidence_pool.extend(results)
                 expert_latencies[name] = latency
+
+        # E2E Multi-Hop second pass check
+        if qu.multi_hop_probability > 0.5:
+            # Extract additional entity/structural context seeds from 1st pass to expand search
+            second_hop_keywords = []
+            for ev in evidence_pool:
+                reason = ev.metadata.get("reason")
+                if reason:
+                    second_hop_keywords.append(reason.split()[-1])
+            
+            # Enrich copy of query understanding
+            qu.keywords = list(set(qu.keywords + second_hop_keywords[:5]))
+            
+            # Re-execute parallel experts for 2nd hop
+            second_pool = []
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future_to_expert = {executor.submit(run_expert, exp): exp for exp in self.experts}
+                for future in concurrent.futures.as_completed(future_to_expert):
+                    name, results, latency = future.result()
+                    second_pool.extend(results)
+                    expert_latencies[f"{name}_hop2"] = latency
+            evidence_pool.extend(second_pool)
+
+        # Merge memory evidence context if any
+        if memory_evidence:
+            evidence_pool.extend(memory_evidence)
 
         # 3. Evidence Expansion
         exp_start = time.time()
@@ -90,6 +136,23 @@ class RetrievalOrchestrator:
         opt_start = time.time()
         final_context = self.context_optimizer.optimize_context(reranked, token_limit=token_limit)
         optimizer_latency = time.time() - opt_start
+
+        # Save session memory turn if session_id is provided
+        if session_id:
+            retrieved_chunk_ids = [c.chunk_id for c in final_context]
+            retrieved_node_ids = []
+            for c in final_context:
+                retrieved_node_ids.extend(c.graph_node_ids)
+            retrieved_entities = []
+            for c in final_context:
+                retrieved_entities.extend(c.entities)
+            self.session_memory.add_turn(
+                session_id=session_id,
+                chunk_ids=retrieved_chunk_ids,
+                node_ids=retrieved_node_ids,
+                entity_ids=retrieved_entities,
+                answer=""
+            )
 
         # 8. Calibration & Metrics Logging
         total_latency = time.time() - start_time
