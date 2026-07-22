@@ -4,9 +4,9 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_retrieval.candidate import Candidate
-from services.document_retrieval.query_understanding import QueryUnderstanding
-from services.document_retrieval.fusion import FusionEngine
+from engine.document_retrieval.candidate import Candidate
+from engine.document_retrieval.query_understanding import QueryUnderstanding
+from engine.document_retrieval.fusion import FusionEngine
 
 def test_fusion_and_agreement_boost():
     engine = FusionEngine()

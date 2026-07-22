@@ -4,9 +4,9 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_retrieval.candidate import Candidate
-from services.document_retrieval.query_understanding import QueryUnderstanding
-from services.answer_generation.prompt_builder import PromptBuilder
+from engine.document_retrieval.candidate import Candidate
+from engine.document_retrieval.query_understanding import QueryUnderstanding
+from engine.answer_generation.prompt_builder import PromptBuilder
 
 def test_prompt_builder_formatting():
     builder = PromptBuilder()

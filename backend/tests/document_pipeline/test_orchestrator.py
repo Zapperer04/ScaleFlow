@@ -6,7 +6,7 @@ import shutil
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_pipeline.orchestrator import ProductionParsingOrchestrator
+from engine.document_pipeline.orchestrator import ProductionParsingOrchestrator
 
 TEST_PDF_PATH = "test_data/category_A_simple.pdf"
 

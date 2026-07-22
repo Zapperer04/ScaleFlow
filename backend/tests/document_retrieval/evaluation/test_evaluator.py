@@ -4,8 +4,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from services.document_retrieval.evaluation.evaluator import RetrievalEvaluator
-from services.document_retrieval.orchestrator import RetrievalOrchestrator
+from engine.document_retrieval.evaluation.evaluator import RetrievalEvaluator
+from engine.document_retrieval.orchestrator import RetrievalOrchestrator
 
 class MockStore:
     def __init__(self):
@@ -33,7 +33,7 @@ class MockStore:
         return self.db.get(rel_path)
 
 def test_evaluator_e2e_flow(monkeypatch):
-    import services.document_retrieval.query_understanding as qu_mod
+    import engine.document_retrieval.query_understanding as qu_mod
     monkeypatch.setattr(qu_mod, "embed_text", lambda text: [0.1] * 768)
 
     store = MockStore()
@@ -55,7 +55,7 @@ def test_evaluator_e2e_flow(monkeypatch):
             }
         ]
         
-    from services.document_retrieval.evaluation.dataset_loader import DatasetLoader
+    from engine.document_retrieval.evaluation.dataset_loader import DatasetLoader
     monkeypatch.setattr(DatasetLoader, "load_questions", mock_load_questions)
     
     eval_data = evaluator.evaluate_all()

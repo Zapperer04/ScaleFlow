@@ -1,0 +1,3 @@
+from engine.document_pipeline.registry.registry import DocumentRegistry
+from engine.document_pipeline.registry.builder_registry import BuilderRegistry
+

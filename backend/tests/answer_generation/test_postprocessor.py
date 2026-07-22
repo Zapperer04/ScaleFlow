@@ -4,7 +4,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.answer_generation.answer_postprocessor import AnswerPostprocessor
+from engine.answer_generation.answer_postprocessor import AnswerPostprocessor
 
 def test_postprocessor_cleanup():
     processor = AnswerPostprocessor()

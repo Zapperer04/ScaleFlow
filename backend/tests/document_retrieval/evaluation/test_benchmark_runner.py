@@ -4,9 +4,9 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from services.document_retrieval.evaluation.benchmark_runner import BenchmarkRunner
-from services.document_retrieval.evaluation.dataset_loader import DatasetLoader
-from services.document_retrieval.orchestrator import RetrievalOrchestrator
+from engine.document_retrieval.evaluation.benchmark_runner import BenchmarkRunner
+from engine.document_retrieval.evaluation.dataset_loader import DatasetLoader
+from engine.document_retrieval.orchestrator import RetrievalOrchestrator
 
 class MockDatasetLoader:
     def load_questions(self):
@@ -48,7 +48,7 @@ class MockStore:
         return self.db.get(rel_path)
 
 def test_benchmark_runner(monkeypatch):
-    import services.document_retrieval.query_understanding as qu_mod
+    import engine.document_retrieval.query_understanding as qu_mod
     monkeypatch.setattr(qu_mod, "embed_text", lambda text: [0.1] * 768)
 
     store = MockStore()

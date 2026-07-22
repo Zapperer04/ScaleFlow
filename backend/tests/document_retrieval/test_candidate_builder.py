@@ -4,8 +4,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_retrieval.evidence import Evidence
-from services.document_retrieval.candidate_builder import CandidateBuilder
+from engine.document_retrieval.evidence import Evidence
+from engine.document_retrieval.candidate_builder import CandidateBuilder
 
 class MockStore:
     def __init__(self):

@@ -4,7 +4,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_retrieval.retrieval_memory import RetrievalSessionMemory
+from engine.document_retrieval.retrieval_memory import RetrievalSessionMemory
 
 def test_session_memory_flow():
     mem = RetrievalSessionMemory()

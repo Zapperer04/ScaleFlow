@@ -4,8 +4,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_pipeline.builders.embedding_builder import EmbeddingBuilder
-from services.document_pipeline.schemas import CanonicalDocument, SemanticChunk, CanonicalBlock, TableRepresentation, EntityGraph, EntityRecord
+from engine.document_pipeline.builders.embedding_builder import EmbeddingBuilder
+from engine.document_pipeline.schemas import CanonicalDocument, SemanticChunk, CanonicalBlock, TableRepresentation, EntityGraph, EntityRecord
 
 def test_embedding_builder_multi_level():
     # Setup mock representations

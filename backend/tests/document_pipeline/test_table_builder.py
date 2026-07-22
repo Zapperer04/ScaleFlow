@@ -4,8 +4,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_pipeline.builders.table_builder import TableBuilder
-from services.document_pipeline.schemas import CanonicalDocument, CanonicalTable, BoundingBox
+from engine.document_pipeline.builders.table_builder import TableBuilder
+from engine.document_pipeline.schemas import CanonicalDocument, CanonicalTable, BoundingBox
 
 def test_table_builder():
     doc = CanonicalDocument(

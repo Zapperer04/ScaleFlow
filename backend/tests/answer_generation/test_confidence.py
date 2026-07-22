@@ -4,9 +4,9 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_retrieval.candidate import Candidate
-from services.answer_generation.verifier import VerificationResult
-from services.answer_generation.confidence import ConfidenceEngine
+from engine.document_retrieval.candidate import Candidate
+from engine.answer_generation.verifier import VerificationResult
+from engine.answer_generation.confidence import ConfidenceEngine
 
 def test_confidence_calculations():
     engine = ConfidenceEngine()

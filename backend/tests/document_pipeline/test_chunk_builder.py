@@ -4,8 +4,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_pipeline.builders.chunk_builder import ChunkBuilder
-from services.document_pipeline.schemas import CanonicalDocument, CanonicalBlock, BoundingBox
+from engine.document_pipeline.builders.chunk_builder import ChunkBuilder
+from engine.document_pipeline.schemas import CanonicalDocument, CanonicalBlock, BoundingBox
 
 def test_chunk_builder_semantic_logic():
     doc = CanonicalDocument(

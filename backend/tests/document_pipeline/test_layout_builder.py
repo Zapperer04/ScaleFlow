@@ -4,8 +4,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_pipeline.builders.layout_builder import LayoutBuilder
-from services.document_pipeline.schemas import CanonicalDocument, CanonicalBlock, BoundingBox
+from engine.document_pipeline.builders.layout_builder import LayoutBuilder
+from engine.document_pipeline.schemas import CanonicalDocument, CanonicalBlock, BoundingBox
 
 def test_layout_builder():
     doc = CanonicalDocument(

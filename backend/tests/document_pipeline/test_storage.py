@@ -6,7 +6,7 @@ import shutil
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_pipeline.storage.storage import DocumentStore
+from engine.document_pipeline.storage.storage import DocumentStore
 
 @pytest.fixture
 def temp_store_dir():

@@ -5,8 +5,8 @@ import hashlib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_pipeline.builders.graph_builder import GraphBuilder
-from services.document_pipeline.schemas import CanonicalDocument, CanonicalBlock, CanonicalTable, BoundingBox
+from engine.document_pipeline.builders.graph_builder import GraphBuilder
+from engine.document_pipeline.schemas import CanonicalDocument, CanonicalBlock, CanonicalTable, BoundingBox
 
 def test_graph_builder_rich_structure():
     doc_id = "testdoc123"

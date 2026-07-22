@@ -6,7 +6,7 @@ import shutil
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_pipeline.registry.registry import DocumentRegistry
+from engine.document_pipeline.registry.registry import DocumentRegistry
 
 @pytest.fixture
 def temp_db_path():

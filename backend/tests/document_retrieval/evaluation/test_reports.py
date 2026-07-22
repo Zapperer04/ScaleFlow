@@ -4,7 +4,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from services.document_retrieval.evaluation.report_generator import ReportGenerator
+from engine.document_retrieval.evaluation.report_generator import ReportGenerator
 
 def test_report_generation(tmp_path):
     output_dir = str(tmp_path)

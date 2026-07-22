@@ -4,9 +4,9 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_retrieval.candidate import Candidate
-from services.document_retrieval.query_understanding import QueryUnderstanding
-from services.answer_generation.orchestrator import AnswerOrchestrator
+from engine.document_retrieval.candidate import Candidate
+from engine.document_retrieval.query_understanding import QueryUnderstanding
+from engine.answer_generation.orchestrator import AnswerOrchestrator
 
 def test_orchestrator_e2e_answer_generation(monkeypatch):
     monkeypatch.setenv("TEST_OFFLINE_MODE", "True")

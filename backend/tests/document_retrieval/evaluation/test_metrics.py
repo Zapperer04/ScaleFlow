@@ -4,7 +4,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from services.document_retrieval.evaluation.metrics import MetricsCalculator
+from engine.document_retrieval.evaluation.metrics import MetricsCalculator
 
 def test_metrics_calculations():
     calculator = MetricsCalculator()

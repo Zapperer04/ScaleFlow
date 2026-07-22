@@ -4,8 +4,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_pipeline.normalizer.normalizer import CanonicalNormalizer
-from services.document_pipeline.schemas import CanonicalDocument
+from engine.document_pipeline.normalizer.normalizer import CanonicalNormalizer
+from engine.document_pipeline.schemas import CanonicalDocument
 
 def test_canonical_normalizer_conversion():
     raw_data = {

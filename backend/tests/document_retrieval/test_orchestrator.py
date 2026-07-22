@@ -4,8 +4,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_pipeline.storage.storage import DocumentStore
-from services.document_retrieval.orchestrator import RetrievalOrchestrator
+from engine.document_pipeline.storage.storage import DocumentStore
+from engine.document_retrieval.orchestrator import RetrievalOrchestrator
 
 class MockStore:
     def __init__(self):

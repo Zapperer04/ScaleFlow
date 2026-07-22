@@ -4,12 +4,12 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_retrieval.query_understanding import QueryUnderstanding
-from services.document_retrieval.experts.vector_expert import VectorExpert
-from services.document_retrieval.experts.graph_expert import GraphExpert
-from services.document_retrieval.experts.entity_expert import EntityExpert
-from services.document_retrieval.experts.table_expert import TableExpert
-from services.document_retrieval.experts.layout_expert import LayoutExpert
+from engine.document_retrieval.query_understanding import QueryUnderstanding
+from engine.document_retrieval.experts.vector_expert import VectorExpert
+from engine.document_retrieval.experts.graph_expert import GraphExpert
+from engine.document_retrieval.experts.entity_expert import EntityExpert
+from engine.document_retrieval.experts.table_expert import TableExpert
+from engine.document_retrieval.experts.layout_expert import LayoutExpert
 
 class MockStore:
     def __init__(self):

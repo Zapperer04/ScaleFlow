@@ -4,8 +4,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_retrieval.candidate import Candidate
-from services.document_retrieval.context_optimizer import ContextOptimizer
+from engine.document_retrieval.candidate import Candidate
+from engine.document_retrieval.context_optimizer import ContextOptimizer
 
 def test_context_optimizer():
     optimizer = ContextOptimizer()

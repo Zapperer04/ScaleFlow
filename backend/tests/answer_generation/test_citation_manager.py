@@ -4,8 +4,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_retrieval.candidate import Candidate
-from services.answer_generation.citation_manager import CitationManager
+from engine.document_retrieval.candidate import Candidate
+from engine.answer_generation.citation_manager import CitationManager
 
 def test_citation_parsing():
     manager = CitationManager()

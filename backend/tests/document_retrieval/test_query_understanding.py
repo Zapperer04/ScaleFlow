@@ -4,7 +4,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_retrieval.query_understanding import QueryAnalyzer, QueryUnderstanding
+from engine.document_retrieval.query_understanding import QueryAnalyzer, QueryUnderstanding
 
 def test_query_analyzer_parsing():
     analyzer = QueryAnalyzer()

@@ -4,7 +4,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.answer_generation.answer_generator import AnswerGenerator
+from engine.answer_generation.answer_generator import AnswerGenerator
 
 def test_answer_generator_fallback(monkeypatch):
     monkeypatch.setenv("TEST_OFFLINE_MODE", "True")

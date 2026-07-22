@@ -4,8 +4,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_retrieval.candidate import Candidate
-from services.answer_generation.context_validator import ContextValidator
+from engine.document_retrieval.candidate import Candidate
+from engine.answer_generation.context_validator import ContextValidator
 
 def test_context_validator_dedup_and_contradiction():
     validator = ContextValidator()

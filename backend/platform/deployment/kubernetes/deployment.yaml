@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mrrag-platform
+  labels:
+    app: mrrag-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mrrag-platform
+  template:
+    metadata:
+      labels:
+        app: mrrag-platform
+    spec:
+      containers:
+        - name: api
+          image: mrrag-platform:latest
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /api/v1/healthz/readiness
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/healthz/liveness
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4Gi
+            requests:
+              cpu: "500m"
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mrrag-platform-svc
+spec:
+  ports:
+    - port: 8000
+      targetPort: 8000
+  selector:
+    app: mrrag-platform

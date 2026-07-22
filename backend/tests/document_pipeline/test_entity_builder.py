@@ -4,8 +4,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.document_pipeline.builders.entity_builder import EntityBuilder
-from services.document_pipeline.schemas import CanonicalDocument, CanonicalBlock, CanonicalEntity
+from engine.document_pipeline.builders.entity_builder import EntityBuilder
+from engine.document_pipeline.schemas import CanonicalDocument, CanonicalBlock, CanonicalEntity
 
 def test_entity_builder_extraction():
     # In simplified design, entities are returned directly by VLM parser, not extracted in Python

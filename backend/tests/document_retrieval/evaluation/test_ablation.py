@@ -4,8 +4,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from services.document_retrieval.evaluation.ablation import AblationStudyRunner
-from services.document_retrieval.orchestrator import RetrievalOrchestrator
+from engine.document_retrieval.evaluation.ablation import AblationStudyRunner
+from engine.document_retrieval.orchestrator import RetrievalOrchestrator
 
 class MockStore:
     def __init__(self):
@@ -33,7 +33,7 @@ class MockStore:
         return self.db.get(rel_path)
 
 def test_ablation_study_runner(monkeypatch):
-    import services.document_retrieval.query_understanding as qu_mod
+    import engine.document_retrieval.query_understanding as qu_mod
     monkeypatch.setattr(qu_mod, "embed_text", lambda text: [0.1] * 768)
 
     store = MockStore()

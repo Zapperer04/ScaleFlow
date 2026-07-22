@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ../../
+      dockerfile: platform/deployment/docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PLATFORM_STORAGE_PATH=/app/storage
+      - QUEUE_BACKEND=sqlite
+      - DEFAULT_MODEL=google/gemma-4-26b-a4b-it:free
+    volumes:
+      - storage-data:/app/storage
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../configs/prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+
+volumes:
+  storage-data:

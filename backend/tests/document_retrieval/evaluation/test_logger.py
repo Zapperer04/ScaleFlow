@@ -4,7 +4,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-from services.document_retrieval.evaluation.retrieval_logger import RetrievalLogger
+from engine.document_retrieval.evaluation.retrieval_logger import RetrievalLogger
 
 def test_logger_writing(tmp_path):
     log_dir = str(tmp_path)
