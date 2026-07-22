@@ -1,0 +1,1 @@
+from services.document_pipeline.normalizer.normalizer import CanonicalNormalizer
