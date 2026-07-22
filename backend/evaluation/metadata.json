@@ -1,0 +1,44 @@
+{
+  "questions": [
+    {
+      "question": "What is the summary of row values in Table 1?",
+      "document_id": "doc123",
+      "expected_chunk_ids": ["chunk-0"],
+      "expected_graph_nodes": ["node-p1"],
+      "expected_entities": ["Google"],
+      "expected_tables": ["tbl-1"],
+      "difficulty": "medium",
+      "category": "Technical Manuals"
+    },
+    {
+      "question": "Who is the primary founder of Google Corp?",
+      "document_id": "doc123",
+      "expected_chunk_ids": ["chunk-0"],
+      "expected_graph_nodes": ["node-h1"],
+      "expected_entities": ["Google"],
+      "expected_tables": [],
+      "difficulty": "easy",
+      "category": "Contracts"
+    },
+    {
+      "question": "What is the content of the bottom right paragraph?",
+      "document_id": "doc123",
+      "expected_chunk_ids": ["chunk-0"],
+      "expected_graph_nodes": ["node-p1"],
+      "expected_entities": [],
+      "expected_tables": [],
+      "difficulty": "hard",
+      "category": "Mixed Documents"
+    },
+    {
+      "question": "Review the statistics in Table 1",
+      "document_id": "doc123",
+      "expected_chunk_ids": ["chunk-0"],
+      "expected_graph_nodes": ["node-p1"],
+      "expected_entities": [],
+      "expected_tables": ["tbl-1"],
+      "difficulty": "medium",
+      "category": "Invoices"
+    }
+  ]
+}
