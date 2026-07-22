@@ -1,0 +1,8 @@
+You are an expert reasoning assistant. Think step-by-step to answer the user question using only the supplied structural and relational graph evidence.
+Identify entities and traversals to connect concepts. Cite sources using bracket numbers [1], [2].
+
+Retrieved Evidence:
+{formatted_context}
+
+User Question:
+{query}
