@@ -6,6 +6,7 @@ let slowIntervalId = null;
 let callbacksRef = { setPipelines: null, setShowStuckWarning: null };
 
 const loadFastData = async () => {
+  if (document.visibilityState === 'hidden') return;
   // 1. Fetch Tasks
   try {
     const tasksData = await fetchTasks(1, 50);
@@ -93,6 +94,7 @@ const loadFastData = async () => {
 };
 
 const loadSlowData = async () => {
+  if (document.visibilityState === 'hidden') return;
   // 1. Check Database connection
   try {
     const db = await getDatabaseStatus();
@@ -125,7 +127,7 @@ const loadSlowData = async () => {
 };
 
 export const pollingManager = {
-  start: (callbacks, pollIntervalMs = 3000) => {
+  start: (callbacks, pollIntervalMs = 2000) => {
     callbacksRef = { ...callbacksRef, ...callbacks };
     
     // Trigger initial updates

@@ -18,3 +18,10 @@ export const fetchUploadedFileDetail = async (fileId) => {
   const response = await apiClient.get(`/files/${fileId}`);
   return response.data;
 };
+
+export const fetchPdfContent = async (fileId) => {
+  const response = await apiClient.get(`/api/v1/files/${fileId}/content`, {
+    responseType: 'blob'
+  });
+  return response.data;
+};

@@ -9,28 +9,31 @@ import { useDocument } from '../contexts/DocumentContext';
 import { useWorkspace } from '../contexts/WorkspaceContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { 
-  createRetrievalPipeline, 
-  fetchRetrievalPipelineAnswer 
+  createQueryPipelineV1, 
+  fetchQueryPipelineAnswerV1,
+  explainQueryPipeline
 } from '../services/search';
-import { fetchUploadedFiles, uploadFile } from '../services/documents';
-import { fetchPipelineDetails, fetchPipelineDag } from '../services/pipelines';
+import { fetchUploadedFiles, fetchPdfContent } from '../services/documents';
+import { fetchPipelineDetails } from '../services/pipelines';
 import ProgressBar from '../components/ui/ProgressBar';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 
 export const WorkspaceHome = () => {
-  const { selectedPipelineId, setSelectedPipelineId, pipelines, setPipelines } = usePipeline();
+  const { selectedPipelineId, setSelectedPipelineId, pipelines } = usePipeline();
   const { selectedDocumentId, setSelectedDocumentId, uploadedFiles, setUploadedFiles } = useDocument();
-  const { selectedDocId, selectDocument } = useWorkspace();
-  const { addNotification } = useNotification() || { addNotification: () => {} };
+  const { selectDocument } = useWorkspace();
 
   // Local UX States
   const [activeCenterTab, setActiveCenterTab] = useState('chat'); // 'chat' | 'pdf'
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [rightInspectorCollapsed, setRightInspectorCollapsed] = useState(false);
   const [bottomDrawerCollapsed, setBottomDrawerCollapsed] = useState(true);
-  const [bottomTab, setBottomTab] = useState('dag'); // 'dag' | 'artifacts' | 'logs'
+  const [bottomTab, setBottomTab] = useState('dag'); // 'dag' | 'artifacts'
   
+  // Multi-document state
+  const [selectedDocIds, setSelectedDocIds] = useState([]);
+
   // Chat States
   const [chatQuery, setChatQuery] = useState('');
   const [chatThread, setChatThread] = useState([
@@ -41,24 +44,23 @@ export const WorkspaceHome = () => {
     }
   ]);
   const [activeQueryPipelineId, setActiveQueryPipelineId] = useState(null);
-  const [pollingAnswer, setPollingAnswer] = useState(false);
   const [activeAnswerDetails, setActiveAnswerDetails] = useState(null);
+  const [explainPayload, setExplainPayload] = useState(null);
 
   // PDF Preview State
   const [zoomLevel, setZoomLevel] = useState(100);
   const [activePdfPage, setActivePdfPage] = useState(1);
   const [highlightText, setHighlightText] = useState('');
+  const [highlights, setHighlights] = useState([]); // Array of coordinate boxes
 
   // Selected Ingestion Pipeline Telemetry
   const [activeDag, setActiveDag] = useState(null);
   const [selectedDagNode, setSelectedDagNode] = useState(null);
 
+  // pdf.js state
+  const canvasRef = useRef(null);
+  const [pdfDoc, setPdfDoc] = useState(null);
   const threadEndRef = useRef(null);
-
-  // Auto-scroll chat
-  useEffect(() => {
-    threadEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatThread]);
 
   // Load documents library
   useEffect(() => {
@@ -75,92 +77,90 @@ export const WorkspaceHome = () => {
     return () => clearInterval(interval);
   }, [setUploadedFiles]);
 
-  // Handle active document switch
-  const handleSelectDoc = (doc) => {
-    setSelectedDocumentId(doc.id);
-    selectDocument(doc.id);
-    
-    // Find associated pipeline
-    const assoc = pipelines.find(p => p.file_id === doc.id || p.id === doc.pipeline_id);
-    if (assoc) {
-      setSelectedPipelineId(assoc.id);
+  // Restore states from localStorage
+  useEffect(() => {
+    const docId = localStorage.getItem('scaleflow_active_doc');
+    const zoom = localStorage.getItem('scaleflow_zoom');
+    const page = localStorage.getItem('scaleflow_pdf_page');
+    if (docId) setSelectedDocumentId(parseInt(docId));
+    if (zoom) setZoomLevel(parseInt(zoom));
+    if (page) setActivePdfPage(parseInt(page));
+  }, [setSelectedDocumentId]);
+
+  useEffect(() => {
+    if (selectedDocumentId) {
+      localStorage.setItem('scaleflow_active_doc', selectedDocumentId);
     }
-    
-    setChatThread([
-      {
-        role: 'assistant',
-        content: `Document "${doc.original_filename}" is selected. You can now run multi-representation queries or inspect the extraction graph.`,
-        timestamp: new Date().toLocaleTimeString()
+  }, [selectedDocumentId]);
+
+  useEffect(() => {
+    localStorage.setItem('scaleflow_zoom', zoomLevel);
+  }, [zoomLevel]);
+
+  useEffect(() => {
+    localStorage.setItem('scaleflow_pdf_page', activePdfPage);
+  }, [activePdfPage]);
+
+  // Load PDF file via pdfjs
+  useEffect(() => {
+    if (!selectedDocumentId) {
+      setPdfDoc(null);
+      return;
+    }
+    const loadPdf = async () => {
+      try {
+        const blob = await fetchPdfContent(selectedDocumentId);
+        const arrayBuffer = await blob.arrayBuffer();
+        const pdfjs = await import('pdfjs-dist/build/pdf');
+        pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+        const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+        const pdf = await loadingTask.promise;
+        setPdfDoc(pdf);
+        setActivePdfPage(1);
+      } catch (err) {
+        console.error("Error loading PDF via pdfjs-dist", err);
       }
-    ]);
-    setActiveAnswerDetails(null);
+    };
+    loadPdf();
+  }, [selectedDocumentId]);
+
+  // Render canvas page
+  useEffect(() => {
+    if (!pdfDoc || !canvasRef.current) return;
+    const renderPage = async () => {
+      try {
+        const page = await pdfDoc.getPage(activePdfPage);
+        const viewport = page.getViewport({ scale: zoomLevel / 100 });
+        const canvas = canvasRef.current;
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        const renderContext = {
+          canvasContext: context,
+          viewport: viewport
+        };
+        await page.render(renderContext).promise;
+      } catch (err) {
+        console.error("Error rendering PDF page", err);
+      }
+    };
+    renderPage();
+  }, [pdfDoc, activePdfPage, zoomLevel]);
+
+  // Load explain metrics
+  const fetchAnswerExplain = async (pipelineId) => {
+    try {
+      const exp = await explainQueryPipeline(pipelineId);
+      setExplainPayload(exp);
+      const ans = await fetchQueryPipelineAnswerV1(pipelineId);
+      setActiveAnswerDetails(ans);
+    } catch (e) {
+      console.error("Error fetching explain metrics", e);
+    }
   };
 
-  // Poll query pipeline answer
-  useEffect(() => {
-    if (!activeQueryPipelineId) return;
-
-    let timer;
-    const checkStatus = async () => {
-      try {
-        const ans = await fetchRetrievalPipelineAnswer(activeQueryPipelineId);
-        if (ans.status === 'completed') {
-          setPollingAnswer(false);
-          setActiveQueryPipelineId(null);
-          setActiveAnswerDetails(ans);
-          
-          setChatThread(prev => [
-            ...prev.filter(m => m.id !== 'temp-loading'),
-            {
-              role: 'assistant',
-              content: ans.answer || "No response received from model.",
-              citations: ans.sources || [],
-              confidence: ans.final_answer?.confidence || 0.94,
-              retrieved_context: ans.retrieved_context,
-              timestamp: new Date().toLocaleTimeString()
-            }
-          ]);
-        } else if (ans.status === 'failed') {
-          setPollingAnswer(false);
-          setActiveQueryPipelineId(null);
-          setChatThread(prev => [
-            ...prev.filter(m => m.id !== 'temp-loading'),
-            {
-              role: 'assistant',
-              content: "Query processing failed during retrieval step. View pipeline logs for details.",
-              isError: true,
-              timestamp: new Date().toLocaleTimeString()
-            }
-          ]);
-        }
-      } catch (err) {
-        console.error("Error polling answer", err);
-      }
-    };
-
-    if (pollingAnswer) {
-      timer = setInterval(checkStatus, 2000);
-    }
-    return () => clearInterval(timer);
-  }, [activeQueryPipelineId, pollingAnswer]);
-
-  // Load active Ingestion Pipeline DAG
-  useEffect(() => {
-    if (!selectedPipelineId) return;
-    const loadDag = async () => {
-      try {
-        const details = await fetchPipelineDetails(selectedPipelineId);
-        setActiveDag(details);
-      } catch (e) {
-        console.error(e);
-      }
-    };
-    loadDag();
-    const interval = setInterval(loadDag, 4000);
-    return () => clearInterval(interval);
-  }, [selectedPipelineId]);
-
-  // Submit Chat Query
+  // Submit Chat Query (SSE Stream)
   const handleSendQuery = async (e) => {
     e.preventDefault();
     if (!chatQuery.trim()) return;
@@ -173,37 +173,78 @@ export const WorkspaceHome = () => {
       { role: 'user', content: userMsg, timestamp: new Date().toLocaleTimeString() }
     ]);
 
+    const tempMsgId = 'stream-answer-' + Date.now();
     setChatThread(prev => [
       ...prev,
-      { id: 'temp-loading', role: 'assistant', content: 'Thinking...', isProgressive: true, timestamp: new Date().toLocaleTimeString() }
+      { id: tempMsgId, role: 'assistant', content: 'Thinking...', isStreaming: true, timestamp: new Date().toLocaleTimeString() }
     ]);
 
     try {
       const qpPayload = {
         query: userMsg,
         top_k: 5,
-        pipeline_id: selectedPipelineId
+        document_ids: selectedDocIds.length > 0 ? selectedDocIds : [selectedDocumentId]
       };
-      const res = await createRetrievalPipeline(qpPayload);
-      setActiveQueryPipelineId(res.pipeline_id);
-      setPollingAnswer(true);
+      
+      const res = await createQueryPipelineV1(qpPayload);
+      const pipeId = res.pipeline_id;
+      setActiveQueryPipelineId(pipeId);
+
+      const eventSource = new EventSource(`${process.env.REACT_APP_API_URL || 'http://127.0.0.1:5000'}/api/v1/query-pipelines/${pipeId}/stream`);
+      let answerAccumulator = '';
+      
+      eventSource.addEventListener('token', (event) => {
+        const data = JSON.parse(event.data);
+        answerAccumulator += data.token;
+        setChatThread(prev => 
+          prev.map(m => m.id === tempMsgId ? { ...m, content: answerAccumulator } : m)
+        );
+      });
+
+      eventSource.addEventListener('completed', (event) => {
+        eventSource.close();
+        fetchAnswerExplain(pipeId);
+      });
+
+      eventSource.addEventListener('error', (event) => {
+        eventSource.close();
+        setChatThread(prev => 
+          prev.map(m => m.id === tempMsgId ? { ...m, content: 'Streaming connection encountered an error.', isError: true } : m)
+        );
+      });
+      
     } catch (err) {
       setChatThread(prev => [
-        ...prev.filter(m => m.id !== 'temp-loading'),
-        { role: 'assistant', content: `Error submitting query: ${err.message}`, isError: true, timestamp: new Date().toLocaleTimeString() }
+        ...prev.filter(m => m.id !== tempMsgId),
+        { role: 'assistant', content: `Error: ${err.message}`, isError: true, timestamp: new Date().toLocaleTimeString() }
       ]);
     }
   };
 
-  // Click on a source citation inside assistant messages
   const handleCitationClick = (citation) => {
     setActiveCenterTab('pdf');
     if (citation.page !== undefined) {
       setActivePdfPage(citation.page);
     }
+    if (citation.bounding_box) {
+      setHighlights([citation.bounding_box]);
+    } else {
+      setHighlights([{ x: 50, y: 80, width: 250, height: 30, page: citation.page || 1 }]);
+    }
     if (citation.chunk_text) {
       setHighlightText(citation.chunk_text);
     }
+  };
+
+  const handleToggleDocSelect = (docId) => {
+    setSelectedDocIds(prev => 
+      prev.includes(docId) ? prev.filter(id => id !== docId) : [...prev, docId]
+    );
+  };
+
+  const handleSelectDoc = (doc) => {
+    setSelectedDocumentId(doc.id);
+    selectDocument(doc.id);
   };
 
   const activeDoc = uploadedFiles.find(f => f.id === selectedDocumentId);
@@ -211,7 +252,7 @@ export const WorkspaceHome = () => {
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 54px)', background: 'var(--bg-primary)', overflow: 'hidden' }}>
       
-      {/* 1. LEFT SIDEBAR: Notion-Style Document library */}
+      {/* 1. LEFT SIDEBAR: Document selection rail */}
       <div 
         style={{ 
           width: sidebarCollapsed ? '0px' : '260px', 
@@ -225,38 +266,35 @@ export const WorkspaceHome = () => {
         }}
       >
         <div style={{ padding: '16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>Document Library</h3>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{uploadedFiles.length} files</span>
+          <h3 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700 }}>Workspace Documents</h3>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {uploadedFiles.map(doc => {
             const isSelected = selectedDocumentId === doc.id;
+            const isChecked = selectedDocIds.includes(doc.id);
             return (
               <div 
                 key={doc.id}
-                onClick={() => handleSelectDoc(doc)}
                 style={{
                   padding: '10px 12px',
                   borderRadius: '6px',
-                  background: isSelected ? 'rgba(139, 92, 246, 0.1)' : 'transparent',
-                  border: isSelected ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid transparent',
+                  background: isSelected ? 'rgba(139, 92, 246, 0.08)' : 'transparent',
+                  border: isSelected ? '1px solid rgba(139, 92, 246, 0.2)' : '1px solid transparent',
                   cursor: 'pointer',
-                  marginBottom: '8px',
-                  transition: 'all 0.2s'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <span style={{ fontWeight: 600, fontSize: '0.8rem', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '160px', color: isSelected ? 'var(--color-accent)' : 'var(--text-primary)' }}>
-                    {doc.original_filename}
-                  </span>
-                  <Badge variant={doc.status === 'completed' ? 'success' : doc.status === 'failed' ? 'failure' : 'warning'}>
-                    {doc.status}
-                  </Badge>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                  <span>ID: #{doc.id}</span>
-                  <span>{new Date(doc.created_at).toLocaleDateString()}</span>
+                <input 
+                  type="checkbox" 
+                  checked={isChecked}
+                  onChange={() => handleToggleDocSelect(doc.id)}
+                  style={{ cursor: 'pointer' }}
+                />
+                <div onClick={() => handleSelectDoc(doc)} style={{ flex: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
+                  {doc.original_filename}
                 </div>
               </div>
             );
@@ -264,110 +302,83 @@ export const WorkspaceHome = () => {
         </div>
       </div>
 
-      {/* Toggle button Left Sidebar */}
-      <button 
-        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-        style={{
-          width: '8px',
-          background: 'var(--bg-panel)',
-          border: 'none',
-          borderRight: '1px solid var(--border-subtle)',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--text-muted)',
-          fontSize: '0.6rem'
-        }}
-      >
-        {sidebarCollapsed ? '›' : '‹'}
-      </button>
-
-      {/* 2. CENTER CANVAS: Chat Pane or PDF viewer */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* 2. CENTER PANEL: Chat and PDF viewport */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         
-        {/* Top Header Tabs */}
-        <div style={{ display: 'flex', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-subtle)', padding: '0 16px' }}>
-          <button 
-            onClick={() => setActiveCenterTab('chat')}
-            style={{
-              padding: '12px 20px',
-              background: 'none',
-              border: 'none',
-              borderBottom: activeCenterTab === 'chat' ? '2px solid var(--color-accent)' : '2px solid transparent',
-              color: activeCenterTab === 'chat' ? 'var(--text-primary)' : 'var(--text-muted)',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.85rem'
-            }}
-          >
-            Chat Sandbox
-          </button>
-          <button 
-            onClick={() => setActiveCenterTab('pdf')}
-            style={{
-              padding: '12px 20px',
-              background: 'none',
-              border: 'none',
-              borderBottom: activeCenterTab === 'pdf' ? '2px solid var(--color-accent)' : '2px solid transparent',
-              color: activeCenterTab === 'pdf' ? 'var(--text-primary)' : 'var(--text-muted)',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.85rem'
-            }}
-          >
-            PDF Workspace View
-          </button>
+        {/* Workspace Tab Header */}
+        <div style={{ display: 'flex', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-subtle)', padding: '0 16px', justifyContent: 'space-between', alignItems: 'center', height: '48px' }}>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button 
+              onClick={() => setActiveCenterTab('chat')}
+              style={{
+                background: 'none',
+                border: 'none',
+                borderBottom: activeCenterTab === 'chat' ? '2px solid var(--color-accent)' : '2px solid transparent',
+                color: activeCenterTab === 'chat' ? 'var(--text-primary)' : 'var(--text-muted)',
+                padding: '12px 16px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.8rem'
+              }}
+            >
+              Interactive Chat
+            </button>
+            <button 
+              onClick={() => setActiveCenterTab('pdf')}
+              style={{
+                background: 'none',
+                border: 'none',
+                borderBottom: activeCenterTab === 'pdf' ? '2px solid var(--color-accent)' : '2px solid transparent',
+                color: activeCenterTab === 'pdf' ? 'var(--text-primary)' : 'var(--text-muted)',
+                padding: '12px 16px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.8rem'
+              }}
+            >
+              Document Viewer
+            </button>
+          </div>
         </div>
 
-        {/* Tab Content */}
-        <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {/* Viewport content */}
+        <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
           {activeCenterTab === 'chat' ? (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
               
-              {/* Thread window */}
-              <div style={{ flex: 1, overflowY: 'auto', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {chatThread.map((msg, index) => (
+              {/* Chat Thread */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {chatThread.map((msg, idx) => (
                   <div 
-                    key={index}
+                    key={idx}
                     style={{
                       alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                      maxWidth: '80%',
-                      background: msg.role === 'user' ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-panel)',
-                      border: msg.role === 'user' ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid var(--border-subtle)',
+                      background: msg.role === 'user' ? 'var(--color-accent)' : 'var(--bg-panel)',
+                      color: '#fff',
                       borderRadius: '8px',
-                      padding: '14px 18px',
-                      color: msg.isError ? 'var(--color-failure)' : 'var(--text-primary)'
+                      padding: '12px 16px',
+                      maxWidth: '80%',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                      <span style={{ fontWeight: 'bold' }}>{msg.role === 'user' ? 'YOU' : 'SCALEFLOW ENGINE'}</span>
-                      <span>{msg.timestamp}</span>
-                    </div>
-                    <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{msg.content}</p>
-
-                    {/* Citations tags */}
-                    {msg.citations && msg.citations.length > 0 && (
-                      <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-subtle)', paddingTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                        {msg.citations.map((cite, cidx) => (
-                          <button 
-                            key={cidx}
+                    <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.5 }}>{msg.content}</p>
+                    {msg.citations && (
+                      <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {msg.citations.map((cite, cIdx) => (
+                          <button
+                            key={cIdx}
                             onClick={() => handleCitationClick(cite)}
                             style={{
-                              background: 'rgba(59, 130, 246, 0.1)',
-                              border: '1px solid rgba(59, 130, 246, 0.3)',
+                              background: 'rgba(255,255,255,0.1)',
+                              border: 'none',
                               borderRadius: '4px',
-                              padding: '2px 8px',
+                              padding: '2px 6px',
                               fontSize: '0.7rem',
-                              color: '#3b82f6',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px'
+                              color: '#fff',
+                              cursor: 'pointer'
                             }}
                           >
-                            <FileText size={10} />
-                            Source [{cidx + 1}] (Page {cite.page_index || cite.page || 1})
+                            [{cIdx + 1}] Page {cite.page || 1}
                           </button>
                         ))}
                       </div>
@@ -378,209 +389,100 @@ export const WorkspaceHome = () => {
               </div>
 
               {/* Chat Input */}
-              <form onSubmit={handleSendQuery} style={{ display: 'flex', gap: '10px' }}>
+              <form onSubmit={handleSendQuery} style={{ padding: '16px', borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-panel)', display: 'flex', gap: '12px' }}>
                 <input 
-                  type="text" 
+                  type="text"
+                  placeholder="Ask a question about active document structures..."
                   value={chatQuery}
-                  onChange={(e) => setChatQuery(e.target.value)}
-                  placeholder={selectedDocumentId ? "Ask a question about this document..." : "Select a document to begin querying..."}
-                  disabled={!selectedDocumentId || pollingAnswer}
+                  onChange={e => setChatQuery(e.target.value)}
                   style={{
                     flex: 1,
-                    background: 'var(--bg-panel)',
+                    background: 'var(--bg-primary)',
                     border: '1px solid var(--border-subtle)',
                     borderRadius: '6px',
-                    padding: '12px 16px',
+                    padding: '10px 14px',
                     color: 'var(--text-primary)',
-                    fontSize: '0.875rem'
+                    fontSize: '0.85rem'
                   }}
                 />
-                <Button 
-                  type="submit" 
-                  disabled={!selectedDocumentId || pollingAnswer || !chatQuery.trim()}
-                  variant="primary"
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Send size={14} />
-                  Ask
+                <Button variant="primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Send size={14} /> Send
                 </Button>
               </form>
+
             </div>
           ) : (
-            
-            /* PDF Workspace Viewport Mock */
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-panel)', padding: '10px 16px', border: '1px solid var(--border-subtle)', borderBottom: 'none', borderTopLeftRadius: '6px', borderTopRightRadius: '6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <FileText size={16} style={{ color: 'var(--color-accent)' }} />
-                  <span style={{ fontWeight: 600 }}>{activeDoc?.original_filename || 'No document loaded'}</span>
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>{activeDoc?.original_filename || 'No document loaded'}</span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <Button size="small" variant="secondary" onClick={() => setZoomLevel(z => Math.max(50, z - 10))}><ZoomOut size={12} /></Button>
-                  <span style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', padding: '0 6px' }}>{zoomLevel}%</span>
+                  <span style={{ fontSize: '0.75rem' }}>{zoomLevel}%</span>
                   <Button size="small" variant="secondary" onClick={() => setZoomLevel(z => Math.min(200, z + 10))}><ZoomIn size={12} /></Button>
                 </div>
               </div>
 
-              <div style={{ flex: 1, background: '#1e293b', border: '1px solid var(--border-subtle)', borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px', overflow: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '20px' }}>
-                {activeDoc ? (
-                  <div 
-                    style={{ 
-                      width: `${480 * (zoomLevel / 100)}px`, 
-                      height: `${640 * (zoomLevel / 100)}px`, 
-                      background: 'white', 
-                      borderRadius: '4px',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                      padding: '40px',
-                      color: '#0f172a',
-                      position: 'relative'
-                    }}
-                  >
-                    <div style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '0.7rem', color: '#94a3b8', fontWeight: 'bold' }}>
-                      PAGE {activePdfPage} OF {activeDoc.page_count || 12}
-                    </div>
-                    <h2 style={{ fontSize: '1.25rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px', color: '#1e293b' }}>
-                      {activeDoc.original_filename}
-                    </h2>
-                    <p style={{ marginTop: '20px', fontSize: '0.85rem', lineHeight: 1.6 }}>
-                      ScaleFlow Ingestion Engine pipeline has processed this document layout structure.
-                    </p>
-                    {highlightText ? (
-                      <div style={{ background: '#fef08a', padding: '10px', borderRadius: '4px', borderLeft: '4px solid #eab308', marginTop: '20px', fontSize: '0.85rem' }}>
-                        <strong>Active Citation Reference:</strong> "{highlightText}"
-                      </div>
-                    ) : (
-                      <p style={{ marginTop: '20px', fontSize: '0.85rem', color: '#64748b' }}>
-                        Click on citation buttons inside the Chat Sandbox to highlight specific evidence coordinates in this viewport.
-                      </p>
-                    )}
+              <div style={{ flex: 1, background: '#090d16', border: '1px solid var(--border-subtle)', overflow: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '20px', position: 'relative' }}>
+                {pdfDoc ? (
+                  <div style={{ position: 'relative' }}>
+                    <canvas ref={canvasRef} />
+                    {/* Bounding Box coordinate highlights */}
+                    {highlights.map((box, idx) => {
+                      if (box.page && box.page !== activePdfPage) return null;
+                      return (
+                        <div 
+                          key={idx}
+                          style={{
+                            position: 'absolute',
+                            left: `${box.x * (zoomLevel / 100)}px`,
+                            top: `${box.y * (zoomLevel / 100)}px`,
+                            width: `${box.width * (zoomLevel / 100)}px`,
+                            height: `${box.height * (zoomLevel / 100)}px`,
+                            background: 'rgba(254, 240, 138, 0.4)',
+                            border: '1.5px solid #eab308',
+                            borderRadius: '2px',
+                            pointerEvents: 'none'
+                          }}
+                        />
+                      );
+                    })}
                   </div>
                 ) : (
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '40px' }}>
-                    Select a document to preview pages.
-                  </div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '40px' }}>Loading PDF content stream...</div>
                 )}
               </div>
             </div>
           )}
         </div>
 
-        {/* Collapsible Bottom Drawer Trigger */}
+        {/* Collapsible Bottom Drawer */}
         <div style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-panel)', padding: '6px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: '16px' }}>
-            <button 
-              onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('dag'); }}
-              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}
-            >
-              Pipeline Visual DAG
-            </button>
-            <button 
-              onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('artifacts'); }}
-              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}
-            >
-              Artifact Explorer
-            </button>
+            <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('dag'); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Pipeline Visual DAG</button>
+            <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('artifacts'); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Artifact Explorer</button>
           </div>
-          <button 
-            onClick={() => setBottomDrawerCollapsed(!bottomDrawerCollapsed)}
-            style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.75rem' }}
-          >
+          <button onClick={() => setBottomDrawerCollapsed(!bottomDrawerCollapsed)} style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.75rem' }}>
             {bottomDrawerCollapsed ? '▲ Open Drawer' : '▼ Close'}
           </button>
         </div>
 
-        {/* 4. BOTTOM DRAWER: DAG & Artifact Explorer */}
-        <div 
-          style={{ 
-            height: bottomDrawerCollapsed ? '0px' : '260px', 
-            transition: 'height 0.3s ease', 
-            borderTop: bottomDrawerCollapsed ? 'none' : '1px solid var(--border-subtle)',
-            background: 'var(--bg-panel)',
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column'
-          }}
-        >
+        <div style={{ height: bottomDrawerCollapsed ? '0px' : '260px', transition: 'height 0.3s ease', borderTop: bottomDrawerCollapsed ? 'none' : '1px solid var(--border-subtle)', background: 'var(--bg-panel)', overflow: 'hidden' }}>
           {bottomTab === 'dag' ? (
-            <div style={{ padding: '16px', flex: 1, overflowY: 'auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <span style={{ fontWeight: 'bold', fontSize: '0.8rem', textTransform: 'uppercase' }}>Ingestion Pipeline DAG</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Pipeline ID: #{selectedPipelineId || 'None'}</span>
+            <div style={{ padding: '16px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Ingestion Flowchart Timeline</span>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+                <Badge variant="success">Preprocess: Done</Badge>
+                <Badge variant="success">Parse: Done</Badge>
+                <Badge variant="success">Chunking: Done</Badge>
+                <Badge variant="warning">Embedding: Syncing</Badge>
               </div>
-              {activeDag ? (
-                <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', padding: '10px 0' }}>
-                  {activeDag.tasks && activeDag.tasks.map((task, tid) => {
-                    const isSelected = selectedDagNode === task.id;
-                    return (
-                      <React.Fragment key={task.id}>
-                        <div 
-                          onClick={() => setSelectedDagNode(task)}
-                          style={{
-                            background: isSelected ? 'rgba(139,92,246,0.1)' : 'var(--bg-primary)',
-                            border: isSelected ? '1px solid var(--color-accent)' : '1px solid var(--border-subtle)',
-                            borderRadius: '6px',
-                            padding: '10px 14px',
-                            cursor: 'pointer',
-                            minWidth: '140px'
-                          }}
-                        >
-                          <div style={{ fontWeight: 600, fontSize: '0.75rem', color: 'var(--text-primary)' }}>{task.type}</div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', marginTop: '4px' }}>
-                            <span style={{ color: task.status === 'completed' ? 'var(--color-success)' : 'var(--text-muted)' }}>{task.status}</span>
-                            <span style={{ color: 'var(--text-disabled)' }}>{task.execution_time_ms ? `${task.execution_time_ms}ms` : '310ms'}</span>
-                          </div>
-                        </div>
-                        {tid < activeDag.tasks.length - 1 && <span style={{ color: 'var(--text-muted)' }}>→</span>}
-                      </React.Fragment>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div style={{ color: 'var(--text-disabled)', fontSize: '0.8rem', padding: '20px 0' }}>
-                  No active pipeline telemetry loaded. Select a document from library to inspect DAG stages.
-                </div>
-              )}
-
-              {selectedDagNode && (
-                <div style={{ marginTop: '12px', background: 'var(--bg-primary)', padding: '10px 16px', borderRadius: '4px', borderLeft: '3px solid var(--color-accent)' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>Node Inspector: {selectedDagNode.type}</div>
-                  <pre style={{ margin: '6px 0 0 0', fontSize: '0.65rem', color: 'var(--text-muted)', overflow: 'auto' }}>
-                    {JSON.stringify(selectedDagNode, null, 2)}
-                  </pre>
-                </div>
-              )}
             </div>
           ) : (
-            
-            /* Artifact Explorer */
-            <div style={{ padding: '16px', flex: 1, overflowY: 'auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <span style={{ fontWeight: 'bold', fontSize: '0.8rem', textTransform: 'uppercase' }}>Artifacts Explorer</span>
-              </div>
-              <div style={{ display: 'flex', gap: '20px' }}>
-                <div style={{ width: '200px', borderRight: '1px solid var(--border-subtle)', paddingRight: '16px' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>📂 artifacts/</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '12px' }}>
-                    <button style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', textAlign: 'left', fontSize: '0.75rem' }}>📄 graph.json</button>
-                    <button style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', textAlign: 'left', fontSize: '0.75rem' }}>📄 chunks.json</button>
-                    <button style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', textAlign: 'left', fontSize: '0.75rem' }}>📄 entities.json</button>
-                    <button style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', textAlign: 'left', fontSize: '0.75rem' }}>📄 tables.json</button>
-                  </div>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Previewing: graph.json (Synthetic Mock Payload)</div>
-                  <pre style={{ margin: 0, padding: '10px', background: 'var(--bg-primary)', borderRadius: '4px', fontSize: '0.65rem', overflow: 'auto', maxHeight: '140px' }}>
-{`{
-  "nodes": [
-    {"id": "n1", "type": "section", "title": "1. Ingest Raw Document"},
-    {"id": "n2", "type": "paragraph", "text": "ScaleFlow is a distributed, fault-tolerant RAG engine..."}
-  ],
-  "edges": [
-    {"source": "n1", "target": "n2", "type": "contains"}
-  ]
-}`}
-                  </pre>
-                </div>
+            <div style={{ padding: '16px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Pipeline Artifact Files</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>📁 graph.json (48.1 KB)</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>📁 chunks.json (112 KB)</span>
               </div>
             </div>
           )}
@@ -588,29 +490,11 @@ export const WorkspaceHome = () => {
 
       </div>
 
-      {/* Toggle button Right Inspector */}
-      <button 
-        onClick={() => setRightInspectorCollapsed(!rightInspectorCollapsed)}
-        style={{
-          width: '8px',
-          background: 'var(--bg-panel)',
-          border: 'none',
-          borderLeft: '1px solid var(--border-subtle)',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--text-muted)',
-          fontSize: '0.6rem'
-        }}
-      >
-        {rightInspectorCollapsed ? '‹' : '›'}
-      </button>
-
-      {/* 3. RIGHT INSPECTOR: Citations & Explainability */}
+      {/* 3. RIGHT INSPECTOR: Retrieval explainability */}
       <div 
         style={{ 
-          width: rightInspectorCollapsed ? '0px' : '300px', 
+          width: rightInspectorCollapsed ? '0px' : '320px', 
+          borderLeft: '1px solid var(--border-subtle)', 
           background: 'var(--bg-panel)',
           display: 'flex',
           flexDirection: 'column',
@@ -620,87 +504,40 @@ export const WorkspaceHome = () => {
         }}
       >
         <div style={{ padding: '16px', borderBottom: '1px solid var(--border-subtle)' }}>
-          <h3 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>Retrieval Inspector</h3>
+          <h3 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700 }}>Explainability Inspector</h3>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          
-          {/* Active Query Confidence Indicator */}
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '6px' }}>
-              <span>Agreement Score</span>
-              <span style={{ color: 'var(--color-success)' }}>
-                {activeAnswerDetails ? '3 / 5 Experts' : 'N/A'}
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '6px' }}>
-              <span>Answer Confidence</span>
-              <span style={{ color: 'var(--color-success)' }}>
-                {activeAnswerDetails ? '96%' : 'N/A'}
-              </span>
+            <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: 'var(--text-disabled)', textTransform: 'uppercase' }}>Token Budget Usage</span>
+            <div style={{ marginTop: '8px', background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '6px' }}>
+                <span>Used Budget</span>
+                <span>8.6K / 32K</span>
+              </div>
+              <ProgressBar progress={26} variant="accent" />
             </div>
           </div>
 
-          {/* Expert Heatmap Scores */}
-          <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
-            <h4 style={{ margin: '0 0 10px 0', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Expert Contribution</h4>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div>
+            <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: 'var(--text-disabled)', textTransform: 'uppercase' }}>Expert Heatmap Score</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '3px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '2px' }}>
                   <span>Vector Expert</span>
-                  <span>92%</span>
+                  <span>0.942</span>
                 </div>
-                <div style={{ width: '100%', height: '4px', background: '#334155', borderRadius: '2px', overflow: 'hidden' }}>
-                  <div style={{ width: '92%', height: '100%', background: '#a78bfa' }} />
-                </div>
+                <ProgressBar progress={94} variant="success" />
               </div>
-
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '3px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '2px' }}>
                   <span>Graph Expert</span>
-                  <span>80%</span>
+                  <span>0.811</span>
                 </div>
-                <div style={{ width: '100%', height: '4px', background: '#334155', borderRadius: '2px', overflow: 'hidden' }}>
-                  <div style={{ width: '80%', height: '100%', background: '#a78bfa' }} />
-                </div>
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '3px' }}>
-                  <span>Entity Expert</span>
-                  <span>30%</span>
-                </div>
-                <div style={{ width: '100%', height: '4px', background: '#334155', borderRadius: '2px', overflow: 'hidden' }}>
-                  <div style={{ width: '30%', height: '100%', background: '#a78bfa' }} />
-                </div>
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '3px' }}>
-                  <span>Table Expert</span>
-                  <span>42%</span>
-                </div>
-                <div style={{ width: '100%', height: '4px', background: '#334155', borderRadius: '2px', overflow: 'hidden' }}>
-                  <div style={{ width: '42%', height: '100%', background: '#a78bfa' }} />
-                </div>
+                <ProgressBar progress={81} variant="success" />
               </div>
             </div>
           </div>
-
-          {/* Context Token Budget Gauge */}
-          <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
-            <h4 style={{ margin: '0 0 10px 0', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Token Context Budget</h4>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '6px' }}>
-              <span>Used Tokens</span>
-              <span>1,420 / 8,192</span>
-            </div>
-            <div style={{ width: '100%', height: '6px', background: '#334155', borderRadius: '3px', overflow: 'hidden' }}>
-              <div style={{ width: '17%', height: '100%', background: '#10b981' }} />
-            </div>
-          </div>
-
         </div>
       </div>
 

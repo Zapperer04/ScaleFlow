@@ -644,6 +644,30 @@ class WorkerRegistry(Base, TimestampMixin):
             'updated_at': self.updated_at.isoformat() + 'Z' if self.updated_at else None,
         }
 
+class Notification(Base, TimestampMixin):
+    __tablename__ = 'notifications'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pipeline_id = Column(Integer, ForeignKey('pipelines.id', ondelete='SET NULL'), nullable=True)
+    document_id = Column(Integer, ForeignKey('file_records.id', ondelete='SET NULL'), nullable=True)
+    title = Column(String(200), nullable=False)
+    message = Column(Text, nullable=False)
+    severity = Column(String(50), default='info', nullable=False)
+    status = Column(String(50), default='unread', nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'pipeline_id': self.pipeline_id,
+            'document_id': self.document_id,
+            'title': self.title,
+            'message': self.message,
+            'severity': self.severity,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() + 'Z' if self.updated_at else None,
+        }
+
 # ------------------------------------------------------------------------------
 # Initialization and auto‑migration
 # ------------------------------------------------------------------------------
@@ -752,4 +776,5 @@ __all__ = [
     "EventCategory",
     "FileStatus",
     "WorkerStatus",
+    "Notification",
 ]

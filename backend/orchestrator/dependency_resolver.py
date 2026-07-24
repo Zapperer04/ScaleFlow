@@ -411,6 +411,38 @@ def update_pipeline_status(db, pipeline_id):
         except Exception as e:
             logger.error(f"EVENT SOURCING ERROR in update_pipeline_status: {e}")
 
+        try:
+            from models import Notification, FileRecord
+            f_rec = db.query(FileRecord).filter(FileRecord.pipeline_id == pipeline_id).first()
+            doc_id = f_rec.id if f_rec else None
+            
+            title = f"Pipeline #{pipeline_id} Status Changed"
+            message = f"Pipeline {pipeline.name} status updated to {new_status.value}."
+            severity = "info"
+            
+            from models import PipelineStatus
+            if new_status == PipelineStatus.completed:
+                severity = "success"
+                title = "Ingestion Pipeline Completed"
+                message = f"Document Ingestion Pipeline #{pipeline_id} has successfully compiled layout representation structures."
+            elif new_status in (PipelineStatus.failed, PipelineStatus.blocked):
+                severity = "error"
+                title = "Ingestion Pipeline Failed"
+                message = f"Pipeline #{pipeline_id} encountered compilation failures: {pipeline.error_message or 'Check task logs.'}"
+            
+            notif = Notification(
+                pipeline_id=pipeline_id,
+                document_id=doc_id,
+                title=title,
+                message=message,
+                severity=severity,
+                status="unread"
+            )
+            db.add(notif)
+            db.commit()
+        except Exception as n_err:
+            logger.error(f"Error creating notification: {n_err}")
+
     from models import FileRecord
     file_record = db.query(FileRecord).filter(FileRecord.pipeline_id == pipeline_id).first()
     if file_record:

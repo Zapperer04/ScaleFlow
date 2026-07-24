@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { Layers, Cpu, RefreshCw, Menu, X } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Layers, Cpu, RefreshCw, Menu, X, Bell, Search, Info, CheckCircle2, AlertTriangle, AlertOctagon, Trash2 } from 'lucide-react';
 import Button from '../ui/Button';
 import Breadcrumb from '../ui/Breadcrumb';
 import { NAVIGATION_CATEGORIES, getViewDetails } from '../../routes/navigation';
 import useMediaQuery from '../../hooks/useMediaQuery';
+import { useNotification } from '../../contexts/NotificationContext';
+import { globalSearch } from '../../services/search';
 
 /**
  * Reusable layout wrapper for the ScaleFlow application workspace.
@@ -26,11 +28,33 @@ export const AppShell = ({
   const isMobile = useMediaQuery('(max-width: 768px)');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Overhaul states
+  const { notifications, unreadCount, markAsRead, clearAll } = useNotification();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
+
+  const handleSearchChange = async (e) => {
+    const q = e.target.value;
+    setSearchQuery(q);
+    if (q.trim().length > 1) {
+      try {
+        const res = await globalSearch(q);
+        setSearchResults(res);
+      } catch (err) {
+        console.error("Global search error", err);
+      }
+    } else {
+      setSearchResults(null);
+    }
+  };
+
   const activeWorkersCount = workers.filter(w => w.status !== 'offline').length;
   const viewDetails = getViewDetails(activeView);
 
   const breadcrumbItems = [
-    { label: 'ScaleFlow Workspace', onClick: () => onNavigateToView('overview') },
+    { label: 'ScaleFlow Workspace', onClick: () => onNavigateToView('workspace') },
     { label: viewDetails.label }
   ];
 
@@ -189,6 +213,45 @@ export const AppShell = ({
               </div>
             </div>
 
+            {/* Global Search Trigger */}
+            <button 
+              onClick={() => setSearchOpen(true)}
+              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px' }}
+              aria-label="Open global search"
+            >
+              <Search size={18} />
+            </button>
+
+            {/* Notification Bell */}
+            <div style={{ position: 'relative' }}>
+              <button 
+                onClick={() => setDrawerOpen(true)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px' }}
+                aria-label="Open notifications"
+              >
+                <Bell size={18} />
+                {unreadCount > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '2px',
+                    right: '2px',
+                    background: 'var(--color-accent)',
+                    color: '#fff',
+                    borderRadius: '50%',
+                    width: '16px',
+                    height: '16px',
+                    fontSize: '0.65rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 'bold'
+                  }}>
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+            </div>
+
             <Button 
               variant="primary" 
               onClick={onRunTests}
@@ -205,6 +268,169 @@ export const AppShell = ({
           {children}
         </div>
       </main>
+
+      {/* Notification History Drawer */}
+      {drawerOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          width: '380px',
+          height: '100%',
+          background: 'var(--bg-panel)',
+          boxShadow: '-4px 0 24px rgba(0,0,0,0.4)',
+          borderLeft: '1px solid var(--border-subtle)',
+          zIndex: 1000,
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          <div style={{ padding: '20px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>Notifications</h3>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button onClick={clearAll} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Trash2 size={12} /> Clear all
+              </button>
+              <button onClick={() => setDrawerOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {notifications.map(notif => {
+              const Icon = notif.severity === 'success' ? CheckCircle2 : notif.severity === 'error' ? AlertOctagon : notif.severity === 'warning' ? AlertTriangle : Info;
+              const color = notif.severity === 'success' ? 'var(--color-success)' : notif.severity === 'error' ? 'var(--color-failure)' : notif.severity === 'warning' ? 'var(--color-warning)' : 'var(--color-accent)';
+              
+              return (
+                <div 
+                  key={notif.id}
+                  onClick={() => markAsRead(notif.id)}
+                  style={{
+                    background: notif.status === 'unread' ? 'rgba(255,255,255,0.03)' : 'transparent',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    position: 'relative',
+                    borderLeft: `3px solid ${color}`
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                    <Icon size={16} style={{ color, marginTop: '2px', flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.8rem' }}>{notif.title}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>{notif.message}</div>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-disabled)', marginTop: '6px' }}>
+                        {new Date(notif.created_at || notif.timestamp).toLocaleTimeString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {notifications.length === 0 && (
+              <div style={{ textAlign: 'center', color: 'var(--text-disabled)', padding: '40px', fontSize: '0.8rem' }}>
+                No active notifications.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Global Search Modal */}
+      {searchOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          background: 'rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 1000,
+          display: 'flex',
+          justifyContent: 'center',
+          paddingTop: '80px'
+        }} onClick={() => setSearchOpen(false)}>
+          <div style={{
+            width: '600px',
+            maxHeight: '450px',
+            background: 'var(--bg-panel)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: '12px',
+            boxShadow: '0 12px 48px rgba(0,0,0,0.5)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <Search size={18} style={{ color: 'var(--text-muted)' }} />
+              <input 
+                type="text"
+                autoFocus
+                placeholder="Search documents, entities, logs, pipelines..."
+                value={searchQuery}
+                onChange={handleSearchChange}
+                style={{
+                  flex: 1,
+                  background: 'none',
+                  border: 'none',
+                  outline: 'none',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.9rem'
+                }}
+              />
+              <button onClick={() => setSearchOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>✕</button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {searchResults && Object.keys(searchResults).map(category => {
+                const items = searchResults[category] || [];
+                if (items.length === 0) return null;
+                return (
+                  <div key={category}>
+                    <div style={{ fontSize: '0.7rem', fontWeight: 'bold', color: 'var(--text-disabled)', textTransform: 'uppercase', marginBottom: '8px' }}>{category}</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {items.map(item => (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            setSearchOpen(false);
+                            if (category === 'documents') {
+                              onNavigateToView('documents');
+                            } else if (category === 'pipelines') {
+                              onNavigateToView('pipelines');
+                            }
+                          }}
+                          style={{
+                            background: 'rgba(255,255,255,0.01)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: '6px',
+                            padding: '8px 12px',
+                            textAlign: 'left',
+                            color: 'var(--text-primary)',
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                            display: 'block',
+                            width: '100%',
+                            transition: 'background 0.2s'
+                          }}
+                        >
+                          {item.filename || item.name || item.detail || item.title}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              {!searchResults && searchQuery.trim().length > 1 && (
+                <div style={{ textAlign: 'center', color: 'var(--text-disabled)', padding: '20px', fontSize: '0.8rem' }}>No results found.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,31 +1,60 @@
-import React, { createContext, useState, useContext, useCallback } from 'react';
+import React, { createContext, useState, useContext, useCallback, useEffect } from 'react';
+import { apiClient } from '../services/apiClient';
 
 const NotificationContext = createContext(null);
 
 export const NotificationProvider = ({ children }) => {
   const [showStuckWarning, setShowStuckWarning] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  const addNotification = useCallback((message, type = 'info', category = 'system') => {
+  const fetchNotifications = useCallback(async () => {
+    if (document.visibilityState === 'hidden') return;
+    try {
+      const res = await apiClient.get('/api/v1/notifications');
+      setNotifications(res.data.notifications || []);
+      setUnreadCount(res.data.unread_count || 0);
+    } catch (err) {
+      console.error("Error fetching notifications from backend", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 2000);
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
+
+  const addNotification = useCallback(async (message, type = 'info', category = 'system') => {
+    // Add locally and post to mock backend insert if needed, or rely on backend events
     const newNotif = {
       id: Date.now() + Math.random().toString(36).substr(2, 9),
       message,
-      type, // 'success', 'warning', 'danger', 'info'
-      category, // 'system', 'pipeline', 'worker'
+      type,
+      category,
       timestamp: new Date(),
       read: false
     };
     setNotifications(prev => [newNotif, ...prev]);
   }, []);
 
-  const markAsRead = useCallback((id) => {
-    setNotifications(prev =>
-      prev.map(n => (n.id === id ? { ...n, read: true } : n))
-    );
-  }, []);
+  const markAsRead = useCallback(async (id) => {
+    try {
+      await apiClient.post('/api/v1/notifications/read', { ids: [id] });
+      fetchNotifications();
+    } catch (err) {
+      console.error("Error marking notification read", err);
+    }
+  }, [fetchNotifications]);
 
-  const clearAll = useCallback(() => {
-    setNotifications([]);
+  const clearAll = useCallback(async () => {
+    try {
+      await apiClient.delete('/api/v1/notifications');
+      setNotifications([]);
+      setUnreadCount(0);
+    } catch (err) {
+      console.error("Error clearing notifications", err);
+    }
   }, []);
 
   return (
@@ -33,9 +62,11 @@ export const NotificationProvider = ({ children }) => {
       showStuckWarning,
       setShowStuckWarning,
       notifications,
+      unreadCount,
       addNotification,
       markAsRead,
-      clearAll
+      clearAll,
+      refresh: fetchNotifications
     }}>
       {children}
     </NotificationContext.Provider>
