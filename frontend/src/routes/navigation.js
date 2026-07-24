@@ -1,26 +1,32 @@
 import { 
-  Activity, Play, Shield, Server, Film, Layers, ShieldAlert, BookOpen 
+  Home, Files, GitPullRequest, Database, Search, BarChart2, Cpu, Settings
 } from 'lucide-react';
 
 export const NAVIGATION_CATEGORIES = [
   {
-    id: 'main',
-    label: 'Main Experience',
+    id: 'experience',
+    label: 'AI Document Workspace',
     items: [
-      { id: 'overview', label: 'AI Document Workspace', icon: Activity }
+      { id: 'workspace', label: 'Workspace Home', icon: Home },
+      { id: 'documents', label: 'Documents Library', icon: Files }
     ]
   },
   {
-    id: 'tools',
-    label: 'Advanced Runtime Tools',
+    id: 'analysis',
+    label: 'Deep Analysis Tools',
     items: [
-      { id: 'pipelines', label: 'DAG Orchestration', icon: Play },
-      { id: 'validation-lab', label: 'Validation & Chaos Lab', icon: Shield },
-      { id: 'workers', label: 'Workers Registry', icon: Server },
-      { id: 'replay', label: 'Replay Engine', icon: Film },
-      { id: 'architecture', label: 'System Architecture', icon: Layers },
-      { id: 'diagnostics', label: 'Diagnostics & DLQ', icon: ShieldAlert },
-      { id: 'design-system', label: 'Design System', icon: BookOpen }
+      { id: 'pipelines', label: 'Pipeline DAG', icon: GitPullRequest },
+      { id: 'artifacts', label: 'Artifacts Explorer', icon: Database },
+      { id: 'retrieval', label: 'Retrieval Inspector', icon: Search },
+      { id: 'benchmarks', label: 'System Benchmarks', icon: BarChart2 }
+    ]
+  },
+  {
+    id: 'ops',
+    label: 'Platform Operations',
+    items: [
+      { id: 'infrastructure', label: 'System Infrastructure', icon: Cpu },
+      { id: 'settings', label: 'Settings', icon: Settings }
     ]
   }
 ];
@@ -30,5 +36,5 @@ export const getViewDetails = (viewId) => {
     const found = cat.items.find(item => item.id === viewId);
     if (found) return found;
   }
-  return { id: viewId, label: 'Workspace View', icon: Activity };
+  return { id: viewId, label: 'Workspace View', icon: Home };
 };

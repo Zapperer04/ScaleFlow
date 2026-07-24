@@ -5,7 +5,13 @@ import {
 import { 
   runIntegrationTests
 } from './services/api';
-import OverviewPage from './components/OverviewPage';
+import WorkspaceHome from './pages/WorkspaceHome';
+import DocumentsLibrary from './pages/DocumentsLibrary';
+import ArtifactsExplorer from './pages/ArtifactsExplorer';
+import RetrievalInspector from './pages/RetrievalInspector';
+import SystemBenchmarks from './pages/SystemBenchmarks';
+import SystemInfrastructure from './pages/SystemInfrastructure';
+import SettingsPage from './pages/SettingsPage';
 import TaskModal from './components/TaskModal';
 import AppShell from './components/layout/AppShell';
 import CommandPalette from './components/ui/CommandPalette';
@@ -33,7 +39,7 @@ const POLL_INTERVAL = parseInt(process.env.REACT_APP_POLL_INTERVAL_MS || "3000")
 
 function AppContent() {
   // Navigation & Views
-  const [activeView, setActiveView] = useState('overview');
+  const [activeView, setActiveView] = useState('workspace');
 
 
   // Pipeline State Context
@@ -122,14 +128,14 @@ function AppContent() {
   const queuePressure = getQueuePressure();
 
   const commandPaletteActions = [
-    { id: 'nav-overview', label: 'Go to AI Document Workspace', category: 'Navigation', perform: () => handleNavigateToView('overview') },
-    { id: 'nav-pipelines', label: 'Go to DAG Orchestration Workspace', category: 'Navigation', perform: () => handleNavigateToView('pipelines') },
-    { id: 'nav-validation', label: 'Go to Validation & Chaos Lab', category: 'Navigation', perform: () => handleNavigateToView('validation-lab') },
-    { id: 'nav-workers', label: 'Go to Workers Registry Control', category: 'Navigation', perform: () => handleNavigateToView('workers') },
-    { id: 'nav-replay', label: 'Go to Deterministic Replay Engine', category: 'Navigation', perform: () => handleNavigateToView('replay') },
-    { id: 'nav-architecture', label: 'Go to System Architecture Blueprint', category: 'Navigation', perform: () => handleNavigateToView('architecture') },
-    { id: 'nav-diagnostics', label: 'Go to Diagnostics & Dead-Letter Queue', category: 'Navigation', perform: () => handleNavigateToView('diagnostics') },
-    { id: 'nav-design-system', label: 'Go to Design System Showcase', category: 'Navigation', perform: () => handleNavigateToView('design-system') },
+    { id: 'nav-workspace', label: 'Go to AI Document Workspace', category: 'Navigation', perform: () => handleNavigateToView('workspace') },
+    { id: 'nav-documents', label: 'Go to Documents Library', category: 'Navigation', perform: () => handleNavigateToView('documents') },
+    { id: 'nav-pipelines', label: 'Go to Pipeline DAG Visualizer', category: 'Navigation', perform: () => handleNavigateToView('pipelines') },
+    { id: 'nav-artifacts', label: 'Go to Artifacts Explorer', category: 'Navigation', perform: () => handleNavigateToView('artifacts') },
+    { id: 'nav-retrieval', label: 'Go to Retrieval Inspector', category: 'Navigation', perform: () => handleNavigateToView('retrieval') },
+    { id: 'nav-benchmarks', label: 'Go to System Benchmarks', category: 'Navigation', perform: () => handleNavigateToView('benchmarks') },
+    { id: 'nav-infrastructure', label: 'Go to System Infrastructure', category: 'Navigation', perform: () => handleNavigateToView('infrastructure') },
+    { id: 'nav-settings', label: 'Go to Settings', category: 'Navigation', perform: () => handleNavigateToView('settings') },
     { id: 'action-tests', label: 'Execute System Integration Tests', category: 'System Operations', perform: () => handleRunTests() }
   ];
 
@@ -160,7 +166,11 @@ function AppContent() {
           )}
 
           <Suspense fallback={<WorkspaceSkeleton />}>
-            {activeView === 'overview' && <OverviewPage />}
+            {activeView === 'workspace' && <WorkspaceHome />}
+            
+            {activeView === 'documents' && (
+              <DocumentsLibrary onNavigateToView={handleNavigateToView} />
+            )}
 
             {activeView === 'pipelines' && (
               <PipelineDashboard 
@@ -169,17 +179,15 @@ function AppContent() {
               />
             )}
 
-            {activeView === 'workers' && <WorkersPage />}
+            {activeView === 'artifacts' && <ArtifactsExplorer />}
 
-            {activeView === 'validation-lab' && <ValidationLab />}
+            {activeView === 'retrieval' && <RetrievalInspector />}
 
-            {activeView === 'replay' && <ReplayPage />}
+            {activeView === 'benchmarks' && <SystemBenchmarks />}
 
-            {activeView === 'architecture' && <ArchitectureOverview />}
+            {activeView === 'infrastructure' && <SystemInfrastructure />}
 
-            {activeView === 'diagnostics' && <DiagnosticsPage />}
-
-            {activeView === 'design-system' && <DesignSystemShowcase />}
+            {activeView === 'settings' && <SettingsPage />}
           </Suspense>
         </ErrorBoundary>
       </AppShell>
