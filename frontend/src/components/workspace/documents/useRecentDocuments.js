@@ -13,7 +13,9 @@ export const useRecentDocuments = () => {
     id: p.pipeline_id,
     filename: p.filename || `Pipeline #${p.pipeline_id}`,
     status: p.status,
-    progress: p.progress || 0,
+    progress: p.progress && typeof p.progress === 'object' && p.progress.total > 0
+      ? Math.round((p.progress.completed / p.progress.total) * 100)
+      : (typeof p.progress === 'number' ? p.progress : 0),
     timestamp: p.created_at || new Date().toISOString()
   }));
 
