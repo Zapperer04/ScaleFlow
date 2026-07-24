@@ -5443,7 +5443,7 @@ def global_search():
     try:
         files = db.query(FileRecord).filter(FileRecord.original_filename.ilike(f"%{query}%")).limit(10).all()
         pipelines = db.query(Pipeline).filter(Pipeline.name.ilike(f"%{query}%")).limit(10).all()
-        logs = db.query(TaskLog).filter(TaskLog.detail.ilike(f"%{query}%")).limit(10).all()
+        logs = db.query(TaskLog).filter(TaskLog.message.ilike(f"%{query}%")).limit(10).all()
         from models import Notification
         notifications = db.query(Notification).filter(Notification.title.ilike(f"%{query}%") | Notification.message.ilike(f"%{query}%")).limit(10).all()
         
@@ -5455,7 +5455,7 @@ def global_search():
             "tables": [],
             "pipelines": [{"id": p.id, "name": p.name, "status": p.status.value} for p in pipelines],
             "notifications": [n.to_dict() for n in notifications],
-            "logs": [{"id": l.id, "detail": l.detail, "task_id": l.task_id} for l in logs]
+            "logs": [{"id": l.id, "detail": l.message, "task_id": l.task_id} for l in logs]
         })
     finally:
         db.close()

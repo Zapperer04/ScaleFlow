@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Layers, Cpu, RefreshCw, Menu, X, Bell, Search, Info, CheckCircle2, AlertTriangle, AlertOctagon, Trash2 } from 'lucide-react';
+import { Layers, Cpu, RefreshCw, Menu, X, Bell, Search, Info, CheckCircle2, AlertTriangle, AlertOctagon, Trash2, Eye } from 'lucide-react';
 import Button from '../ui/Button';
 import Breadcrumb from '../ui/Breadcrumb';
 import { NAVIGATION_CATEGORIES, getViewDetails } from '../../routes/navigation';
@@ -27,6 +27,20 @@ export const AppShell = ({
 }) => {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Dev mode toggle (disabled by default)
+  const [devMode, setDevMode] = useState(() => {
+    return localStorage.getItem('scaleflow_dev_mode') === 'true';
+  });
+
+  const toggleDevMode = () => {
+    const newMode = !devMode;
+    setDevMode(newMode);
+    localStorage.setItem('scaleflow_dev_mode', String(newMode));
+    if (!newMode && activeView !== 'workspace' && activeView !== 'settings') {
+      onNavigateToView('workspace');
+    }
+  };
 
   // Overhaul states
   const { notifications, unreadCount, markAsRead, clearAll } = useNotification();
@@ -67,6 +81,18 @@ export const AppShell = ({
     }
   };
 
+  // Filter categories based on Developer Mode
+  const filteredCategories = NAVIGATION_CATEGORIES.map(category => {
+    const items = category.items.filter(item => {
+      if (!devMode) {
+        // User Mode: only workspace and settings
+        return item.id === 'workspace' || item.id === 'settings';
+      }
+      return true;
+    });
+    return { ...category, items };
+  }).filter(category => category.items.length > 0);
+
   return (
     <div className="app-container">
       
@@ -101,7 +127,7 @@ export const AppShell = ({
           )}
 
           <nav className="sidebar-nav">
-            {NAVIGATION_CATEGORIES.map(category => (
+            {filteredCategories.map(category => (
               <React.Fragment key={category.id}>
                 <div 
                   className="text-caption" 
@@ -110,7 +136,7 @@ export const AppShell = ({
                     fontWeight: 'var(--font-weight-bold)', 
                     textTransform: 'uppercase', 
                     letterSpacing: 'var(--ls-wide)', 
-                    marginTop: category.id === 'tools' ? 'var(--spacing-24)' : '0', 
+                    marginTop: category.id === 'tools' || category.id === 'ops' ? 'var(--spacing-24)' : '0', 
                     marginBottom: 'var(--spacing-8)', 
                     paddingLeft: 'var(--spacing-8)' 
                   }}
@@ -135,49 +161,51 @@ export const AppShell = ({
           </nav>
         </div>
 
-        {/* Cluster Infrastructure Status Footer */}
-        <div className="sidebar-footer">
-          <div className="cluster-status-title text-caption" style={{ fontWeight: 'var(--font-weight-bold)' }}>Infrastructure Health</div>
-          <div className="cluster-status-list">
-            <div className="cluster-status-item">
-              <span>Redis Broker</span>
-              <div className="status-dot-container">
-                <span className={`status-dot ${redisStatus}`} />
-                <span className="text-small">{redisStatus === 'online' ? 'Connected' : 'Offline'}</span>
+        {/* Cluster Infrastructure Status Footer - Developer Mode Only */}
+        {devMode && (
+          <div className="sidebar-footer">
+            <div className="cluster-status-title text-caption" style={{ fontWeight: 'var(--font-weight-bold)' }}>Infrastructure Health</div>
+            <div className="cluster-status-list">
+              <div className="cluster-status-item">
+                <span>Redis Broker</span>
+                <div className="status-dot-container">
+                  <span className={`status-dot ${redisStatus}`} />
+                  <span className="text-small">{redisStatus === 'online' ? 'Connected' : 'Offline'}</span>
+                </div>
               </div>
-            </div>
-            
-            <div className="cluster-status-item">
-              <span>Postgres DB</span>
-              <div className="status-dot-container">
-                <span className={`status-dot ${dbStatus}`} />
-                <span className="text-small">{dbStatus === 'online' ? 'Connected' : 'Offline'}</span>
+              
+              <div className="cluster-status-item">
+                <span>Postgres DB</span>
+                <div className="status-dot-container">
+                  <span className={`status-dot ${dbStatus}`} />
+                  <span className="text-small">{dbStatus === 'online' ? 'Connected' : 'Offline'}</span>
+                </div>
               </div>
-            </div>
 
-            <div className="cluster-status-item">
-              <span>Qdrant Store</span>
-              <div className="status-dot-container">
-                <span className={`status-dot ${qdrantStatus}`} />
-                <span className="text-small">{qdrantStatus === 'online' ? 'Connected' : 'Offline'}</span>
+              <div className="cluster-status-item">
+                <span>Qdrant Store</span>
+                <div className="status-dot-container">
+                  <span className={`status-dot ${qdrantStatus}`} />
+                  <span className="text-small">{qdrantStatus === 'online' ? 'Connected' : 'Offline'}</span>
+                </div>
               </div>
-            </div>
 
-            <div className="cluster-status-item" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 'var(--spacing-8)', marginTop: 'var(--spacing-4)' }}>
-              <span>HA Status</span>
-              <span className="text-small" style={{ fontWeight: 'var(--font-weight-bold)', color: 'var(--text-primary)' }}>
-                {leaderId !== 'Checking...' && leaderId !== 'None' ? 'Leader' : 'Replica'}
-              </span>
-            </div>
+              <div className="cluster-status-item" style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 'var(--spacing-8)', marginTop: 'var(--spacing-4)' }}>
+                <span>HA Status</span>
+                <span className="text-small" style={{ fontWeight: 'var(--font-weight-bold)', color: 'var(--text-primary)' }}>
+                  {leaderId !== 'Checking...' && leaderId !== 'None' ? 'Leader' : 'Replica'}
+                </span>
+              </div>
 
-            <div className="cluster-status-item">
-              <span>Online Nodes</span>
-              <span className="text-small" style={{ fontWeight: 'var(--font-weight-bold)', color: 'var(--color-accent)' }}>
-                {activeWorkersCount} Workers
-              </span>
+              <div className="cluster-status-item">
+                <span>Online Nodes</span>
+                <span className="text-small" style={{ fontWeight: 'var(--font-weight-bold)', color: 'var(--color-accent)' }}>
+                  {activeWorkersCount} Workers
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </aside>
 
       {/* 2. MAIN VIEWPORT */}
@@ -188,30 +216,56 @@ export const AppShell = ({
           <div className="top-bar-left" style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-16)' }}>
             <Breadcrumb items={breadcrumbItems} />
             
-            <span className={`mode-badge text-caption ${queuePressure > 60 ? 'backpressure' : queuePressure > 30 ? 'high-load' : ''}`}>
-              {queuePressure > 60 ? 'Queue Backpressure: Active' : queuePressure > 30 ? 'Load Mode: High' : 'Load Mode: Optimal'}
-            </span>
+            {devMode && (
+              <span className={`mode-badge text-caption ${queuePressure > 60 ? 'backpressure' : queuePressure > 30 ? 'high-load' : ''}`}>
+                {queuePressure > 60 ? 'Queue Backpressure: Active' : queuePressure > 30 ? 'Load Mode: High' : 'Load Mode: Optimal'}
+              </span>
+            )}
           </div>
 
           <div className="top-bar-right" style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-20)' }}>
-            <div className="top-bar-stats text-caption hide-mobile" style={{ display: 'flex', gap: 'var(--spacing-16)', color: 'var(--text-secondary)' }}>
-              <div>
-                <span>Orchestrators: </span>
-                <span className="top-bar-stat-val" style={{ color: 'var(--text-primary)', fontWeight: 'var(--font-weight-bold)' }}>{orchestratorCount}</span>
+            
+            {/* Dev Mode toggle switch */}
+            <button 
+              onClick={toggleDevMode}
+              style={{
+                background: devMode ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                border: devMode ? '1px solid var(--color-accent)' : '1px solid var(--border-subtle)',
+                color: devMode ? 'var(--color-accent)' : 'var(--text-muted)',
+                borderRadius: '6px',
+                padding: '6px 12px',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s'
+              }}
+            >
+              <Eye size={14} />
+              {devMode ? 'Developer Mode' : 'User Mode'}
+            </button>
+
+            {devMode && (
+              <div className="top-bar-stats text-caption hide-mobile" style={{ display: 'flex', gap: 'var(--spacing-16)', color: 'var(--text-secondary)' }}>
+                <div>
+                  <span>Orchestrators: </span>
+                  <span className="top-bar-stat-val" style={{ color: 'var(--text-primary)', fontWeight: 'var(--font-weight-bold)' }}>{orchestratorCount}</span>
+                </div>
+                <div style={{ borderLeft: '1px solid var(--border-subtle)', paddingLeft: 'var(--spacing-12)' }}>
+                  <span>Active Leader ID: </span>
+                  <span className="top-bar-stat-val" style={{ fontFamily: 'var(--font-family-mono)', color: 'var(--text-primary)' }}>
+                    {leaderId.length > 10 ? `${leaderId.slice(0, 8)}...` : leaderId}
+                  </span>
+                </div>
+                <div style={{ borderLeft: '1px solid var(--border-subtle)', paddingLeft: 'var(--spacing-12)' }}>
+                  <span>Queue Size: </span>
+                  <span className="top-bar-stat-val" style={{ color: queuePressure > 60 ? 'var(--color-failure)' : 'var(--text-primary)', fontWeight: 'var(--font-weight-bold)' }}>
+                    {queueStats.total || 0}
+                  </span>
+                </div>
               </div>
-              <div style={{ borderLeft: '1px solid var(--border-subtle)', paddingLeft: 'var(--spacing-12)' }}>
-                <span>Active Leader ID: </span>
-                <span className="top-bar-stat-val" style={{ fontFamily: 'var(--font-family-mono)', color: 'var(--text-primary)' }}>
-                  {leaderId.length > 10 ? `${leaderId.slice(0, 8)}...` : leaderId}
-                </span>
-              </div>
-              <div style={{ borderLeft: '1px solid var(--border-subtle)', paddingLeft: 'var(--spacing-12)' }}>
-                <span>Queue Size: </span>
-                <span className="top-bar-stat-val" style={{ color: queuePressure > 60 ? 'var(--color-failure)' : 'var(--text-primary)', fontWeight: 'var(--font-weight-bold)' }}>
-                  {queueStats.total || 0}
-                </span>
-              </div>
-            </div>
+            )}
 
             {/* Global Search Trigger */}
             <button 
@@ -252,14 +306,16 @@ export const AppShell = ({
               </button>
             </div>
 
-            <Button 
-              variant="primary" 
-              onClick={onRunTests}
-              disabled={testing}
-              iconLeft={testing ? <RefreshCw size={14} className="animate-spin" /> : <Cpu size={14} />}
-            >
-              Run System Tests
-            </Button>
+            {devMode && (
+              <Button 
+                variant="primary" 
+                onClick={onRunTests}
+                disabled={testing}
+                iconLeft={testing ? <RefreshCw size={14} className="animate-spin" /> : <Cpu size={14} />}
+              >
+                Run System Tests
+              </Button>
+            )}
           </div>
         </header>
 
