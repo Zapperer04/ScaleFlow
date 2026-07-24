@@ -1,0 +1,37 @@
+{
+  "10": {
+    "indexing_throughput": 12.5,
+    "retrieval_latency_ms": 137.78,
+    "memory_usage_mb": 251.5,
+    "cpu_utilization": 13.96,
+    "storage_growth_mb": 1.2
+  },
+  "100": {
+    "indexing_throughput": 10.73,
+    "retrieval_latency_ms": 151.62,
+    "memory_usage_mb": 265.0,
+    "cpu_utilization": 16.28,
+    "storage_growth_mb": 12.0
+  },
+  "1000": {
+    "indexing_throughput": 8.36,
+    "retrieval_latency_ms": 176.23,
+    "memory_usage_mb": 400.0,
+    "cpu_utilization": 19.95,
+    "storage_growth_mb": 120.0
+  },
+  "10000": {
+    "indexing_throughput": 5.8,
+    "retrieval_latency_ms": 220.0,
+    "memory_usage_mb": 1750.0,
+    "cpu_utilization": 25.77,
+    "storage_growth_mb": 1200.0
+  },
+  "100000": {
+    "indexing_throughput": 3.6,
+    "retrieval_latency_ms": 297.83,
+    "memory_usage_mb": 15250.0,
+    "cpu_utilization": 35.0,
+    "storage_growth_mb": 12000.0
+  }
+}

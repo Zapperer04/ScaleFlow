@@ -1,0 +1,20 @@
+[
+  {
+    "question": "What is the main topic of the mixed document?",
+    "document_id": "doc_mixed",
+    "expected_chunk_ids": [
+      "chunk-0"
+    ],
+    "expected_graph_nodes": [
+      "node-p1"
+    ],
+    "expected_entities": [
+      "Google"
+    ],
+    "expected_tables": [
+      "tbl-1"
+    ],
+    "difficulty": "easy",
+    "category": "mixed"
+  }
+]

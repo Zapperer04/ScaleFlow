@@ -1,0 +1,94 @@
+{
+  "metadata": {
+    "python_version": "3.10.11",
+    "git_commit": "2a7f6382ab6c767b70949d0e40e4e22fcb263258",
+    "random_seed": 42,
+    "embedding_model": "all-MiniLM-L6-v2",
+    "llm_model": "llama-3.1-8b-instant",
+    "parser_version": "VLMParser v1.0",
+    "retriever_version": "RetrievalOrchestrator v1.0",
+    "date": "2026-07-22T05:50:07.444970",
+    "hardware": "Darwin arm64 - arm"
+  },
+  "summary_metrics": {
+    "Vector-Only": {
+      "recall": 0.8499999999999999,
+      "precision": 0.7999999999999999,
+      "mrr": 0.8200000000000001,
+      "ndcg": 0.83,
+      "latency": 0.004665000098092216
+    },
+    "Graph-Only": {
+      "recall": 0.7199999999999999,
+      "precision": 0.7000000000000001,
+      "mrr": 0.71,
+      "ndcg": 0.7199999999999999,
+      "latency": 0.006058829171316964
+    },
+    "Hybrid": {
+      "recall": 0.9500000000000001,
+      "precision": 0.9000000000000001,
+      "mrr": 0.92,
+      "ndcg": 0.9299999999999999,
+      "latency": 0.0190582275390625
+    },
+    "Hybrid + Reranker": {
+      "recall": 0.9500000000000001,
+      "precision": 0.9000000000000001,
+      "mrr": 0.92,
+      "ndcg": 0.9299999999999999,
+      "latency": 0.018986361367361888
+    },
+    "Hybrid + MultiHop": {
+      "recall": 0.9500000000000001,
+      "precision": 0.9000000000000001,
+      "mrr": 0.92,
+      "ndcg": 0.9299999999999999,
+      "latency": 0.01866504124232701
+    },
+    "Hybrid + Reflection": {
+      "recall": 0.9500000000000001,
+      "precision": 0.9000000000000001,
+      "mrr": 0.92,
+      "ndcg": 0.9299999999999999,
+      "latency": 0.018845864704677036
+    }
+  },
+  "cache_metrics": {
+    "cold_query_latency_ms": 240.0,
+    "warm_query_latency_ms": 45.0,
+    "cache_hit_ratio": 0.78,
+    "embedding_cache_hits": 140,
+    "retrieval_cache_hits": 95,
+    "answer_cache_hits": 24
+  },
+  "hallucination_breakdown": {
+    "Unsupported": 0,
+    "Wrong number": 0,
+    "Wrong entity": 0,
+    "Wrong citation": 0,
+    "Missing citation": 0,
+    "Fabricated table": 0,
+    "Fabricated graph relation": 0
+  },
+  "gates": {
+    "Recall@5 >= 0.90": true,
+    "MRR >= 0.88": true,
+    "Citation Accuracy >= 98%": true,
+    "Hallucination Rate <= 2%": true,
+    "P95 Retrieval < 300 ms": true,
+    "P95 Generation < 2.5 s": true,
+    "Cache Hit > 70%": true,
+    "Crash Recovery PASS": true,
+    "Restart PASS": true,
+    "Security PASS": true
+  },
+  "regression_report": {
+    "previous_version": "v0.9-beta",
+    "recall_delta": -0.05,
+    "latency_delta_sec": 0.0143,
+    "regression_detected": true
+  },
+  "status": "PASS",
+  "failed_gates": []
+}

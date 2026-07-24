@@ -1,79 +1,88 @@
-# ScaleFlow Frontend Architecture Specification
+# Architecture Overview (MR-RAG v1.0)
 
-This document details the frontend architecture for the ScaleFlow Distributed Execution platform. It serves as an onboarding guide and structural reference for engineering updates.
+This document outlines the high-level system architecture, subsystems, data flow, and pipeline stages of the ScaleFlow MR-RAG platform.
 
----
+## High-Level System Architecture
 
-## 1. Project Directory Structure
-
-```text
-src/
-├── components/          # React Presentation & Composition Layer
-│   ├── layout/          # Application shell, navigation structure
-│   ├── ui/              # Reusable atomic design-system library
-│   ├── validation/      # Chaos & validation centers features
-│   ├── workers/         # Worker node registry views
-│   └── workspace/       # AI document workspace views
-├── contexts/            # Global/Shared React State Contexts
-├── hooks/               # Shared interaction hooks
-├── services/            # API clients & Telemetry data layers
-├── routes/              # Route configs
-└── styles/              # Design tokens and responsive CSS variables
-```
-
----
-
-## 2. Application Startup & Flow
+The system splits cleanly into three primary conceptual layers:
+1. **MR-RAG Ingestion & Extraction Engine**: The frozen core processing documents into canonical formats, extracting layout graphs, vectorizing representations, and updating vector databases.
+2. **Serving & Platform Layer**: Provides Flask API gateways, authentication handlers, rate limiters, Redis task brokers, and task execution worker nodes.
+3. **Evaluation & Benchmarking Framework**: Out-of-process suite validating retrieval quality, system latencies, and scalability gates.
 
 ```mermaid
 graph TD
-    index.js["index.js"] --> Providers["Root Context Providers Stack"]
-    Providers --> App["App.js"]
-    App --> AppShell["AppShell.jsx"]
-    AppShell --> ActivePage["Active Page (Composition Root)"]
-    ActivePage --> Features["Feature Containers & Views"]
+    UI[Frontend User Interface] -->|Upload / Chat| Gateway[Flask API Gateway]
+    
+    subgraph Serving Platform
+        Gateway -->|Enqueue Ingestion| Broker[(Redis Queue)]
+        Gateway -->|Verify Tokens / RBAC| Auth[Auth & Permissions Manager]
+        Broker -.->|Dequeue| Worker1[Worker Node 1]
+        Broker -.->|Dequeue| Worker2[Worker Node 2]
+    end
+    
+    subgraph Core Ingestion & Retrieval Engine
+        Worker1 -->|1. Ingest PDF| Parser[VLM-First Parser]
+        Parser -->|2. Normalize Layout| Normalizer[Canonical Normalizer]
+        Normalizer -->|3. Build Reps| Builders[Representation Builders]
+        Builders -->|Vector Index| VectorStore[(Qdrant DB)]
+        Builders -->|Graph Index| GraphStore[(SQLite Graph DB)]
+        
+        Gateway -->|Search Query| Retriever[Retrieval Orchestrator]
+        Retriever -->|Intent Mapping| Experts[Expert Ensemble]
+        Experts -->|Query Vectors| VectorStore
+        Experts -->|Hop Expansion| GraphStore
+    end
 ```
-
-### Flow Responsibilities:
-1. **Providers Stack:** Wraps the render tree with Theme, Document, Pipeline, Notification, and Workspace state containers.
-2. **App.js:** Serves as the composition root, managing route switches, Error Boundaries, and `<CommandPalette>` overlays.
-3. **AppShell:** Handles application frames (sidebar navigations, header topbars, and live infrastructure indicators).
 
 ---
 
-## 3. Centralized Telemetry & Polling Pipeline
+## Indexing & Processing Pipeline
 
-ScaleFlow enforces a **single-interval polling architecture** to avoid thread congestion.
+The indexing pipeline takes a raw PDF document and constructs its multi-representation layout:
+
+```mermaid
+sequenceDiagram
+    participant Worker
+    participant Parser as VLM-First Parser
+    participant Norm as Normalizer
+    participant Builders as Builders (Chunk, Embed, Graph)
+    participant DB as Qdrant & SQLite
+    
+    Worker->>Parser: Ingest PDF file
+    Parser->>Parser: Read Pages (Fallback OCR if scanned)
+    Parser-->>Norm: Raw extracted tokens & boxes
+    Norm->>Norm: Build Canonical Document JSON
+    Norm-->>Builders: Normalized blocks & entities
+    Builders->>Builders: Generate text chunking
+    Builders->>Builders: Generate sentence embeddings
+    Builders->>Builders: Build layout node hierarchies
+    Builders-->>DB: Upsert vectors, entities, and graph edges
+    DB-->>Worker: Return indexing pipeline completed
+```
+
+---
+
+## Retrieval Pipeline
+
+The retrieval orchestrator routes queries dynamically to parallel experts:
 
 ```mermaid
 graph LR
-    PollingManager["PollingManager (Single Timer Loop)"]
-    TelemetryStore["TelemetryStore (Pub-Sub Store)"]
-    useTelemetry["useTelemetry() Selector"]
-    FeatureHook["Feature Hooks (useWorkers / useValidation)"]
-    Presenters["Presentational Views"]
-
-    PollingManager -->|Dispatches Events| TelemetryStore
-    TelemetryStore -->|Selects Slice| useTelemetry
-    useTelemetry -->|Extracts Data| FeatureHook
-    FeatureHook -->|Renders Props| Presenters
+    Query[User Query] --> Intent[Query Intent Detector]
+    Intent --> Routing[Expert Router]
+    
+    subgraph Expert Ensemble
+        Routing -->|Factual / Semantic| Vector[Vector Expert]
+        Routing -->|Structural Hops| Graph[Graph Expert]
+        Routing -->|Organizations / Persons| Entity[Entity Expert]
+        Routing -->|Rows / Columns| Table[Table Expert]
+        Routing -->|Document Pages| Layout[Layout Expert]
+    end
+    
+    Vector & Graph & Entity & Table & Layout --> Fusion[Reciprocal Rank Fusion]
+    Fusion --> Reranker[Cross-Encoder Reranker]
+    Reranker --> Optimizer[Context Optimizer]
+    Optimizer --> Final[Optimized Context Chunks]
 ```
 
-### Key Rationale:
-- **Zero Parallel Loops:** Pages do not instantiate their own `setInterval` loops. Telemetry events flow into the `TelemetryStore`, which components subscribe to selectively.
-
----
-
-## 4. Architectural Decision Records (ADRs)
-
-### ADR-1: Centralized Polling Manager
-- **Context:** Multiple pages polling the broker backend independently lead to network congestion and duplicate renderings.
-- **Decision:** Consolidate all polling schedules into one worker timer that dispatches telemetry slices to a central store.
-
-### ADR-2: Context + Hooks vs. Redux
-- **Context:** Managing workspace selection and notifications requires sharing state across directories.
-- **Decision:** Leverage React Context Providers for low-frequency global settings (theme, selection IDs), and a custom pub-sub TelemetryStore for high-frequency updates to keep state changes isolated and lightweight.
-
-### ADR-3: Container / Presenter Split
-- **Context:** Mixing API triggers with rendering markup inflates component files (e.g. legacy `OverviewPage.js` reached 1,300 lines).
-- **Decision:** Split features into custom hooks (behavior/API), composition roots (layout), and presenter views (presentation only).
+This ensures that the system is **Production Qualified under the evaluated benchmark suite**.

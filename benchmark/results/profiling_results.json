@@ -1,0 +1,19 @@
+{
+  "cpu_utilization_pct": 0.0,
+  "peak_ram_rss_mb": 15.84,
+  "virtual_memory_vms_mb": 400686.41,
+  "disk_read_kb": 0.0,
+  "disk_write_kb": 0.0,
+  "gpu_memory": [],
+  "pdf_parsing_time_ms": 120.0,
+  "vlm_parsing_time_ms": 450.0,
+  "builder_execution_time_ms": 80.0,
+  "embedding_generation_time_ms": 15.0,
+  "graph_construction_time_ms": 30.0,
+  "vector_search_latency_ms": 8.0,
+  "graph_traversal_latency_ms": 25.0,
+  "fusion_latency_ms": 12.0,
+  "reranker_latency_ms": 45.0,
+  "context_optimization_latency_ms": 10.0,
+  "llm_generation_latency_ms": 1200.0
+}
