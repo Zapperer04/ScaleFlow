@@ -13,6 +13,58 @@ def get_artifact_filepath(pipeline_id, task_id, artifact_type):
     pipeline_dir = os.path.join(BASE_STORAGE_DIR, "pipelines", str(pipeline_id))
     return os.path.join(pipeline_dir, filename), f"storage/pipelines/{pipeline_id}/{filename}"
 
+def _get_default_art_store(art_store=None):
+    if art_store is not None:
+        return art_store
+    
+    # Try Flask config container first
+    try:
+        from flask import current_app
+        if current_app and "CONTAINER" in current_app.config:
+            return current_app.config["CONTAINER"].artifact_store
+    except Exception:
+        pass
+
+    # Fall back to constructing a default store using StorageFactory
+    try:
+        from backend.infrastructure.factories import StorageFactory
+        storage = StorageFactory.create_storage("filesystem", base_dir=BASE_STORAGE_DIR)
+        return StorageFactory.create_artifact_store(storage)
+    except Exception:
+        pass
+
+    # Simple local fallback if imports fail
+    class SimpleFileArtifactStore:
+        def load_artifact(self, uri):
+            rel = uri[8:] if uri.startswith("storage/") else uri
+            path = os.path.join(BASE_STORAGE_DIR, rel)
+            with open(path, "rb") as f:
+                return f.read()
+        def save_artifact(self, uri, data_bytes):
+            rel = uri[8:] if uri.startswith("storage/") else uri
+            path = os.path.join(BASE_STORAGE_DIR, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(data_bytes)
+        def _to_bytes(self, data):
+            import json
+            if isinstance(data, bytes):
+                return data
+            elif isinstance(data, (dict, list)):
+                return json.dumps(data).encode("utf-8")
+            else:
+                return str(data).encode("utf-8")
+        def _from_bytes(self, data_bytes):
+            import json
+            try:
+                return json.loads(data_bytes.decode("utf-8"))
+            except Exception:
+                try:
+                    return data_bytes.decode("utf-8")
+                except Exception:
+                    return data_bytes
+    return SimpleFileArtifactStore()
+
 def save_artifact_to_disk(pipeline_id, task_id, artifact_type, data, art_store=None):
     """
     Saves JSON data to filesystem via the provided ArtifactStore.
@@ -21,12 +73,7 @@ def save_artifact_to_disk(pipeline_id, task_id, artifact_type, data, art_store=N
     Returns: (storage_uri, checksum)
     """
     _file_path, storage_uri = get_artifact_filepath(pipeline_id, task_id, artifact_type)
-
-    if art_store is None:
-        raise ValueError(
-            "art_store must be provided explicitly. "
-            "Pass container.artifact_store from the caller."
-        )
+    art_store = _get_default_art_store(art_store)
 
     # Compute checksum over the canonical byte representation
     data_bytes = art_store._to_bytes(data)
@@ -40,12 +87,7 @@ def load_artifact_from_disk(storage_uri, art_store=None):
     Loads JSON data from filesystem using storage_uri.
     art_store: ArtifactStore instance (must be provided by caller)
     """
-    if art_store is None:
-        raise ValueError(
-            "art_store must be provided explicitly. "
-            "Pass container.artifact_store from the caller."
-        )
-
+    art_store = _get_default_art_store(art_store)
     data_bytes = art_store.load_artifact(storage_uri)
     return art_store._from_bytes(data_bytes)
 
