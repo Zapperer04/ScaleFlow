@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, FileText, CheckCircle2, AlertTriangle, Play, HelpCircle, 

@@ -1,0 +1,137 @@
+[
+  {
+    "id": "doc-529b4f4c9527fd24",
+    "type": "Document",
+    "text": "document.pdf",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b0",
+    "type": "Paragraph",
+    "text": "Advanced Orchestration in Distributed Systems",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b1",
+    "type": "Paragraph",
+    "text": "Jane Doe, John Smith",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b2",
+    "type": "Paragraph",
+    "text": "Abstract: This paper explores the performance of distributed DAG execution in highly volatile environments. We present ScaleFlow,",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b3",
+    "type": "Paragraph",
+    "text": "a novel orchestration engine.",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b4",
+    "type": "Paragraph",
+    "text": "E = mc^2 + sum(x_i) / N",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b5",
+    "type": "Paragraph",
+    "text": "References:",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b6",
+    "type": "Paragraph",
+    "text": "[1] Lamport, L. (1978). Time, clocks, and the ordering of events in a distributed system.",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "tbl1",
+    "type": "Table",
+    "text": "Table: Table 1",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.1,
+      "xmin": 0.1,
+      "ymax": 0.5,
+      "xmax": 0.5
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  }
+]

@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useState } from 'react';
 import { Database, FileJson, ChevronDown, ChevronRight, Download, Terminal } from 'lucide-react';
 import Button from '../components/ui/Button';

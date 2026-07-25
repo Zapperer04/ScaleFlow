@@ -166,5 +166,17 @@
     "lease_leaks": 0,
     "scheduler_429": 0,
     "timestamp": "2026-07-20T23:04:55.271041"
+  },
+  {
+    "commit_sha": "55439f30f96fd1fcf17156b851c3300abeffa943",
+    "scenario": "small-office",
+    "broker_latency_ms": 2.1,
+    "lease_latency_ms": 0.491,
+    "fairness": 1.0,
+    "efficiency": 0.0,
+    "duplicates": 0,
+    "lease_leaks": 0,
+    "scheduler_429": 0,
+    "timestamp": "2026-07-22T01:02:07.390123"
   }
 ]

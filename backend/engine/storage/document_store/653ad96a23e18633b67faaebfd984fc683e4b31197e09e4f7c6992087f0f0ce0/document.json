@@ -1,0 +1,113 @@
+{
+  "document_id": "653ad96a23e18633b67faaebfd984fc683e4b31197e09e4f7c6992087f0f0ce0",
+  "document": {
+    "name": "document.pdf"
+  },
+  "pages": [
+    {
+      "page": 1,
+      "text": ""
+    }
+  ],
+  "blocks": [],
+  "sections": [],
+  "graph": {
+    "nodes": [
+      {
+        "id": "doc-d19b86910c69195e",
+        "type": "Document",
+        "text": "document.pdf",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        },
+        "confidence": 1.0
+      },
+      {
+        "id": "tbl1",
+        "type": "Table",
+        "text": "Table: Table 1",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.1,
+          "xmin": 0.1,
+          "ymax": 0.5,
+          "xmax": 0.5
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "doc-d19b86910c69195e",
+        "target": "tbl1",
+        "type": "contains",
+        "confidence": 1.0,
+        "builder": "VLMParser"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "name": "Google Corp",
+      "type": "Organization",
+      "normalized_value": "Google Corp",
+      "aliases": [],
+      "occurrences": [
+        {
+          "page": 1,
+          "block_id": "p1-b0"
+        }
+      ]
+    }
+  ],
+  "tables": [
+    {
+      "id": "tbl1",
+      "page": 1,
+      "rows": 2,
+      "columns": 2,
+      "headers": [
+        "Header A",
+        "Header B"
+      ],
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "text": "cell1"
+        }
+      ],
+      "merged_cells": [],
+      "bbox": {
+        "ymin": 0.1,
+        "xmin": 0.1,
+        "ymax": 0.5,
+        "xmax": 0.5
+      },
+      "caption": "Table 1",
+      "references": [],
+      "graph_node_id": null,
+      "chunk_ids": []
+    }
+  ],
+  "figures": [],
+  "layout": {
+    "font_hierarchy": [],
+    "columns": [],
+    "reading_order": []
+  },
+  "metadata": {
+    "title": "document.pdf"
+  },
+  "parser_metadata": {
+    "parser_used": "pypdf_fallback",
+    "timings": {},
+    "vlm": {
+      "provider": "fallback",
+      "model": "pypdf"
+    }
+  }
+}

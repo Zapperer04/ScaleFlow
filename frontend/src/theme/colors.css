@@ -1,0 +1,84 @@
+:root {
+  /* Dark Theme Default */
+  --bg-primary: #0b0f19;          /* Deep Slate */
+  --bg-panel: #131924;            /* Soft Charcoal */
+  --bg-input: #0e121c;            /* Input Background */
+  --border-subtle: #1f293d;       /* Border Slate */
+  --border-divider: #182235;
+
+  /* Brand Accents */
+  --color-accent: #4f46e5;        /* Indigo */
+  --color-accent-hover: #4338ca;  /* Indigo Hover */
+  --color-accent-glow: rgba(79, 70, 229, 0.15);
+  
+  /* Semantic Statuses */
+  --color-success: #10b981;       /* Emerald */
+  --color-warning: #f59e0b;       /* Amber */
+  --color-failure: #f43f5e;       /* Rose */
+
+  /* Text Contrast Scales */
+  --text-primary: #f8fafc;        /* Near White */
+  --text-secondary: #94a3b8;      /* Muted Grey */
+  --text-muted: #64748b;          /* Dark Muted */
+  --text-disabled: #475569;
+  --text-white: #ffffff;
+
+  /* Button Overrides */
+  --button-primary-bg: var(--color-accent);
+  --button-primary-hover: var(--color-accent-hover);
+  --button-primary-text: var(--text-white);
+  --button-secondary-bg: transparent;
+  --button-secondary-border: var(--border-subtle);
+  --button-secondary-text: var(--text-primary);
+  --button-danger-bg: rgba(244, 63, 94, 0.1);
+  --button-danger-border: var(--color-failure);
+  --button-danger-text: var(--color-failure);
+
+  --panel-bg: var(--bg-panel);
+  --panel-border: var(--border-subtle);
+  --input-bg: var(--bg-input);
+  --input-border: var(--border-subtle);
+  --input-border-focus: var(--color-accent);
+
+  --badge-success-bg: rgba(16, 185, 129, 0.1);
+  --badge-success-border: rgba(16, 185, 129, 0.2);
+  --badge-success-text: var(--color-success);
+
+  --badge-warning-bg: rgba(245, 158, 11, 0.1);
+  --badge-warning-border: rgba(245, 158, 11, 0.2);
+  --badge-warning-text: var(--color-warning);
+
+  --badge-danger-bg: rgba(244, 63, 94, 0.1);
+  --badge-danger-border: rgba(244, 63, 94, 0.2);
+  --badge-danger-text: var(--color-failure);
+}
+
+.theme-light {
+  --bg-primary: #f8fafc;
+  --bg-panel: #ffffff;
+  --bg-input: #f1f5f9;
+  --border-subtle: #cbd5e1;
+  --border-divider: #e2e8f0;
+
+  --color-accent: #4f46e5;
+  --color-accent-hover: #4338ca;
+  --color-accent-glow: rgba(79, 70, 229, 0.1);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --text-disabled: #94a3b8;
+  --text-white: #ffffff;
+
+  --button-secondary-bg: var(--bg-panel);
+  --button-secondary-border: var(--border-subtle);
+  --button-secondary-text: var(--text-primary);
+  --button-danger-bg: #fee2e2;
+  --button-danger-border: #fca5a5;
+  --button-danger-text: var(--color-failure);
+
+  --panel-bg: var(--bg-panel);
+  --panel-border: var(--border-subtle);
+  --input-bg: var(--bg-input);
+  --input-border: var(--border-subtle);
+}

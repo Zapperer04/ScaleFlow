@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useState, useEffect, useCallback } from 'react';
 import { Layers, Cpu, RefreshCw, Menu, X, Bell, Search, Info, CheckCircle2, AlertTriangle, AlertOctagon, Trash2, Eye } from 'lucide-react';
 import Button from '../ui/Button';

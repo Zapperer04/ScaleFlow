@@ -1,0 +1,66 @@
+[
+  {
+    "source": "doc-529b4f4c9527fd24",
+    "target": "p1-b0",
+    "type": "contains",
+    "metadata": {},
+    "confidence": 1.0,
+    "builder": "VLMParser"
+  },
+  {
+    "source": "doc-529b4f4c9527fd24",
+    "target": "p1-b1",
+    "type": "contains",
+    "metadata": {},
+    "confidence": 1.0,
+    "builder": "VLMParser"
+  },
+  {
+    "source": "doc-529b4f4c9527fd24",
+    "target": "p1-b2",
+    "type": "contains",
+    "metadata": {},
+    "confidence": 1.0,
+    "builder": "VLMParser"
+  },
+  {
+    "source": "doc-529b4f4c9527fd24",
+    "target": "p1-b3",
+    "type": "contains",
+    "metadata": {},
+    "confidence": 1.0,
+    "builder": "VLMParser"
+  },
+  {
+    "source": "doc-529b4f4c9527fd24",
+    "target": "p1-b4",
+    "type": "contains",
+    "metadata": {},
+    "confidence": 1.0,
+    "builder": "VLMParser"
+  },
+  {
+    "source": "doc-529b4f4c9527fd24",
+    "target": "p1-b5",
+    "type": "contains",
+    "metadata": {},
+    "confidence": 1.0,
+    "builder": "VLMParser"
+  },
+  {
+    "source": "doc-529b4f4c9527fd24",
+    "target": "p1-b6",
+    "type": "contains",
+    "metadata": {},
+    "confidence": 1.0,
+    "builder": "VLMParser"
+  },
+  {
+    "source": "doc-529b4f4c9527fd24",
+    "target": "tbl1",
+    "type": "contains",
+    "metadata": {},
+    "confidence": 1.0,
+    "builder": "VLMParser"
+  }
+]

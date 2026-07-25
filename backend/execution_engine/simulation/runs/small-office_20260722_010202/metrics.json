@@ -1,0 +1,23 @@
+{
+    "avg_broker_latency_ms": 2.1,
+    "avg_lease_latency_ms": 0.491230986839117,
+    "actual_inference_time_sec": 0.0,
+    "reserved_provider_time_sec": 0.20158743858337402,
+    "scheduling_efficiency_pct": 0.0,
+    "jain_fairness": 1.0,
+    "success_rate": 0.0,
+    "total_failures": 43,
+    "lease_leaks": 0,
+    "duplicate_executions": 0,
+    "scheduler_429": 0,
+    "evaluations": {
+        "broker_latency": "PASS",
+        "lease_latency": "PASS",
+        "scheduling_efficiency": "FAIL",
+        "jain_fairness": "PASS",
+        "queue_drain": "FAIL",
+        "duplicate_execution": "PASS",
+        "lease_leaks": "PASS",
+        "replay_determinism": "PASS"
+    }
+}

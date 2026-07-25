@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useState } from 'react';
 import { Settings, Save, AlertTriangle, ToggleLeft, Shield } from 'lucide-react';
 import Button from '../components/ui/Button';

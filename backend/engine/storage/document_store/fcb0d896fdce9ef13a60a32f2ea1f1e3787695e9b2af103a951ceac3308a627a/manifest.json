@@ -1,0 +1,30 @@
+{
+  "document_id": "fcb0d896fdce9ef13a60a32f2ea1f1e3787695e9b2af103a951ceac3308a627a",
+  "parser_version": "1.0.0",
+  "graph_version": "1.0.0",
+  "chunk_version": "1.0.0",
+  "embedding_version": "1.0.0",
+  "builder_versions": {
+    "metadata": "1.0.0",
+    "layout": "1.0.0",
+    "entities": "1.0.0",
+    "graph": "1.0.0",
+    "chunks": "1.0.0",
+    "tables": "1.0.0",
+    "embeddings": "1.0.0"
+  },
+  "hashes": {
+    "document": "38011b1ad8268eae970074c467011ec3beabbb33b846f85b2ec9a5e8ea2ba9ef",
+    "metadata": "be1e145303853a1a6cc64f01ca7d631e9f50f830ce79e479e0d6da3ae6bf3383",
+    "layout": "ecfcf38638f3ee1bcc452553dd42b999fecd8f1c3a6ac07d78af7762c350908b",
+    "entities": "e600c099ff14c6b294dece593af9742a4e26d97b1998c54b91f2932a40a99249",
+    "graph_nodes": "489882b7e22a75b4f004932417d877f85ac384062bfa95ecbdd7d13567c914c2",
+    "graph_edges": "b2c0d4840e98f31bf1bd5456b7ece01a15224bcfac4501fc716c57b6765bc812",
+    "chunks": "1e47f4bd09c9ea543f33671888ab54ca91b1e4d364383cc48aa25b6039a9f690",
+    "tables": "bcdf983e55eb71192438593ad369b210e993e5b98ba4646c2c8537301f113d4e",
+    "embeddings": ""
+  },
+  "creation_timestamp": "2026-07-22T05:50:07.634150",
+  "last_updated": "2026-07-22T05:50:07.634150",
+  "model_used": "google/gemma-4-26b-a4b-it:free"
+}

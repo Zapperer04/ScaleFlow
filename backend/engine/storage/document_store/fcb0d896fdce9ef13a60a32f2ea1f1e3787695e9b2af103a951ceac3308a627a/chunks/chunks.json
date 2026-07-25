@@ -1,0 +1,229 @@
+[
+  {
+    "chunk_id": "chunk-0",
+    "text": "Name\nRole\nScore\nAlice\nEngineer\n92\nBob\nManager\n85\nCarol\nDesigner\n88\nDave\nAnalyst\n79",
+    "summary": "Name\nRole\nScore\nAlice\nEngineer\n92\nBob\nManager\n85\nCarol\nDesigner\n88\nDave\nAnalyst\n79",
+    "parent_node": "doc-root",
+    "section_path": [],
+    "page_range": [
+      1
+    ],
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "graph_node_ids": [
+      "p1-b0",
+      "p1-b1",
+      "p1-b2",
+      "p1-b3",
+      "p1-b4",
+      "p1-b5",
+      "p1-b6",
+      "p1-b7",
+      "p1-b8",
+      "p1-b9",
+      "p1-b10",
+      "p1-b11",
+      "p1-b12",
+      "p1-b13",
+      "p1-b14"
+    ],
+    "entities": [],
+    "keywords": [
+      "alice",
+      "analyst",
+      "carol",
+      "designer",
+      "engineer",
+      "manager",
+      "score"
+    ],
+    "table_refs": [],
+    "figure_refs": [],
+    "previous_chunk": null,
+    "next_chunk": null,
+    "reading_order": 0,
+    "importance_score": 1.0,
+    "lineage": [
+      {
+        "block_id": "p1-b0",
+        "stable_node_id": "p1-b0",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b1",
+        "stable_node_id": "p1-b1",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b2",
+        "stable_node_id": "p1-b2",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b3",
+        "stable_node_id": "p1-b3",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b4",
+        "stable_node_id": "p1-b4",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b5",
+        "stable_node_id": "p1-b5",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b6",
+        "stable_node_id": "p1-b6",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b7",
+        "stable_node_id": "p1-b7",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b8",
+        "stable_node_id": "p1-b8",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b9",
+        "stable_node_id": "p1-b9",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b10",
+        "stable_node_id": "p1-b10",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b11",
+        "stable_node_id": "p1-b11",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b12",
+        "stable_node_id": "p1-b12",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b13",
+        "stable_node_id": "p1-b13",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b14",
+        "stable_node_id": "p1-b14",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      }
+    ],
+    "retrieval_tags": [
+      "body"
+    ],
+    "query_intent": [
+      "informational"
+    ],
+    "chunk_type": "narrative",
+    "priority": 1.0,
+    "best_for": [
+      "semantic"
+    ]
+  }
+]

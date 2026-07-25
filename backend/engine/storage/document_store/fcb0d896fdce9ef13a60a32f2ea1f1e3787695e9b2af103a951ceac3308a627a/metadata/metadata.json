@@ -1,0 +1,11 @@
+{
+  "title": "document.pdf",
+  "author": "Unknown Author",
+  "language": "en",
+  "document_type": "PDF",
+  "creation_date": "",
+  "page_count": 1,
+  "parser_version": "pypdf_fallback",
+  "graph_version": "1.0.0",
+  "document_hash": "fcb0d896fdce9ef13a60a32f2ea1f1e3787695e9b2af103a951ceac3308a627a"
+}

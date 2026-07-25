@@ -1,0 +1,257 @@
+[
+  {
+    "id": "doc-61070c724eddae08",
+    "type": "Document",
+    "text": "document.pdf",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b0",
+    "type": "Paragraph",
+    "text": "Name",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b1",
+    "type": "Paragraph",
+    "text": "Role",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b2",
+    "type": "Paragraph",
+    "text": "Score",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b3",
+    "type": "Paragraph",
+    "text": "Alice",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b4",
+    "type": "Paragraph",
+    "text": "Engineer",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b5",
+    "type": "Paragraph",
+    "text": "92",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b6",
+    "type": "Paragraph",
+    "text": "Bob",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b7",
+    "type": "Paragraph",
+    "text": "Manager",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b8",
+    "type": "Paragraph",
+    "text": "85",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b9",
+    "type": "Paragraph",
+    "text": "Carol",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b10",
+    "type": "Paragraph",
+    "text": "Designer",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b11",
+    "type": "Paragraph",
+    "text": "88",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b12",
+    "type": "Paragraph",
+    "text": "Dave",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b13",
+    "type": "Paragraph",
+    "text": "Analyst",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b14",
+    "type": "Paragraph",
+    "text": "79",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "tbl1",
+    "type": "Table",
+    "text": "Table: Table 1",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.1,
+      "xmin": 0.1,
+      "ymax": 0.5,
+      "xmax": 0.5
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  }
+]

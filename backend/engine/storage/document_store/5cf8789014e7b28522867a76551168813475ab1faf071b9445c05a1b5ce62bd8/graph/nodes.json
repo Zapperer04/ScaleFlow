@@ -1,0 +1,92 @@
+[
+  {
+    "id": "doc-ff7f714f804f2069",
+    "type": "Document",
+    "text": "document.pdf",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b0",
+    "type": "Paragraph",
+    "text": "ScaleFlow Category A Test Document",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b1",
+    "type": "Paragraph",
+    "text": "This is a simple text PDF designed to test basic parsing capabilities. It has no images, no complex",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b2",
+    "type": "Paragraph",
+    "text": "layout, and should be parsed instantly by pypdf without falling back to pdfplumber or OCR.",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "p1-b3",
+    "type": "Paragraph",
+    "text": "The sky is blue and the grass is green. This is a factual statement for retrieval.",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "tbl1",
+    "type": "Table",
+    "text": "Table: Table 1",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.1,
+      "xmin": 0.1,
+      "ymax": 0.5,
+      "xmax": 0.5
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  }
+]

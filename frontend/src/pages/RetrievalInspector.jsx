@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useState } from 'react';
 import { Search, Compass, Share2, Server, HelpCircle, FileText, CheckCircle2 } from 'lucide-react';
 import Button from '../components/ui/Button';

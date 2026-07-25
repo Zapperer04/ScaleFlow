@@ -1,0 +1,98 @@
+[
+  {
+    "chunk_id": "chunk-0",
+    "text": "ScaleFlow Category A Test Document\nThis is a simple text PDF designed to test basic parsing capabilities. It has no images, no complex\nlayout, and should be parsed instantly by pypdf without falling back to pdfplumber or OCR.\nThe sky is blue and the grass is green. This is a factual statement for retrieval.",
+    "summary": "ScaleFlow Category A Test Document\nThis is a simple text PDF designed to test basic parsing capabilities. It has no images, no complex\nlayout, and should be parsed instantly by pypdf without fallin...",
+    "parent_node": "doc-root",
+    "section_path": [],
+    "page_range": [
+      1
+    ],
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "graph_node_ids": [
+      "p1-b0",
+      "p1-b1",
+      "p1-b2",
+      "p1-b3"
+    ],
+    "entities": [],
+    "keywords": [
+      "basic",
+      "capabilities",
+      "category",
+      "complex",
+      "designed",
+      "document",
+      "factual",
+      "falling"
+    ],
+    "table_refs": [],
+    "figure_refs": [],
+    "previous_chunk": null,
+    "next_chunk": null,
+    "reading_order": 0,
+    "importance_score": 1.0,
+    "lineage": [
+      {
+        "block_id": "p1-b0",
+        "stable_node_id": "p1-b0",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b1",
+        "stable_node_id": "p1-b1",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b2",
+        "stable_node_id": "p1-b2",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      },
+      {
+        "block_id": "p1-b3",
+        "stable_node_id": "p1-b3",
+        "page": 1,
+        "bbox": {
+          "ymin": 0.0,
+          "xmin": 0.0,
+          "ymax": 1.0,
+          "xmax": 1.0
+        }
+      }
+    ],
+    "retrieval_tags": [
+      "body"
+    ],
+    "query_intent": [
+      "informational"
+    ],
+    "chunk_type": "narrative",
+    "priority": 1.0,
+    "best_for": [
+      "semantic"
+    ]
+  }
+]

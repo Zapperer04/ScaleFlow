@@ -1,0 +1,32 @@
+[
+  {
+    "id": "doc-d19b86910c69195e",
+    "type": "Document",
+    "text": "document.pdf",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.0,
+      "xmin": 0.0,
+      "ymax": 1.0,
+      "xmax": 1.0
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  },
+  {
+    "id": "tbl1",
+    "type": "Table",
+    "text": "Table: Table 1",
+    "page": 1,
+    "bbox": {
+      "ymin": 0.1,
+      "xmin": 0.1,
+      "ymax": 0.5,
+      "xmax": 0.5
+    },
+    "confidence": 1.0,
+    "metadata": {},
+    "chunk_ids": []
+  }
+]

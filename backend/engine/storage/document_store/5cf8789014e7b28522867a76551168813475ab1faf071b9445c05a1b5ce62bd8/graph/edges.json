@@ -1,0 +1,42 @@
+[
+  {
+    "source": "doc-ff7f714f804f2069",
+    "target": "p1-b0",
+    "type": "contains",
+    "metadata": {},
+    "confidence": 1.0,
+    "builder": "VLMParser"
+  },
+  {
+    "source": "doc-ff7f714f804f2069",
+    "target": "p1-b1",
+    "type": "contains",
+    "metadata": {},
+    "confidence": 1.0,
+    "builder": "VLMParser"
+  },
+  {
+    "source": "doc-ff7f714f804f2069",
+    "target": "p1-b2",
+    "type": "contains",
+    "metadata": {},
+    "confidence": 1.0,
+    "builder": "VLMParser"
+  },
+  {
+    "source": "doc-ff7f714f804f2069",
+    "target": "p1-b3",
+    "type": "contains",
+    "metadata": {},
+    "confidence": 1.0,
+    "builder": "VLMParser"
+  },
+  {
+    "source": "doc-ff7f714f804f2069",
+    "target": "tbl1",
+    "type": "contains",
+    "metadata": {},
+    "confidence": 1.0,
+    "builder": "VLMParser"
+  }
+]

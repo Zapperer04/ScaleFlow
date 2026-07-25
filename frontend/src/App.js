@@ -1,4 +1,6 @@
+/* eslint-disable no-unused-vars */
 import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { 
   ShieldAlert
 } from 'lucide-react';
@@ -24,6 +26,15 @@ import { NotificationProvider, useNotification } from './contexts/NotificationCo
 import { WorkspaceProvider } from './contexts/WorkspaceContext';
 import { useTelemetry } from './services/telemetryStore';
 import { pollingManager } from './services/pollingManager';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import PublicLayout from './components/layout/PublicLayout';
+import LandingPage from './pages/LandingPage';
+import Login from './pages/auth/Login';
+import Register from './pages/auth/Register';
+import ForgotPassword from './pages/auth/ForgotPassword';
+import ResetPassword from './pages/auth/ResetPassword';
+import EmailVerification from './pages/auth/EmailVerification';
+import NotFound from './pages/NotFound';
 import './App.css';
 
 // Lazy-load secondary feature modules
@@ -320,19 +331,52 @@ function AppContent() {
   );
 }
 
+function ProtectedRoute({ children }) {
+  const { token, loading } = useAuth();
+  if (loading) {
+    return <div style={{ color: 'var(--text-secondary)', padding: 'var(--spacing-32)', fontFamily: 'var(--font-mono)' }}>Restoring session...</div>;
+  }
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+}
+
 function App() {
   return (
-    <ThemeProvider>
-      <NotificationProvider>
-        <DocumentProvider>
-          <PipelineProvider>
-            <WorkspaceProvider>
-              <AppContent />
-            </WorkspaceProvider>
-          </PipelineProvider>
-        </DocumentProvider>
-      </NotificationProvider>
-    </ThemeProvider>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/" element={<PublicLayout><LandingPage /></PublicLayout>} />
+          <Route path="/login" element={<PublicLayout><Login /></PublicLayout>} />
+          <Route path="/register" element={<PublicLayout><Register /></PublicLayout>} />
+          <Route path="/forgot-password" element={<PublicLayout><ForgotPassword /></PublicLayout>} />
+          <Route path="/reset-password" element={<PublicLayout><ResetPassword /></PublicLayout>} />
+          <Route path="/verify-email" element={<PublicLayout><EmailVerification /></PublicLayout>} />
+
+          {/* Protected Workspace Routes */}
+          <Route path="/workspace/*" element={
+            <ProtectedRoute>
+              <ThemeProvider>
+                <NotificationProvider>
+                  <DocumentProvider>
+                    <PipelineProvider>
+                      <WorkspaceProvider>
+                        <AppContent />
+                      </WorkspaceProvider>
+                    </PipelineProvider>
+                  </DocumentProvider>
+                </NotificationProvider>
+              </ThemeProvider>
+            </ProtectedRoute>
+          } />
+
+          {/* Fallback 404 Route */}
+          <Route path="*" element={<PublicLayout><NotFound /></PublicLayout>} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 

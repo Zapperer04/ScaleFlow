@@ -1,0 +1,29 @@
+{
+  "entities": [
+    {
+      "id": "ent-88d4ba7577e9efa7",
+      "name": "Google Corp",
+      "type": "Organization",
+      "normalized_value": "Google Corp",
+      "aliases": [],
+      "occurrences": [
+        {
+          "page": 1,
+          "block_id": "p1-b0"
+        }
+      ],
+      "chunk_ids": [],
+      "graph_node_ids": []
+    }
+  ],
+  "edges": [
+    {
+      "source": "ent-88d4ba7577e9efa7",
+      "target": "p1-b0",
+      "type": "appears_in",
+      "metadata": {
+        "page": 1
+      }
+    }
+  ]
+}

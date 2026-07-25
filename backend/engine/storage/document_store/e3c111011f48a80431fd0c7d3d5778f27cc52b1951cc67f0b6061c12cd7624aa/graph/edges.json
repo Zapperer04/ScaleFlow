@@ -1,0 +1,10 @@
+[
+  {
+    "source": "doc-b71333b7f5adafb4",
+    "target": "tbl1",
+    "type": "contains",
+    "metadata": {},
+    "confidence": 1.0,
+    "builder": "VLMParser"
+  }
+]

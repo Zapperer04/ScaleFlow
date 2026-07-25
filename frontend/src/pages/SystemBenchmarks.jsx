@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useState } from 'react';
 import { BarChart, Compass, Terminal, ShieldAlert, Cpu } from 'lucide-react';
 import Button from '../components/ui/Button';

@@ -1,0 +1,12 @@
+2026-07-22 10:39:50,980 - [SPAN START] Name: retrieve_docs | TraceID: trace-id-123 | ParentID: None
+2026-07-22 10:39:50,980 - [SPAN END] Name: retrieve_docs | TraceID: trace-id-123 | Status: OK | Duration: 0.0001s
+2026-07-22 10:40:01,106 - [SPAN START] Name: retrieve_docs | TraceID: trace-id-123 | ParentID: None
+2026-07-22 10:40:01,106 - [SPAN END] Name: retrieve_docs | TraceID: trace-id-123 | Status: OK | Duration: 0.0001s
+2026-07-22 10:40:06,784 - [SPAN START] Name: retrieve_docs | TraceID: trace-id-123 | ParentID: None
+2026-07-22 10:40:06,784 - [SPAN END] Name: retrieve_docs | TraceID: trace-id-123 | Status: OK | Duration: 0.0000s
+2026-07-22 10:46:03,456 - [SPAN START] Name: retrieve_docs | TraceID: trace-id-123 | ParentID: None
+2026-07-22 10:46:03,456 - [SPAN END] Name: retrieve_docs | TraceID: trace-id-123 | Status: OK | Duration: 0.0002s
+2026-07-24 19:21:29,290 - [SPAN START] Name: retrieve_docs | TraceID: trace-id-123 | ParentID: None
+2026-07-24 19:21:29,290 - [SPAN END] Name: retrieve_docs | TraceID: trace-id-123 | Status: OK | Duration: 0.0002s
+2026-07-24 19:59:17,570 - [SPAN START] Name: retrieve_docs | TraceID: trace-id-123 | ParentID: None
+2026-07-24 19:59:17,570 - [SPAN END] Name: retrieve_docs | TraceID: trace-id-123 | Status: OK | Duration: 0.0002s

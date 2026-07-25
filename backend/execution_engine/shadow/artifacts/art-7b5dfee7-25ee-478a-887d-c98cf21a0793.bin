@@ -1,0 +1,1 @@
+{"nodes": [{"chunk_id": "node1", "text": "Name\tRole\tScore\nAlice\tEngineer\t92\nBob\tManager\t85\nCarol\tDesigner\t88\nDave\tAnalyst\t79", "structural_type": "table", "semantic_category": "table"}]}

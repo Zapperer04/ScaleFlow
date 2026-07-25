@@ -1,0 +1,206 @@
+{
+  "reading_order": [
+    "p1-b0",
+    "p1-b1",
+    "p1-b2",
+    "p1-b3",
+    "p1-b4",
+    "p1-b5",
+    "p1-b6",
+    "p1-b7",
+    "p1-b8",
+    "p1-b9",
+    "p1-b10",
+    "p1-b11",
+    "p1-b12",
+    "p1-b13",
+    "p1-b14"
+  ],
+  "font_hierarchy": [],
+  "heading_level": {},
+  "visual_blocks": {
+    "p1-b0": {
+      "id": "p1-b0",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    },
+    "p1-b1": {
+      "id": "p1-b1",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    },
+    "p1-b2": {
+      "id": "p1-b2",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    },
+    "p1-b3": {
+      "id": "p1-b3",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    },
+    "p1-b4": {
+      "id": "p1-b4",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    },
+    "p1-b5": {
+      "id": "p1-b5",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    },
+    "p1-b6": {
+      "id": "p1-b6",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    },
+    "p1-b7": {
+      "id": "p1-b7",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    },
+    "p1-b8": {
+      "id": "p1-b8",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    },
+    "p1-b9": {
+      "id": "p1-b9",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    },
+    "p1-b10": {
+      "id": "p1-b10",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    },
+    "p1-b11": {
+      "id": "p1-b11",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    },
+    "p1-b12": {
+      "id": "p1-b12",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    },
+    "p1-b13": {
+      "id": "p1-b13",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    },
+    "p1-b14": {
+      "id": "p1-b14",
+      "type": "paragraph",
+      "page": 1,
+      "bbox": {
+        "ymin": 0.0,
+        "xmin": 0.0,
+        "ymax": 1.0,
+        "xmax": 1.0
+      },
+      "confidence": 1.0
+    }
+  },
+  "columns": [],
+  "page_coordinates": {},
+  "style_metadata": {}
+}
