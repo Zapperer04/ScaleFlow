@@ -15,10 +15,14 @@ import {
   explainQueryPipeline
 } from '../services/search';
 import { fetchUploadedFiles, fetchPdfContent } from '../services/documents';
-import { fetchPipelineDetails } from '../services/pipelines';
+import { fetchPipelineDetails, fetchPipelineTimeline, cancelPipeline, retryPipeline } from '../services/pipelines';
 import ProgressBar from '../components/ui/ProgressBar';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
+import { ExecutionConsole } from '../components/workspace/logs/ExecutionConsole';
+import { ErrorPanel } from '../components/workspace/logs/ErrorPanel';
+import { PipelineControls } from '../components/workspace/pipeline/PipelineControls';
+import { PipelineHeader } from '../components/workspace/pipeline/PipelineHeader';
 
 export const WorkspaceHome = () => {
   const { selectedPipelineId, setSelectedPipelineId, pipelines } = usePipeline();
@@ -68,6 +72,9 @@ export const WorkspaceHome = () => {
   const [activeDag, setActiveDag] = useState(null);
   const [selectedDagNode, setSelectedDagNode] = useState(null);
 
+  // Real pipeline execution logs from /pipelines/{id}/timeline
+  const [pipelineLogs, setPipelineLogs] = useState([]);
+
   // pdf.js state
   const canvasRef = useRef(null);
   const [pdfDoc, setPdfDoc] = useState(null);
@@ -99,26 +106,34 @@ export const WorkspaceHome = () => {
   }, [setSelectedDocumentId]);
 
   useEffect(() => {
-    if (selectedDocumentId) {
-      localStorage.setItem('scaleflow_active_doc', selectedDocumentId);
-      // Auto transition state
-      const doc = uploadedFiles.find(f => f.id === selectedDocumentId);
-      if (doc) {
-        // If file exists, check pipeline status
-        const assoc = pipelines.find(p => p.file_id === doc.id || p.id === doc.pipeline_id);
-        if (assoc) {
-          setSelectedPipelineId(assoc.id);
-          if (assoc.status === 'completed') {
-            setWorkspaceState('ready');
-          } else {
-            setWorkspaceState('timeline');
-          }
-        } else {
-          setWorkspaceState('ready');
-        }
+    if (!selectedDocumentId) {
+      setWorkspaceState('blank');
+      return;
+    }
+    localStorage.setItem('scaleflow_active_doc', selectedDocumentId);
+
+    // Find the associated pipeline by file_id or doc.pipeline_id
+    const doc = uploadedFiles.find(f => f.id === selectedDocumentId);
+    const assoc = pipelines.find(p =>
+      p.file_id === selectedDocumentId ||
+      (doc && (p.file_id === doc.id || p.id === doc.pipeline_id))
+    );
+
+    if (assoc) {
+      setSelectedPipelineId(assoc.id);
+      const backendStatus = assoc.status?.toLowerCase();
+      if (backendStatus === 'completed') {
+        // Only transition to ready/chatting when backend confirms completion.
+        // Preserve 'chatting' if user already opened chat for this completed pipeline.
+        setWorkspaceState(prev => (prev === 'chatting' ? 'chatting' : 'ready'));
+      } else {
+        // Any non-completed status (running, pending, failed, paused) → show timeline
+        setWorkspaceState('timeline');
       }
     } else {
-      setWorkspaceState('blank');
+      // No matching pipeline found yet (e.g., just uploaded, polling hasn't returned it).
+      // Stay on timeline so the UI shows a loading state rather than jumping to ready.
+      setWorkspaceState('timeline');
     }
   }, [selectedDocumentId, uploadedFiles, pipelines, setSelectedPipelineId]);
 
@@ -177,7 +192,7 @@ export const WorkspaceHome = () => {
     renderPage();
   }, [pdfDoc, activePdfPage, zoomLevel]);
 
-  // Fetch ingestion pipeline tasks details
+  // Fetch ingestion pipeline details (tasks, artifacts, status) every 3s
   useEffect(() => {
     if (!selectedPipelineId) return;
     const loadDag = async () => {
@@ -185,11 +200,41 @@ export const WorkspaceHome = () => {
         const details = await fetchPipelineDetails(selectedPipelineId);
         setActiveDag(details);
       } catch (e) {
-        console.error(e);
+        console.error('fetchPipelineDetails failed', e);
       }
     };
     loadDag();
     const interval = setInterval(loadDag, 3000);
+    return () => clearInterval(interval);
+  }, [selectedPipelineId]);
+
+  // Fetch pipeline execution logs from /pipelines/{id}/timeline every 3s
+  useEffect(() => {
+    if (!selectedPipelineId) {
+      setPipelineLogs([]);
+      return;
+    }
+    const loadLogs = async () => {
+      try {
+        const timeline = await fetchPipelineTimeline(selectedPipelineId);
+        // Normalise to the shape ExecutionConsole expects:
+        // { timestamp, level, worker, stage, message }
+        const entries = Array.isArray(timeline) ? timeline : (timeline?.entries || timeline?.logs || []);
+        const normalised = entries.map(e => ({
+          timestamp: e.timestamp || e.created_at || '',
+          level:     e.level || (e.status === 'failed' ? 'error' : 'info'),
+          worker:    e.worker_id || e.worker || 'system',
+          stage:     e.task_type || e.stage || '',
+          message:   e.message || e.log_message || e.detail || '',
+        }));
+        setPipelineLogs(normalised);
+      } catch (e) {
+        // Timeline endpoint may not exist for all pipelines — silently fail
+        console.warn('fetchPipelineTimeline failed', e);
+      }
+    };
+    loadLogs();
+    const interval = setInterval(loadLogs, 3000);
     return () => clearInterval(interval);
   }, [selectedPipelineId]);
 
@@ -441,20 +486,66 @@ export const WorkspaceHome = () => {
 
           {workspaceState === 'timeline' && (
             <div style={{ padding: '32px', overflowY: 'auto', height: '100%' }}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '1rem', fontWeight: 700 }}>[ {activeDoc?.original_filename} - Ingestion In Progress ]</h3>
+              {/* Pipeline header — all values from backend; nothing invented */}
+              {activeDag && (
+                <div style={{ marginBottom: '20px' }}>
+                  <PipelineHeader
+                    pipelineId={selectedPipelineId}
+                    documentName={activeDoc?.original_filename}
+                    workerId={activeDag.tasks?.find(t => t.status === 'running')?.worker_id || null}
+                    status={activeDag.status}
+                    elapsedSeconds={activeDag.elapsed_seconds || null}
+                    queuePosition={activeDag.queue_position || null}
+                    startTime={activeDag.started_at || null}
+                  />
+                </div>
+              )}
+
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '1rem', fontWeight: 700 }}>
+                [ {activeDoc?.original_filename || 'Untitled'} — Ingestion Pipeline ]
+              </h3>
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '600px' }}>
-                {activeDag && activeDag.tasks && activeDag.tasks.map((task, idx) => (
-                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', border: '1px solid var(--border-subtle)', borderRadius: '8px', background: 'var(--bg-panel)' }}>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{task.task_type}</div>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-disabled)' }}>State: {task.status}</span>
+                {activeDag?.tasks?.length > 0 ? (
+                  activeDag.tasks.map((task, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', border: '1px solid var(--border-subtle)', borderRadius: '8px', background: 'var(--bg-panel)' }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{task.task_type}</div>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-disabled)' }}>State: {task.status}</span>
+                        {task.worker_id && (
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-disabled)', marginLeft: '8px' }}>Worker: {task.worker_id}</span>
+                        )}
+                      </div>
+                      <Badge variant={task.status === 'completed' ? 'success' : task.status === 'failed' ? 'failure' : 'warning'}>
+                        {task.status}
+                      </Badge>
                     </div>
-                    <Badge variant={task.status === 'completed' ? 'success' : task.status === 'failed' ? 'failure' : 'warning'}>
-                      {task.status}
-                    </Badge>
+                  ))
+                ) : (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                    {activeDag ? 'No tasks reported by backend yet.' : 'Loading pipeline data...'}
                   </div>
-                ))}
+                )}
               </div>
+
+              {/* Pipeline action controls — wired to backend endpoints */}
+              {activeDag && (
+                <div style={{ marginTop: '24px' }}>
+                  <PipelineControls
+                    status={activeDag.status}
+                    onPause={null}  /* Backend pause endpoint not yet available */
+                    onResume={null} /* Backend resume endpoint not yet available */
+                    onCancel={async () => {
+                      try { await cancelPipeline(selectedPipelineId); } catch (e) { console.error('cancel failed', e); }
+                    }}
+                    onRetry={async () => {
+                      try { await retryPipeline(selectedPipelineId); } catch (e) { console.error('retry failed', e); }
+                    }}
+                    onReupload={() => setWorkspaceState('blank')}
+                    onDelete={null} /* Delete endpoint not yet implemented */
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -466,15 +557,22 @@ export const WorkspaceHome = () => {
                 <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>The parsing pipeline is ready.</p>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', width: '100%', maxWidth: '500px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '20px', fontSize: '0.8rem' }}>
-                <div>Pages: <strong>{activeDoc?.page_count || 12}</strong></div>
-                <div>Chunks: <strong>624</strong></div>
-                <div>Entities: <strong>233</strong></div>
-                <div>Graph Nodes: <strong>815</strong></div>
-                <div>Processing Time: <strong>6.8s</strong></div>
-                <div>Confidence: <strong>0.96</strong></div>
+                <div>Pages: <strong>{activeDoc?.page_count || 'Not Available'}</strong></div>
+                <div>Chunks: <strong>{(activeDag?.artifacts || []).find(a => a.artifact_type === 'graph_chunks')?.metadata_json?.chunk_count || (activeDag?.artifacts || []).find(a => a.artifact_type === 'graph_chunks')?.metadata_json?.total_chunks_embedded || 'Not Available'}</strong></div>
+                <div>Entities: <strong>{(activeDag?.artifacts || []).find(a => a.artifact_type === 'document_graph')?.metadata_json?.stats?.entity_count || 'Not Available'}</strong></div>
+                <div>Graph Nodes: <strong>{(activeDag?.artifacts || []).find(a => a.artifact_type === 'document_graph')?.metadata_json?.stats?.node_count || 'Not Available'}</strong></div>
+                <div>Processing Time: <strong>{(activeDag?.artifacts || []).find(a => a.artifact_type === 'graph_embeddings')?.metadata_json?.embedding_generation_duration ? `${Math.round((activeDag?.artifacts || []).find(a => a.artifact_type === 'graph_embeddings')?.metadata_json?.embedding_generation_duration)}s` : 'Not Available'}</strong></div>
+                <div>Confidence: <strong>{(activeDag?.artifacts || []).find(a => a.artifact_type === 'document_graph')?.metadata_json?.routing_confidence ? `${Math.round((activeDag?.artifacts || []).find(a => a.artifact_type === 'document_graph')?.metadata_json?.routing_confidence * 100)}%` : 'Not Available'}</strong></div>
               </div>
               <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
-                <Button variant="primary" onClick={() => setWorkspaceState('chatting')}>Open Chat</Button>
+                {/* Chat is only accessible when the backend confirms pipeline completion */}
+                <Button
+                  variant="primary"
+                  onClick={() => setWorkspaceState('chatting')}
+                  disabled={activeDag?.status?.toLowerCase() !== 'completed'}
+                >
+                  Open Chat
+                </Button>
                 <Button variant="secondary" onClick={() => setActiveCenterTab('pdf')}>View Document</Button>
               </div>
             </div>
@@ -615,23 +713,69 @@ export const WorkspaceHome = () => {
           </button>
         </div>
 
-        <div style={{ height: bottomDrawerCollapsed ? '0px' : '260px', transition: 'height 0.3s ease', borderTop: bottomDrawerCollapsed ? 'none' : '1px solid var(--border-subtle)', background: 'var(--bg-panel)', overflow: 'hidden' }}>
+        <div style={{ height: bottomDrawerCollapsed ? '0px' : '340px', transition: 'height 0.3s ease', borderTop: bottomDrawerCollapsed ? 'none' : '1px solid var(--border-subtle)', background: 'var(--bg-panel)', overflow: 'hidden' }}>
           {bottomTab === 'dag' ? (
-            <div style={{ padding: '16px' }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Ingestion Flowchart Timeline</span>
-              <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
-                <Badge variant="success">Preprocess: Done</Badge>
-                <Badge variant="success">Parse: Done</Badge>
-                <Badge variant="success">Chunking: Done</Badge>
-                <Badge variant="warning">Embedding: Syncing</Badge>
+            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', height: '100%', overflow: 'auto' }}>
+              {/* Task badges — sourced from backend activeDag.tasks, no static badges */}
+              <div>
+                <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Pipeline Task Stages</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                  {activeDag?.tasks?.length > 0 ? (
+                    activeDag.tasks.map((task, idx) => (
+                      <Badge
+                        key={idx}
+                        variant={task.status === 'completed' ? 'success' : task.status === 'failed' ? 'failure' : 'warning'}
+                      >
+                        {task.task_type}: {task.status}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      {selectedPipelineId ? 'Awaiting backend task data...' : 'No active pipeline'}
+                    </span>
+                  )}
+                </div>
               </div>
+
+              {/* Execution Console — real logs from /pipelines/{id}/timeline */}
+              <ExecutionConsole logs={pipelineLogs} />
+
+              {/* Error Panel — derived from failed backend tasks, no hardcoded errors */}
+              {activeDag?.tasks?.some(t => t.status === 'failed') && (
+                <ErrorPanel
+                  errors={(activeDag.tasks || []).filter(t => t.status === 'failed').map(t => ({
+                    level:        'error',
+                    message:      t.error_message || t.task_type || 'Task failed',
+                    stage:        t.task_type || 'Not Available',
+                    worker:       t.worker_id   || 'Not Available',
+                    retries:      t.retry_count !== undefined ? t.retry_count : undefined,
+                    stackTrace:   t.error_details || null,
+                    timestamp:    t.completed_at || t.updated_at || '',
+                  }))}
+                  onRetry={async () => {
+                    try { await retryPipeline(selectedPipelineId); } catch (e) { console.error('retry failed', e); }
+                  }}
+                />
+              )}
             </div>
           ) : (
-            <div style={{ padding: '16px' }}>
+            <div style={{ padding: '16px', overflow: 'auto', height: '100%' }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Pipeline Artifact Files</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>📁 graph.json (48.1 KB)</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>📁 chunks.json (112 KB)</span>
+                {activeDag?.artifacts?.length > 0 ? (
+                  activeDag.artifacts.map((artifact, idx) => {
+                    const sizeKB = artifact.size_bytes ? `(${Math.round(artifact.size_bytes / 1024)} KB)` : '';
+                    return (
+                      <span key={idx} style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        📁 {artifact.artifact_type || artifact.name || `artifact-${idx}`} {sizeKB}
+                      </span>
+                    );
+                  })
+                ) : (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {selectedPipelineId ? 'No artifacts reported by backend yet.' : 'No active pipeline.'}
+                  </span>
+                )}
               </div>
             </div>
           )}
@@ -687,11 +831,13 @@ export const WorkspaceHome = () => {
               <div>
                 <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: 'var(--text-disabled)', textTransform: 'uppercase' }}>Sources Used</span>
                 <div style={{ marginTop: '8px', background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '12px', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div>[✓] Vector: <strong>12 chunks</strong></div>
-                  <div>[✓] Graph: <strong>8 nodes</strong></div>
-                  <div>[✓] BM25: <strong>3 matches</strong></div>
-                  <div>Fusion: <strong>20 contexts</strong></div>
-                  <div>Prompt: <strong>3,980 tokens</strong></div>
+                  {/* All values from activeAnswerDetails returned by the query pipeline explain endpoint.
+                      If a field is absent, we show 'Not Available' — never a fabricated value. */}
+                  <div>[✓] Vector: <strong>{activeAnswerDetails?.vector_chunks != null ? `${activeAnswerDetails.vector_chunks} chunks` : 'Not Available'}</strong></div>
+                  <div>[✓] Graph: <strong>{activeAnswerDetails?.graph_nodes != null ? `${activeAnswerDetails.graph_nodes} nodes` : 'Not Available'}</strong></div>
+                  <div>[✓] BM25: <strong>{activeAnswerDetails?.bm25_matches != null ? `${activeAnswerDetails.bm25_matches} matches` : 'Not Available'}</strong></div>
+                  <div>Fusion: <strong>{activeAnswerDetails?.fusion_contexts != null ? `${activeAnswerDetails.fusion_contexts} contexts` : 'Not Available'}</strong></div>
+                  <div>Prompt: <strong>{activeAnswerDetails?.prompt_tokens != null ? `${activeAnswerDetails.prompt_tokens} tokens` : 'Not Available'}</strong></div>
                 </div>
               </div>
             </div>
@@ -700,12 +846,18 @@ export const WorkspaceHome = () => {
           {explainTab === 'pipeline' && (
             <div>
               <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: 'var(--text-disabled)', textTransform: 'uppercase' }}>Retrieval Flow</span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px', fontSize: '0.75rem', borderLeft: '2px solid var(--border-subtle)', paddingLeft: '12px' }}>
-                <div>✓ Intent Detected</div>
-                <div>✓ Dense vector queried</div>
-                <div>✓ Graph neighbors expanded</div>
-                <div>✓ RRF fusion complete</div>
-              </div>
+              {/* Retrieval steps from explainPayload returned by /query-pipelines/{id}/explain */}
+              {explainPayload?.retrieval_steps?.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px', fontSize: '0.75rem', borderLeft: '2px solid var(--border-subtle)', paddingLeft: '12px' }}>
+                  {explainPayload.retrieval_steps.map((step, idx) => (
+                    <div key={idx}>✓ {step}</div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ marginTop: '10px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {activeQueryPipelineId ? 'Not Available' : 'Submit a query to inspect retrieval flow.'}
+                </div>
+              )}
             </div>
           )}
 
@@ -713,7 +865,7 @@ export const WorkspaceHome = () => {
             <div>
               <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: 'var(--text-disabled)', textTransform: 'uppercase' }}>Prompt Context</span>
               <pre style={{ marginTop: '8px', background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '10px', fontSize: '0.7rem', overflowX: 'auto', whiteSpace: 'pre-wrap', color: 'var(--text-secondary)' }}>
-                {explainPayload?.final_prompt_context || 'No active query payload context loaded.'}
+                {explainPayload?.final_prompt_context || (activeQueryPipelineId ? 'Not Available' : 'Submit a query to load prompt context.')}
               </pre>
             </div>
           )}
@@ -722,22 +874,24 @@ export const WorkspaceHome = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: 'var(--text-disabled)', textTransform: 'uppercase' }}>Expert Heatmap Score</span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '2px' }}>
-                      <span>Vector Expert</span>
-                      <span>0.942</span>
-                    </div>
-                    <ProgressBar progress={94} variant="success" />
+                {/* Scores from explainPayload.expert_scores; fallback to Not Available */}
+                {explainPayload?.expert_scores ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+                    {Object.entries(explainPayload.expert_scores).map(([key, val]) => (
+                      <div key={key}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '2px' }}>
+                          <span>{key}</span>
+                          <span>{typeof val === 'number' ? val.toFixed(3) : val}</span>
+                        </div>
+                        {typeof val === 'number' && <ProgressBar progress={Math.round(val * 100)} variant="success" />}
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '2px' }}>
-                      <span>Graph Expert</span>
-                      <span>0.811</span>
-                    </div>
-                    <ProgressBar progress={81} variant="success" />
+                ) : (
+                  <div style={{ marginTop: '10px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {activeQueryPipelineId ? 'Not Available' : 'Submit a query to inspect expert scores.'}
                   </div>
-                </div>
+                )}
               </div>
             </div>
           )}

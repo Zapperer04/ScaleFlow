@@ -28,16 +28,16 @@ export const AuthProvider = ({ children }) => {
 
   // Restore session on mount
   useEffect(() => {
-    const savedToken = localStorage.getItem('sf_token');
-    const rememberMe = localStorage.getItem('sf_remember_me') === 'true';
+    const savedToken = localStorage.getItem('sf_token') || sessionStorage.getItem('sf_token');
 
-    if (savedToken && rememberMe) {
+    if (savedToken) {
       const payload = decodeToken(savedToken);
       if (payload && payload.exp * 1000 > Date.now()) {
         setToken(savedToken);
         setUser({ username: payload.sub, role: payload.role || 'user' });
       } else {
         localStorage.removeItem('sf_token');
+        sessionStorage.removeItem('sf_token');
       }
     }
     setLoading(false);
@@ -73,7 +73,9 @@ export const AuthProvider = ({ children }) => {
       if (rememberMe) {
         localStorage.setItem('sf_token', access_token);
         localStorage.setItem('sf_remember_me', 'true');
+        sessionStorage.removeItem('sf_token');
       } else {
+        sessionStorage.setItem('sf_token', access_token);
         localStorage.removeItem('sf_token');
         localStorage.removeItem('sf_remember_me');
       }
@@ -108,7 +110,9 @@ export const AuthProvider = ({ children }) => {
           if (rememberMe) {
             localStorage.setItem('sf_token', mockTokenStr);
             localStorage.setItem('sf_remember_me', 'true');
+            sessionStorage.removeItem('sf_token');
           } else {
+            sessionStorage.setItem('sf_token', mockTokenStr);
             localStorage.removeItem('sf_token');
             localStorage.removeItem('sf_remember_me');
           }
@@ -127,6 +131,7 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     localStorage.removeItem('sf_token');
     localStorage.removeItem('sf_remember_me');
+    sessionStorage.removeItem('sf_token');
   };
 
   const register = async (username, name, email, password) => {

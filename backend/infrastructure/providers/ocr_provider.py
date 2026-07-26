@@ -4,7 +4,7 @@ from backend.infrastructure.providers.base_provider import BaseParserProvider
 from backend.infrastructure.providers.metrics import ProviderMetrics
 from backend.infrastructure.providers.retry_policy import RetryPolicy
 from backend.infrastructure.providers.circuit_breaker import CircuitBreaker
-from services.pdf_parser import parse_pdf, ParseResult
+from services.pdf_parser import execute_ocr_parse, ParseResult
 
 class OCRProvider(BaseParserProvider):
     def __init__(self):
@@ -29,27 +29,44 @@ class OCRProvider(BaseParserProvider):
         on_page_completed: Optional[Callable[[int, Dict[str, Any]], None]] = None,
     ) -> ParseResult:
         start_time = time.time()
-        
-        # Inject parser: ocr to force OCR parser path
-        prog = progress_json if progress_json is not None else {}
-        prog["parser"] = "ocr"
 
         def run_parsing():
-            return parse_pdf(
+            document_graph, page_metadata, ocr_duration, render_duration, render_mb, ocr_mb, total_pages = execute_ocr_parse(
                 filepath=filepath,
                 task_id=task_id,
-                lease_token=lease_token,
-                progress_json=prog,
                 trace_fn=trace_fn,
-                api_url=api_url,
-                api_headers=api_headers,
-                skip_ocr=skip_ocr,
-                document_type=document_type,
-                routing_confidence=routing_confidence,
-                parse_method_hint=parse_method_hint,
-                enhanced_pages_path=enhanced_pages_path,
                 on_page_completed=on_page_completed,
-                vlm_provider_name="ocr",
+            )
+
+            if not document_graph:
+                raise RuntimeError("OCR parsing returned empty results")
+
+            total_nodes = sum(len(pg.get("nodes", [])) for pg in document_graph.get("pages", []))
+            total_edges = len(document_graph.get("edges", []))
+            processed_pages = len(document_graph.get("pages", []))
+
+            stats = {
+                "parser": "tesseract_ocr",
+                "total_pages": total_pages,
+                "processed_pages": processed_pages,
+                "vlm_pages": 0,
+                "ocr_pages": processed_pages,
+                "failed_pages": total_pages - processed_pages,
+                "node_count": total_nodes,
+                "edge_count": total_edges,
+                "duration_seconds": time.time() - start_time,
+                "memory_peak_mb": max(render_mb, ocr_mb),
+                "timings": {
+                    "rendering_duration": render_duration,
+                    "vlm_extraction_duration": 0.0,
+                    "ocr_fallback_duration": ocr_duration,
+                    "total_duration": time.time() - start_time,
+                }
+            }
+            return ParseResult(
+                document_graph=document_graph,
+                stats=stats,
+                pages=page_metadata
             )
 
         try:

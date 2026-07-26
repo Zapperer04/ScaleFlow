@@ -135,13 +135,14 @@ def test_provider_router():
 # ------------------------------------------------------------------------------
 # 6. Dependency Injection / Parsing Service Mock Tests
 # ------------------------------------------------------------------------------
-@patch("backend.infrastructure.providers.gemini_provider.parse_pdf")
-def test_parsing_service_with_injected_provider(mock_parse_pdf):
-    # Set mock response
-    mock_parse_pdf.return_value = ParseResult(
-        document_graph={"nodes": [], "edges": []},
-        stats={"node_count": 0},
-        pages=[{"page": 1, "text": "Page 1 Content"}]
+@patch("backend.infrastructure.providers.gemini_provider.execute_vlm_parse")
+def test_parsing_service_with_injected_provider(mock_execute_vlm_parse):
+    mock_execute_vlm_parse.return_value = (
+        {"pages": [{"page_number": 1, "nodes": [{"text": "Page 1 Content"}]}]},
+        [{"page": 1, "text": "Page 1 Content"}],
+        0.1,
+        10.0,
+        1
     )
 
     container = bootstrap_app()
@@ -158,7 +159,7 @@ def test_parsing_service_with_injected_provider(mock_parse_pdf):
     # ParsingServiceImpl now returns a clean Document aggregate.
     # Raw parser outputs (stats, pages, document_graph) are in metadata.
     assert isinstance(doc, Document)
-    assert doc.metadata.get("stats") == {"node_count": 0}
+    assert doc.metadata.get("stats").get("node_count") == 1
     raw_pages = doc.metadata.get("pages", [])
     assert len(raw_pages) == 1
     assert raw_pages[0]["text"] == "Page 1 Content"

@@ -7,9 +7,20 @@ import { pollingManager } from '../../../services/pollingManager';
 
 /**
  * Custom hook to handle file uploads and workspace context updates.
+ *
+ * Upload response shape (from documents.js uploadFile):
+ *   { id: file_id, pipeline_id, original_filename, ... }
+ *
+ * After a successful upload we must set:
+ *   - DocumentContext.selectedDocumentId  →  res.id  (the file_id)
+ *   - PipelineContext.selectedPipelineId  →  res.pipeline_id
+ *
+ * Previously this called selectDocument(res.pipeline_id) which pushed the
+ * pipeline_id into the document context, so WorkspaceHome's state machine
+ * (which watches selectedDocumentId against uploadedFiles) never fired.
  */
 export const useUpload = () => {
-  const { fileType, setFileType, uploading, setUploading, uploadStatus, setUploadStatus } = useDocument();
+  const { fileType, setFileType, uploading, setUploading, uploadStatus, setUploadStatus, setSelectedDocumentId } = useDocument();
   const { selectDocument } = useWorkspace();
   const { setSelectedPipelineId } = usePipeline();
   const [dragActive, setDragActive] = useState(false);
@@ -27,11 +38,14 @@ export const useUpload = () => {
       const res = await apiUploadFile(formData);
       setUploadStatus(`Upload success! Started pipeline #${res.pipeline_id}`);
       
-      // Update contexts
+      // Update both contexts with correct IDs:
+      // - selectedDocumentId must be the file_id so WorkspaceHome state machine finds it in uploadedFiles
+      // - selectedPipelineId must be the pipeline_id for DAG/telemetry polling
+      setSelectedDocumentId(res.id);
       setSelectedPipelineId(res.pipeline_id);
-      selectDocument(res.pipeline_id);
+      selectDocument(res.id);
       
-      // Trigger instant telemetry poll refresh
+      // Trigger instant telemetry poll refresh so pipelines[] updates immediately
       pollingManager.triggerFastUpdate();
     } catch (err) {
       console.error('File upload failed:', err);

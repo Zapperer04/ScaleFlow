@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { CheckCircle, RefreshCw } from 'lucide-react';
 
 export const EmailVerification = () => {
+  const navigate = useNavigate();
   const [verifying, setVerifying] = useState(true);
   const [success, setSuccess] = useState(false);
 
@@ -49,7 +51,7 @@ export const EmailVerification = () => {
                   Your account has been fully validated and activated.
                 </p>
               </div>
-              <Button variant="primary" onClick={() => (window.location.href = '/login')} style={{ width: '100%' }}>
+              <Button variant="primary" onClick={() => navigate('/login')} style={{ width: '100%' }}>
                 Go to Login
               </Button>
             </>
@@ -59,7 +61,7 @@ export const EmailVerification = () => {
               <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>
                 Your token is invalid or has expired.
               </p>
-              <Button variant="secondary" onClick={() => (window.location.href = '/register')} style={{ width: '100%' }}>
+              <Button variant="secondary" onClick={() => navigate('/register')} style={{ width: '100%' }}>
                 Register Again
               </Button>
             </>

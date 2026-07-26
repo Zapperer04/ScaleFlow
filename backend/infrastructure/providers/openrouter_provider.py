@@ -4,7 +4,7 @@ from backend.infrastructure.providers.base_provider import BaseParserProvider
 from backend.infrastructure.providers.metrics import ProviderMetrics
 from backend.infrastructure.providers.retry_policy import RetryPolicy
 from backend.infrastructure.providers.circuit_breaker import CircuitBreaker
-from services.pdf_parser import parse_pdf, ParseResult
+from services.pdf_parser import execute_vlm_parse, ParseResult
 
 
 class OpenRouterProvider(BaseParserProvider):
@@ -32,21 +32,44 @@ class OpenRouterProvider(BaseParserProvider):
         start_time = time.time()
 
         def run_parsing():
-            return parse_pdf(
+            document_graph, page_metadata, vlm_duration, vlm_mb, total_pages = execute_vlm_parse(
                 filepath=filepath,
+                vlm_provider_name="openrouter",
                 task_id=task_id,
-                lease_token=lease_token,
                 progress_json=progress_json,
                 trace_fn=trace_fn,
-                api_url=api_url,
-                api_headers=api_headers,
-                skip_ocr=skip_ocr,
-                document_type=document_type,
-                routing_confidence=routing_confidence,
-                parse_method_hint=parse_method_hint,
-                enhanced_pages_path=enhanced_pages_path,
                 on_page_completed=on_page_completed,
-                vlm_provider_name="openrouter",
+            )
+
+            if not document_graph:
+                raise RuntimeError("VLM parsing returned empty results")
+
+            total_nodes = sum(len(pg.get("nodes", [])) for pg in document_graph.get("pages", []))
+            total_edges = len(document_graph.get("edges", []))
+            processed_pages = len(document_graph.get("pages", []))
+
+            stats = {
+                "parser": "openrouter_vlm",
+                "total_pages": total_pages,
+                "processed_pages": processed_pages,
+                "vlm_pages": processed_pages,
+                "ocr_pages": 0,
+                "failed_pages": total_pages - processed_pages,
+                "node_count": total_nodes,
+                "edge_count": total_edges,
+                "duration_seconds": time.time() - start_time,
+                "memory_peak_mb": vlm_mb,
+                "timings": {
+                    "rendering_duration": 0.0,
+                    "vlm_extraction_duration": vlm_duration,
+                    "ocr_fallback_duration": 0.0,
+                    "total_duration": time.time() - start_time,
+                }
+            }
+            return ParseResult(
+                document_graph=document_graph,
+                stats=stats,
+                pages=page_metadata
             )
 
         try:

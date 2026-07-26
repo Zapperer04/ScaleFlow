@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
@@ -8,6 +9,7 @@ import { RefreshCw, Github } from 'lucide-react';
 
 export const Login = () => {
   const { login } = useAuth();
+  const navigate = useNavigate();
   
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -39,7 +41,7 @@ export const Login = () => {
       await login(username, password, rememberMe);
       setStatus('success');
       setTimeout(() => {
-        window.location.href = '/workspace';
+        navigate('/workspace');
       }, 700);
     } catch (err) {
       setStatus('failure');

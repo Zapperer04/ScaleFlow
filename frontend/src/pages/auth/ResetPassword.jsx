@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
@@ -7,6 +8,7 @@ import { RefreshCw } from 'lucide-react';
 
 export const ResetPassword = () => {
   const { resetPassword } = useAuth();
+  const navigate = useNavigate();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [status, setStatus] = useState('idle'); // idle, loading, success, failure
@@ -36,7 +38,7 @@ export const ResetPassword = () => {
       await resetPassword(password);
       setStatus('success');
       setTimeout(() => {
-        window.location.href = '/login';
+        navigate('/login');
       }, 1000);
     } catch (err) {
       setStatus('failure');

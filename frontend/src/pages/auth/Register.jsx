@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
@@ -8,6 +9,7 @@ import { RefreshCw } from 'lucide-react';
 
 export const Register = () => {
   const { register } = useAuth();
+  const navigate = useNavigate();
 
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
@@ -47,7 +49,7 @@ export const Register = () => {
       await register(username, name, email, password);
       setStatus('success');
       setTimeout(() => {
-        window.location.href = '/verify-email';
+        navigate('/verify-email');
       }, 1000);
     } catch (err) {
       setStatus('failure');
