@@ -432,13 +432,20 @@ class Artifact(Base, TimestampMixin):
     checksum = Column(String(64), nullable=True)
 
     def to_dict(self):
+        meta = self.metadata_json
+        if isinstance(meta, str):
+            try:
+                import json
+                meta = json.loads(meta)
+            except Exception:
+                meta = {}
         return {
             'id': self.id,
             'pipeline_id': self.pipeline_id,
             'task_id': self.task_id,
             'artifact_type': self.artifact_type.value if self.artifact_type else None,
             'storage_uri': self.storage_uri,
-            'metadata_json': self.metadata_json,
+            'metadata_json': meta or {},
             'checksum': self.checksum,
             'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
             'updated_at': self.updated_at.isoformat() + 'Z' if self.updated_at else None,

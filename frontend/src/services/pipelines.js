@@ -40,9 +40,43 @@ export const fetchPipelines = async () => {
   return response.data;
 };
 
+export const normalizeArtifact = (rawArt) => {
+  if (!rawArt) return null;
+
+  let metadata = rawArt.metadata_json || {};
+  if (typeof metadata === 'string') {
+    try {
+      metadata = JSON.parse(metadata);
+    } catch (e) {
+      metadata = {};
+    }
+  }
+
+  const rawVal = metadata.validation || {};
+  const validation = {
+    is_valid: rawVal.is_valid !== false,
+    error_code: rawVal.error_code || null,
+    error_message: rawVal.error_message || null,
+    validated_at: rawVal.validated_at || rawArt.created_at || new Date().toISOString(),
+    validator_version: rawVal.validator_version || "1"
+  };
+
+  return {
+    ...rawArt,
+    metadata_json: {
+      ...metadata,
+      validation
+    }
+  };
+};
+
 export const fetchPipelineDetails = async (pipelineId) => {
   const response = await apiClient.get(`/pipelines/${pipelineId}`);
-  return response.data;
+  const data = response.data;
+  if (data && Array.isArray(data.artifacts)) {
+    data.artifacts = data.artifacts.map(normalizeArtifact);
+  }
+  return data;
 };
 
 export const fetchPipelineDag = async (pipelineId) => {

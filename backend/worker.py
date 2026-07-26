@@ -1702,6 +1702,17 @@ def execute_task(task: Any):
             elif isinstance(output_data, list):
                 metadata["chunk_count"] = len(output_data)
 
+            # In-memory artifact validation matching frozen schema contract
+            is_valid, err_msg, err_code = validate_artifact_in_memory(artifact_type, output_data)
+            import config
+            metadata["validation"] = {
+                "is_valid": is_valid,
+                "error_code": err_code,
+                "error_message": err_msg,
+                "validated_at": datetime.utcnow().isoformat() + "Z",
+                "validator_version": config.ARTIFACT_VALIDATOR_VERSION
+            }
+
             resp = _api_request(
                 "POST",
                 f"{API_URL}/artifacts",
@@ -1826,6 +1837,92 @@ def get_next_task():
         print(f"[{WORKER_ID}] Error in get_next_task: {e}", flush=True)
         traceback.print_exc()
     return None
+
+def validate_artifact_in_memory(artifact_type: str, content) -> tuple[bool, str | None, str | None]:
+    import config
+    try:
+        if not content:
+            return False, "Artifact content is empty", config.VAL_CODE_EMPTY_CONTENT
+
+        if artifact_type == "document_graph":
+            if not isinstance(content, dict):
+                return False, "Not a valid JSON object", config.VAL_CODE_INVALID_FORMAT
+            pages = content.get("pages", [])
+            edges = content.get("edges", [])
+            
+            node_count = 0
+            all_nodes = set()
+            for p in pages:
+                if isinstance(p, dict):
+                    nodes = p.get("nodes", [])
+                    node_count += len(nodes)
+                    for n in nodes:
+                        if isinstance(n, dict):
+                            nid = n.get("chunk_id") or n.get("id")
+                            if nid:
+                                all_nodes.add(nid)
+            
+            edge_count = len(edges)
+            connected = set()
+            for e in edges:
+                if isinstance(e, dict):
+                    if e.get("source"): connected.add(e.get("source"))
+                    if e.get("target"): connected.add(e.get("target"))
+            orphans = all_nodes - connected
+
+            if node_count == 0:
+                return False, "Validation failed: Graph contains zero extracted document nodes", config.VAL_CODE_ZERO_NODES
+            if edge_count == 0:
+                return False, "Validation failed: Graph contains zero extracted edges", config.VAL_CODE_ZERO_EDGES
+            if len(orphans) > 0:
+                return False, f"Validation failed: Found {len(orphans)} orphan nodes not connected by any graph edges", config.VAL_CODE_ORPHAN_NODES
+
+        elif artifact_type == "graph_chunks":
+            chunks = content if isinstance(content, list) else content.get("chunks", [])
+            if not isinstance(chunks, list) or len(chunks) == 0:
+                return False, "Validation failed: No chunks found in artifact", config.VAL_CODE_ZERO_CHUNKS
+            for i, c in enumerate(chunks):
+                if not isinstance(c, dict):
+                    return False, f"Validation failed: Chunk {i} is not a valid object", config.VAL_CODE_INVALID_CHUNK_FORMAT
+                text = c.get("text") or c.get("content")
+                meta = c.get("metadata") or {}
+                page = meta.get("page_start") or meta.get("page_number")
+                bbox = meta.get("bbox") or meta.get("bounding_box")
+                node_id = meta.get("node_ids") or meta.get("node_id")
+                parent_id = meta.get("parent_chunk_id") or meta.get("parent_id")
+
+                if not text:
+                    return False, f"Validation failed: Chunk #{i} contains no text body", config.VAL_CODE_MISSING_TEXT
+                if page is None:
+                    return False, f"Validation failed: Chunk #{i} is missing page number reference", config.VAL_CODE_MISSING_PAGE
+                if not bbox or (isinstance(bbox, dict) and bbox.get("x1") is None and bbox.get("left") is None):
+                    return False, f"Validation failed: Chunk #{i} contains no valid spatial coordinates/bounding box", config.VAL_CODE_MISSING_BBOX
+                if not node_id:
+                    return False, f"Validation failed: Chunk #{i} is missing mapping to parent Graph Node ID", config.VAL_CODE_MISSING_NODE_ID
+                if parent_id is None:
+                    return False, f"Validation failed: Chunk #{i} contains no parent chunk metadata reference", config.VAL_CODE_MISSING_PARENT_ID
+
+        elif artifact_type == "graph_embeddings":
+            if not isinstance(content, dict):
+                return False, "Validation failed: Invalid embedding metadata structure", config.VAL_CODE_INVALID_EMBEDDING_FORMAT
+            vector_count = content.get("vector_count") or content.get("total_chunks_embedded") or 0
+            dimension = content.get("dimension") or 0
+            if vector_count == 0:
+                return False, "Validation failed: Embedded vector count is zero", config.VAL_CODE_ZERO_VECTORS
+            if dimension == 0:
+                return False, "Validation failed: Invalid embedding vector dimension (0)", config.VAL_CODE_INVALID_DIMENSION
+
+        elif artifact_type == "bm25_index":
+            if not isinstance(content, dict):
+                return False, "Validation failed: Invalid BM25 index structure", config.VAL_CODE_INVALID_BM25_FORMAT
+            if content.get("bm25_success") is not True:
+                return False, "Validation failed: Index path built successfully but success key reports false", config.VAL_CODE_BM25_FAILED
+            if content.get("bm25_indexed_documents", 0) == 0:
+                return False, "Validation failed: BM25 postings index contains zero documents", config.VAL_CODE_ZERO_BM25_DOCS
+
+        return True, None, None
+    except Exception as e:
+        return False, f"Validation failed: Memory evaluation error ({str(e)})", config.VAL_CODE_EVAL_ERROR
 
 def worker_loop():
     global current_renewer, shutdown_requested

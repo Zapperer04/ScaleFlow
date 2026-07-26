@@ -502,40 +502,137 @@ export const WorkspaceHome = () => {
           {workspaceState === 'timeline' && (
             <div style={{ padding: '32px', overflowY: 'auto', height: '100%' }}>
               {/* Pipeline header — all values from backend; nothing invented */}
-              {activeDag && (
+              {activeDag && activeDag.pipeline && (
                 <div style={{ marginBottom: '20px' }}>
                   <PipelineHeader
                     pipelineId={selectedPipelineId}
                     documentName={activeDoc?.original_filename}
-                    workerId={activeDag.tasks?.find(t => t.status === 'running')?.worker_id || null}
-                    status={activeDag.status}
-                    elapsedSeconds={activeDag.elapsed_seconds || null}
-                    queuePosition={activeDag.queue_position || null}
-                    startTime={activeDag.started_at || null}
+                    workerId={activeDag.tasks?.find(t => t.status === 'running')?.assigned_worker_id || 'Unassigned'}
+                    status={activeDag.pipeline.status}
+                    elapsedSeconds={activeDag.pipeline.started_at ? Math.round((new Date(activeDag.pipeline.completed_at || new Date().toISOString()) - new Date(activeDag.pipeline.started_at)) / 1000) : 0}
+                    queuePosition={activeDag.tasks?.find(t => t.status === 'pending')?.queue_position || null}
+                    startTime={activeDag.pipeline.started_at}
                   />
                 </div>
               )}
 
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '1rem', fontWeight: 700 }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '1rem', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
                 [ {activeDoc?.original_filename || 'Untitled'} — Ingestion Pipeline ]
               </h3>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '600px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '800px' }}>
                 {activeDag?.tasks?.length > 0 ? (
-                  activeDag.tasks.map((task, idx) => (
-                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', border: '1px solid var(--border-subtle)', borderRadius: '8px', background: 'var(--bg-panel)' }}>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{task.task_type}</div>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-disabled)' }}>State: {task.status}</span>
-                        {task.worker_id && (
-                          <span style={{ fontSize: '0.7rem', color: 'var(--text-disabled)', marginLeft: '8px' }}>Worker: {task.worker_id}</span>
+                  activeDag.tasks.map((task, idx) => {
+                    const inputArtifacts = (activeDag.artifacts || []).filter(art => (task.input_artifact_ids || []).includes(art.id));
+                    const outputArtifacts = (activeDag.artifacts || []).filter(art => (task.output_artifact_ids || []).includes(art.id));
+                    
+                    // Retrieve pre-calculated backend validation status
+                    const failedValidation = outputArtifacts.find(art => art.metadata_json?.validation?.is_valid === false);
+                    const validationError = failedValidation ? failedValidation.metadata_json?.validation?.error_message : null;
+
+                    return (
+                      <div key={idx} style={{ 
+                        padding: '16px', 
+                        border: failedValidation ? '1px solid var(--color-failure)' : '1px solid var(--border-subtle)', 
+                        borderRadius: '12px', 
+                        background: 'var(--bg-panel)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        boxShadow: 'var(--shadow-sm)'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#fff' }}>{task.type || task.task_type}</div>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-disabled)', fontFamily: 'var(--font-mono)' }}>
+                              ID: #{task.id} | Worker: {task.assigned_worker_id || 'Not Available'}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            {/* Execution Status Badge */}
+                            <Badge variant={task.status === 'completed' ? 'success' : task.status === 'failed' ? 'failure' : 'warning'}>
+                              EXEC: {task.status?.toUpperCase() || 'QUEUED'}
+                            </Badge>
+                            {/* Validation Status Badge */}
+                            {task.status === 'completed' && (
+                              <Badge variant={failedValidation ? 'failure' : 'success'}>
+                                VAL: {failedValidation ? 'FAILED' : 'PASSED'}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Lineage metrics grid */}
+                        <div style={{ 
+                          display: 'grid', 
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', 
+                          gap: '12px', 
+                          fontSize: '0.75rem', 
+                          fontFamily: 'var(--font-mono)',
+                          color: 'var(--text-secondary)',
+                          borderTop: '1px solid rgba(255,255,255,0.04)',
+                          paddingTop: '12px'
+                        }}>
+                          <div>Started: <strong style={{ color: '#fff' }}>{task.started_at ? new Date(task.started_at).toLocaleTimeString() : 'Not Available'}</strong></div>
+                          <div>Finished: <strong style={{ color: '#fff' }}>{task.completed_at ? new Date(task.completed_at).toLocaleTimeString() : 'Not Available'}</strong></div>
+                          <div>Duration: <strong style={{ color: '#fff' }}>{task.execution_duration != null ? `${task.execution_duration}s` : 'Not Available'}</strong></div>
+                          <div>Queue Wait: <strong style={{ color: '#fff' }}>{task.queue_wait_duration != null ? `${task.queue_wait_duration}s` : 'Not Available'}</strong></div>
+                          <div>Retries: <strong style={{ color: '#fff' }}>{task.retry_count} / {task.max_retries}</strong></div>
+                        </div>
+
+                        {/* Server-derived validation error message display */}
+                        {failedValidation && (
+                          <div style={{ 
+                            color: 'var(--color-failure)', 
+                            fontSize: '0.75rem', 
+                            fontFamily: 'var(--font-mono)', 
+                            background: 'rgba(244,63,94,0.06)', 
+                            border: '1px solid rgba(244,63,94,0.15)', 
+                            padding: '10px 14px', 
+                            borderRadius: '8px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px'
+                          }}>
+                            <div><strong>Server Validation Failure:</strong> {validationError || 'Semantic checks failed.'}</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-disabled)' }}>
+                              Code: {failedValidation.metadata_json?.validation?.error_code || 'N/A'} | 
+                              Version: v{failedValidation.metadata_json?.validation?.validator_version || '1'} | 
+                              Validated At: {failedValidation.metadata_json?.validation?.validated_at ? new Date(failedValidation.metadata_json.validation.validated_at).toLocaleTimeString() : 'N/A'}
+                            </div>
+                          </div>
                         )}
+
+                        {/* Input & Output lineage artifacts listing */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '10px' }}>
+                          {inputArtifacts.length > 0 && (
+                            <div>
+                              <span style={{ color: 'var(--text-disabled)', fontWeight: 600 }}>Input Artifacts:</span>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                                {inputArtifacts.map((art, aIdx) => (
+                                  <span key={aIdx} style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                                    📁 {art.artifact_type} (URI: {art.storage_uri || 'Not Available'}) | Hash: {art.checksum || 'Not Available'}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {outputArtifacts.length > 0 && (
+                            <div style={{ marginTop: '4px' }}>
+                              <span style={{ color: 'var(--text-disabled)', fontWeight: 600 }}>Output Artifacts:</span>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                                {outputArtifacts.map((art, aIdx) => (
+                                  <span key={aIdx} style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                                    📁 {art.artifact_type} (URI: {art.storage_uri || 'Not Available'}) | Hash: {art.checksum || 'Not Available'}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <Badge variant={task.status === 'completed' ? 'success' : task.status === 'failed' ? 'failure' : 'warning'}>
-                        {task.status}
-                      </Badge>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
                     {activeDag ? 'No tasks reported by backend yet.' : 'Loading pipeline data...'}
@@ -544,10 +641,10 @@ export const WorkspaceHome = () => {
               </div>
 
               {/* Pipeline action controls — wired to backend endpoints */}
-              {activeDag && (
+              {activeDag && activeDag.pipeline && (
                 <div style={{ marginTop: '24px' }}>
                   <PipelineControls
-                    status={activeDag.status}
+                    status={activeDag.pipeline.status}
                     onPause={null}  /* Backend pause endpoint not yet available */
                     onResume={null} /* Backend resume endpoint not yet available */
                     onCancel={async () => {
@@ -736,6 +833,7 @@ export const WorkspaceHome = () => {
                 <span style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>Pipeline Visual DAG (Frozen MR-RAG Flow)</span>
                 <PipelineDAG
                   tasks={activeDag?.tasks || []}
+                  artifacts={activeDag?.artifacts || []}
                   selectedNodeId={selectedDagNode?.id}
                   onSelectNode={(node) => setSelectedDagNode(node)}
                 />

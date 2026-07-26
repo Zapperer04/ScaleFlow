@@ -13,7 +13,7 @@ import React from 'react';
  * - failed: Red (#ef4444)
  * - retrying / paused: Amber (#f59e0b)
  */
-export const PipelineDAG = ({ tasks = [], dagNodes = [], dagEdges = [], onSelectNode, selectedNodeId }) => {
+export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdges = [], onSelectNode, selectedNodeId }) => {
   // Frozen MR-RAG Pipeline layout nodes if backend nodes are not pre-positioned
   const defaultNodes = [
     { id: 'upload',        name: 'Upload',               ref: 'upload',              x: 40,  y: 100 },
@@ -32,7 +32,14 @@ export const PipelineDAG = ({ tasks = [], dagNodes = [], dagEdges = [], onSelect
     return tasks.find(t => t.type === refName || t.task_type === refName) || null;
   };
 
-  const getStatusColor = (status) => {
+  const isNodeValidationFailed = (task) => {
+    if (!task || !task.output_artifact_ids) return false;
+    const taskOutputs = artifacts.filter(art => task.output_artifact_ids.includes(art.id));
+    return taskOutputs.some(art => art.metadata_json?.validation?.is_valid === false);
+  };
+
+  const getStatusColor = (status, validationFailed = false) => {
+    if (validationFailed) return '#ef4444';
     switch (status?.toLowerCase()) {
       case 'completed': return '#10b981';
       case 'running': return '#3b82f6';
@@ -45,7 +52,8 @@ export const PipelineDAG = ({ tasks = [], dagNodes = [], dagEdges = [], onSelect
     }
   };
 
-  const getStatusBg = (status) => {
+  const getStatusBg = (status, validationFailed = false) => {
+    if (validationFailed) return 'rgba(239, 68, 68, 0.08)';
     switch (status?.toLowerCase()) {
       case 'completed': return 'rgba(16, 185, 129, 0.08)';
       case 'running': return 'rgba(59, 130, 246, 0.08)';
@@ -129,9 +137,10 @@ export const PipelineDAG = ({ tasks = [], dagNodes = [], dagEdges = [], onSelect
         {/* Render Nodes */}
         {defaultNodes.map((node) => {
           const task = getTaskForRef(node.ref);
+          const isFailed = task ? isNodeValidationFailed(task) : false;
           const status = task ? task.status : (node.id === 'upload' ? 'completed' : (tasks.every(t => t.status === 'completed') && tasks.length > 0 ? 'completed' : 'pending'));
-          const color = getStatusColor(status);
-          const bg = getStatusBg(status);
+          const color = getStatusColor(status, isFailed);
+          const bg = getStatusBg(status, isFailed);
           const isSelected = selectedNodeId === node.id || (task && selectedNodeId === task.id);
 
           return (
@@ -175,7 +184,7 @@ export const PipelineDAG = ({ tasks = [], dagNodes = [], dagEdges = [], onSelect
                 fontWeight="700"
                 fontFamily="'JetBrains Mono', monospace"
               >
-                {status?.toUpperCase() || 'QUEUED'}
+                {isFailed ? 'VAL FAILED' : (status?.toUpperCase() || 'QUEUED')}
               </text>
             </g>
           );
