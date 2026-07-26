@@ -16,6 +16,7 @@ import {
 } from '../services/search';
 import { fetchUploadedFiles, fetchPdfContent } from '../services/documents';
 import { fetchPipelineDetails, fetchPipelineTimeline, cancelPipeline, retryPipeline } from '../services/pipelines';
+import { apiClient } from '../services/apiClient';
 import ProgressBar from '../components/ui/ProgressBar';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
@@ -23,6 +24,7 @@ import { ExecutionConsole } from '../components/workspace/logs/ExecutionConsole'
 import { ErrorPanel } from '../components/workspace/logs/ErrorPanel';
 import { PipelineControls } from '../components/workspace/pipeline/PipelineControls';
 import { PipelineHeader } from '../components/workspace/pipeline/PipelineHeader';
+import { PipelineDAG } from '../components/workspace/pipeline/PipelineDAG';
 
 export const WorkspaceHome = () => {
   const { selectedPipelineId, setSelectedPipelineId, pipelines } = usePipeline();
@@ -71,6 +73,9 @@ export const WorkspaceHome = () => {
   // Active Ingestion Pipeline Telemetry
   const [activeDag, setActiveDag] = useState(null);
   const [selectedDagNode, setSelectedDagNode] = useState(null);
+
+  // Server-side document summary metadata from GET /pipelines/{id}/metadata
+  const [pipelineMetadata, setPipelineMetadata] = useState(null);
 
   // Real pipeline execution logs from /pipelines/{id}/timeline
   const [pipelineLogs, setPipelineLogs] = useState([]);
@@ -192,15 +197,25 @@ export const WorkspaceHome = () => {
     renderPage();
   }, [pdfDoc, activePdfPage, zoomLevel]);
 
-  // Fetch ingestion pipeline details (tasks, artifacts, status) every 3s
+  // Fetch ingestion pipeline details (tasks, artifacts, status) & server metadata every 3s
   useEffect(() => {
-    if (!selectedPipelineId) return;
+    if (!selectedPipelineId) {
+      setActiveDag(null);
+      setPipelineMetadata(null);
+      return;
+    }
     const loadDag = async () => {
       try {
         const details = await fetchPipelineDetails(selectedPipelineId);
         setActiveDag(details);
       } catch (e) {
         console.error('fetchPipelineDetails failed', e);
+      }
+      try {
+        const metaRes = await apiClient.get(`/pipelines/${selectedPipelineId}/metadata`);
+        setPipelineMetadata(metaRes.data);
+      } catch (e) {
+        // Metadata endpoint might return 404 if pipeline has no metadata yet
       }
     };
     loadDag();
@@ -556,13 +571,13 @@ export const WorkspaceHome = () => {
                 <h3 style={{ margin: 0, fontWeight: 700 }}>✓ Document Indexed Successfully</h3>
                 <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>The parsing pipeline is ready.</p>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', width: '100%', maxWidth: '500px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '20px', fontSize: '0.8rem' }}>
-                <div>Pages: <strong>{activeDoc?.page_count || 'Not Available'}</strong></div>
-                <div>Chunks: <strong>{(activeDag?.artifacts || []).find(a => a.artifact_type === 'graph_chunks')?.metadata_json?.chunk_count || (activeDag?.artifacts || []).find(a => a.artifact_type === 'graph_chunks')?.metadata_json?.total_chunks_embedded || 'Not Available'}</strong></div>
-                <div>Entities: <strong>{(activeDag?.artifacts || []).find(a => a.artifact_type === 'document_graph')?.metadata_json?.stats?.entity_count || 'Not Available'}</strong></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', width: '100%', maxWidth: '520px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '20px', fontSize: '0.8rem' }}>
+                <div>Pages: <strong>{activeDoc?.page_count || pipelineMetadata?.summary?.pages || 'Not Available'}</strong></div>
+                <div>Chunks: <strong>{pipelineMetadata?.chunk_count || (activeDag?.artifacts || []).find(a => a.artifact_type === 'graph_chunks')?.metadata_json?.chunk_count || 'Not Available'}</strong></div>
+                <div>Embeddings: <strong>{pipelineMetadata?.embedding_count || (activeDag?.artifacts || []).find(a => a.artifact_type === 'graph_embeddings')?.metadata_json?.total_embeddings || 'Not Available'}</strong></div>
                 <div>Graph Nodes: <strong>{(activeDag?.artifacts || []).find(a => a.artifact_type === 'document_graph')?.metadata_json?.stats?.node_count || 'Not Available'}</strong></div>
+                <div>Graph Edges: <strong>{(activeDag?.artifacts || []).find(a => a.artifact_type === 'document_graph')?.metadata_json?.stats?.edge_count || 'Not Available'}</strong></div>
                 <div>Processing Time: <strong>{(activeDag?.artifacts || []).find(a => a.artifact_type === 'graph_embeddings')?.metadata_json?.embedding_generation_duration ? `${Math.round((activeDag?.artifacts || []).find(a => a.artifact_type === 'graph_embeddings')?.metadata_json?.embedding_generation_duration)}s` : 'Not Available'}</strong></div>
-                <div>Confidence: <strong>{(activeDag?.artifacts || []).find(a => a.artifact_type === 'document_graph')?.metadata_json?.routing_confidence ? `${Math.round((activeDag?.artifacts || []).find(a => a.artifact_type === 'document_graph')?.metadata_json?.routing_confidence * 100)}%` : 'Not Available'}</strong></div>
               </div>
               <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
                 {/* Chat is only accessible when the backend confirms pipeline completion */}
@@ -713,10 +728,20 @@ export const WorkspaceHome = () => {
           </button>
         </div>
 
-        <div style={{ height: bottomDrawerCollapsed ? '0px' : '340px', transition: 'height 0.3s ease', borderTop: bottomDrawerCollapsed ? 'none' : '1px solid var(--border-subtle)', background: 'var(--bg-panel)', overflow: 'hidden' }}>
+        <div style={{ height: bottomDrawerCollapsed ? '0px' : '360px', transition: 'height 0.3s ease', borderTop: bottomDrawerCollapsed ? 'none' : '1px solid var(--border-subtle)', background: 'var(--bg-panel)', overflow: 'hidden' }}>
           {bottomTab === 'dag' ? (
             <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', height: '100%', overflow: 'auto' }}>
-              {/* Task badges — sourced from backend activeDag.tasks, no static badges */}
+              {/* Dynamic Pipeline DAG Flowchart */}
+              <div>
+                <span style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>Pipeline Visual DAG (Frozen MR-RAG Flow)</span>
+                <PipelineDAG
+                  tasks={activeDag?.tasks || []}
+                  selectedNodeId={selectedDagNode?.id}
+                  onSelectNode={(node) => setSelectedDagNode(node)}
+                />
+              </div>
+
+              {/* Task Badges Lineage */}
               <div>
                 <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Pipeline Task Stages</span>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
@@ -725,6 +750,8 @@ export const WorkspaceHome = () => {
                       <Badge
                         key={idx}
                         variant={task.status === 'completed' ? 'success' : task.status === 'failed' ? 'failure' : 'warning'}
+                        onClick={() => setSelectedDagNode(task)}
+                        style={{ cursor: 'pointer' }}
                       >
                         {task.task_type}: {task.status}
                       </Badge>

@@ -10,12 +10,11 @@ const ToolIcon = ({ size }) => (
 export const ErrorPanel = ({ errors = [], onRetry }) => {
   const [expandedIndex, setExpandedIndex] = useState(null);
 
-  // Always render the panel — show empty state when no errors
   return (
     <div style={{
       background: 'rgba(15, 23, 42, 0.4)',
       border: errors.length > 0
-        ? '1px solid rgba(239, 68, 68, 0.2)'
+        ? '1px solid rgba(239, 68, 68, 0.25)'
         : '1px solid rgba(255,255,255,0.05)',
       borderRadius: '14px',
       overflow: 'hidden',
@@ -40,7 +39,7 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
           letterSpacing: '0.06em',
           color: errors.length > 0 ? '#ef4444' : 'rgba(255,255,255,0.3)',
         }}>
-          Error Inspector
+          Airflow Fault Diagnostics
         </span>
         {errors.length > 0 && (
           <span style={{
@@ -61,25 +60,25 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
       {/* Body */}
       {errors.length === 0 ? (
         <div style={{
-          padding: '40px 24px',
+          padding: '30px 24px',
           textAlign: 'center',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: 10,
+          gap: 8,
         }}>
           <div style={{
-            width: 44, height: 44,
+            width: 36, height: 36,
             borderRadius: '50%',
             background: 'rgba(16,185,129,0.07)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2">
+            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2">
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </div>
-          <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.35)' }}>No pipeline errors detected</span>
-          <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.2)' }}>All stages executing normally</span>
+          <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.35)' }}>No pipeline faults detected</span>
+          <span style={{ fontSize: '10.5px', color: 'rgba(255,255,255,0.2)' }}>All execution tasks operating normally</span>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -87,6 +86,8 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
             const expanded = expandedIndex === idx;
             const isErr    = err.level?.toLowerCase() === 'error';
             const accent   = isErr ? '#ef4444' : '#f59e0b';
+            const isRecoverable = err.recoverable !== false;
+            const retriesText = `${err.retries || 0} / ${err.maxRetries || 3}`;
 
             return (
               <div key={idx} style={{ borderBottom: idx < errors.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
@@ -105,7 +106,6 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
                   onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  {/* Level tag */}
                   <span style={{
                     fontSize: '9px',
                     fontWeight: 700,
@@ -117,48 +117,49 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
                     border: `1px solid ${accent}30`,
                     flexShrink: 0,
                   }}>
-                    {err.level?.toUpperCase()}
+                    {err.stage?.toUpperCase() || 'FAULT'}
                   </span>
 
-                  {/* Message */}
                   <span style={{ fontSize: '12px', fontWeight: 600, color: '#fff', flex: 1 }}>
                     {err.message}
                   </span>
 
-                  {/* Meta */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'rgba(255,255,255,0.3)', fontSize: '10px', fontFamily: 'monospace', flexShrink: 0 }}>
                     <span>{err.timestamp}</span>
                     {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                   </div>
                 </div>
 
-                {/* Expanded details */}
+                {/* Expanded Airflow-style fault details */}
                 {expanded && (
                   <div style={{
                     padding: '16px 18px 20px',
                     borderTop: '1px solid rgba(255,255,255,0.04)',
-                    background: 'rgba(0,0,0,0.2)',
+                    background: 'rgba(0,0,0,0.25)',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 14,
                     fontSize: '11px',
-                    fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                    fontFamily: "'JetBrains Mono', monospace",
                   }}>
-                    {/* Properties grid */}
+                    {/* Airflow Properties grid */}
                     <div style={{
                       display: 'grid',
-                      gridTemplateColumns: '90px 1fr',
+                      gridTemplateColumns: '120px 1fr',
                       gap: '6px 12px',
                       color: 'rgba(255,255,255,0.6)',
                     }}>
                       {[
-                        ['Stage',   err.stage   || 'Unknown'],
-                        ['Worker',  err.worker  || 'Unassigned'],
-                        ['Retries', err.retries !== undefined ? `${err.retries} attempts` : '0'],
+                        ['Stage', err.stage || 'Unknown'],
+                        ['Worker ID', err.worker || 'Unassigned'],
+                        ['Recoverable', isRecoverable ? 'YES (Auto-recovery supported)' : 'NO (Fatal stage failure)'],
+                        ['Retry Progress', retriesText],
+                        ['Queue Wait Time', err.queueWait ? `${err.queueWait}s` : 'Not Available'],
+                        ['Execution Duration', err.executionDuration ? `${err.executionDuration}s` : 'Not Available'],
                       ].map(([k, v]) => (
                         <React.Fragment key={k}>
-                          <span style={{ color: 'rgba(255,255,255,0.3)' }}>{k}:</span>
-                          <span style={{ color: '#fff' }}>{v}</span>
+                          <span style={{ color: 'rgba(255,255,255,0.35)' }}>{k}:</span>
+                          <span style={{ color: '#fff', fontWeight: 500 }}>{v}</span>
                         </React.Fragment>
                       ))}
                     </div>
@@ -178,7 +179,7 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
                       }}>
                         <ToolIcon size={13} style={{ flexShrink: 0, marginTop: 1 }} />
                         <div>
-                          <strong>Suggested Fix:</strong><br />
+                          <strong>Suggested Action:</strong><br />
                           {err.suggestedFix}
                         </div>
                       </div>
@@ -189,7 +190,7 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
                       <pre style={{
                         margin: 0,
                         padding: '12px 14px',
-                        background: 'rgba(0,0,0,0.4)',
+                        background: 'rgba(0,0,0,0.5)',
                         border: '1px solid rgba(255,255,255,0.06)',
                         borderRadius: 8,
                         overflowX: 'auto',
@@ -201,7 +202,7 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
                       </pre>
                     )}
 
-                    {/* Retry action */}
+                    {/* Interactive Retry Trigger */}
                     {onRetry && (
                       <button
                         onClick={() => onRetry(err)}
@@ -224,7 +225,7 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
                         onMouseLeave={e => e.currentTarget.style.background = 'rgba(59,130,246,0.1)'}
                       >
                         <RefreshCw size={12} />
-                        Retry Stage
+                        Retry Task Stage
                       </button>
                     )}
                   </div>

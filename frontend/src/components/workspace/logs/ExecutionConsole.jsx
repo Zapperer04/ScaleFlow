@@ -8,25 +8,48 @@ const LEVEL_STYLE = {
   info:    { color: '#3b82f6', label: 'INFO' },
 };
 
-const WorkerColors = ['#a78bfa', '#34d399', '#fbbf24', '#60a5fa', '#f472b6'];
-const workerColor = (name = '') => WorkerColors[name.charCodeAt(name.length - 1) % WorkerColors.length];
+const CATEGORY_COLORS = {
+  SYSTEM:    '#94a3b8',
+  PIPELINE:  '#a78bfa',
+  WORKER:    '#34d399',
+  PROVIDER:  '#fbbf24',
+  DATABASE:  '#60a5fa',
+  'VECTOR DB': '#f472b6',
+  GRAPH:     '#38bdf8',
+  LLM:       '#c084fc',
+};
+
+const inferCategory = (log) => {
+  const text = `${log.stage || ''} ${log.message || ''} ${log.event_type || ''}`.toUpperCase();
+  if (text.includes('VECTOR') || text.includes('QDRANT') || text.includes('UPSERT')) return 'VECTOR DB';
+  if (text.includes('GRAPH') || text.includes('NODE') || text.includes('EDGE')) return 'GRAPH';
+  if (text.includes('GEMINI') || text.includes('LLM') || text.includes('GROQ') || text.includes('OPENROUTER')) return 'LLM';
+  if (text.includes('OCR') || text.includes('PARSER') || text.includes('PROVIDER')) return 'PROVIDER';
+  if (text.includes('DATABASE') || text.includes('POSTGRES') || text.includes('SQL')) return 'DATABASE';
+  if (text.includes('WORKER') || text.includes('LEASE') || text.includes('CLAIM')) return 'WORKER';
+  if (text.includes('PIPELINE') || text.includes('DAG') || text.includes('TASK')) return 'PIPELINE';
+  return 'SYSTEM';
+};
 
 export const ExecutionConsole = ({ logs = [] }) => {
-  const [searchQuery, setSearchQuery]   = useState('');
-  const [levelFilter, setLevelFilter]   = useState('all');
-  const [autoScroll, setAutoScroll]     = useState(true);
-  const [paused, setPaused]             = useState(false);
+  const [searchQuery, setSearchQuery]       = useState('');
+  const [levelFilter, setLevelFilter]       = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [autoScroll, setAutoScroll]         = useState(true);
+  const [paused, setPaused]                 = useState(false);
   const consoleEndRef = useRef(null);
   const containerRef  = useRef(null);
 
   const filteredLogs = logs.filter(log => {
+    const category = log.category || inferCategory(log);
     const matchSearch = searchQuery
-      ? [log.message, log.stage, log.worker].some(v =>
+      ? [log.message, log.stage, log.worker, log.category].some(v =>
           v?.toLowerCase().includes(searchQuery.toLowerCase())
         )
       : true;
     const matchLevel = levelFilter === 'all' || log.level?.toLowerCase() === levelFilter;
-    return matchSearch && matchLevel;
+    const matchCategory = categoryFilter === 'ALL' || category === categoryFilter;
+    return matchSearch && matchLevel && matchCategory;
   });
 
   useEffect(() => {
@@ -45,16 +68,18 @@ export const ExecutionConsole = ({ logs = [] }) => {
 
   const handleCopy = () => {
     navigator.clipboard.writeText(
-      filteredLogs.map(l =>
-        `${l.timestamp} [${l.level?.toUpperCase()}] ${l.worker} — ${l.stage}: ${l.message}`
-      ).join('\n')
+      filteredLogs.map(l => {
+        const cat = l.category || inferCategory(l);
+        return `${l.timestamp} [${(l.level || 'info').toUpperCase()}] [${cat}] ${l.worker || 'system'} — ${l.stage || 'exec'}: ${l.message}`;
+      }).join('\n')
     );
   };
 
   const handleDownload = () => {
-    const text = filteredLogs.map(l =>
-      `${l.timestamp} [${l.level?.toUpperCase()}] ${l.worker} — ${l.stage}: ${l.message}`
-    ).join('\n');
+    const text = filteredLogs.map(l => {
+      const cat = l.category || inferCategory(l);
+      return `${l.timestamp} [${(l.level || 'info').toUpperCase()}] [${cat}] ${l.worker || 'system'} — ${l.stage || 'exec'}: ${l.message}`;
+    }).join('\n');
     const a = Object.assign(document.createElement('a'), {
       href: URL.createObjectURL(new Blob([text], { type: 'text/plain' })),
       download: `pipeline_log_${Date.now()}.txt`,
@@ -63,7 +88,7 @@ export const ExecutionConsole = ({ logs = [] }) => {
     URL.revokeObjectURL(a.href);
   };
 
-  const handleClear = () => { setSearchQuery(''); setLevelFilter('all'); };
+  const handleClear = () => { setSearchQuery(''); setLevelFilter('all'); setCategoryFilter('ALL'); };
 
   return (
     <div style={{
@@ -81,6 +106,8 @@ export const ExecutionConsole = ({ logs = [] }) => {
         onSearchChange={setSearchQuery}
         levelFilter={levelFilter}
         onLevelFilterChange={setLevelFilter}
+        categoryFilter={categoryFilter}
+        onCategoryFilterChange={setCategoryFilter}
         autoScroll={autoScroll}
         onAutoScrollToggle={setAutoScroll}
         onCopy={handleCopy}
@@ -101,7 +128,7 @@ export const ExecutionConsole = ({ logs = [] }) => {
           <div key={c} style={{ width: 10, height: 10, borderRadius: '50%', background: c, opacity: 0.6 }} />
         ))}
         <span style={{ marginLeft: 8, fontSize: '10px', color: 'rgba(255,255,255,0.25)', fontFamily: 'monospace' }}>
-          scaleflow — pipeline execution log
+          scaleflow — live backend execution log stream
         </span>
         {paused && (
           <span style={{
@@ -127,7 +154,7 @@ export const ExecutionConsole = ({ logs = [] }) => {
           height: 280,
           overflowY: 'auto',
           padding: '12px 18px',
-          fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
           fontSize: '11.5px',
           lineHeight: 1.8,
           color: 'rgba(255,255,255,0.55)',
@@ -139,12 +166,13 @@ export const ExecutionConsole = ({ logs = [] }) => {
       >
         {filteredLogs.length === 0 ? (
           <div style={{ color: 'rgba(255,255,255,0.2)', textAlign: 'center', marginTop: 60, fontSize: '12px' }}>
-            — no log entries match active filters —
+            — no log entries match active category or search filters —
           </div>
         ) : filteredLogs.map((log, idx) => {
           const lKey = log.level?.toLowerCase() || 'info';
           const ls   = LEVEL_STYLE[lKey] || LEVEL_STYLE.info;
-          const wc   = workerColor(log.worker || '');
+          const cat  = log.category || inferCategory(log);
+          const catColor = CATEGORY_COLORS[cat] || '#94a3b8';
           return (
             <div
               key={idx}
@@ -173,9 +201,23 @@ export const ExecutionConsole = ({ logs = [] }) => {
                 {ls.label}
               </span>
 
+              {/* Category tag */}
+              <span style={{
+                color: catColor,
+                background: `${catColor}12`,
+                border: `1px solid ${catColor}30`,
+                fontSize: '9px',
+                fontWeight: 700,
+                padding: '1px 5px',
+                borderRadius: 3,
+                flexShrink: 0,
+              }}>
+                [{cat}]
+              </span>
+
               {/* Worker */}
-              <span style={{ color: wc, flexShrink: 0, fontSize: '10.5px' }}>
-                [{log.worker}]
+              <span style={{ color: 'rgba(255,255,255,0.4)', flexShrink: 0, fontSize: '10.5px' }}>
+                {log.worker || 'system'}
               </span>
 
               {/* Stage */}
@@ -186,7 +228,7 @@ export const ExecutionConsole = ({ logs = [] }) => {
               )}
 
               {/* Message */}
-              <span style={{ color: 'rgba(255,255,255,0.7)', flex: 1, wordBreak: 'break-all' }}>
+              <span style={{ color: 'rgba(255,255,255,0.75)', flex: 1, wordBreak: 'break-all' }}>
                 {log.message}
               </span>
             </div>
@@ -213,5 +255,4 @@ export const ExecutionConsole = ({ logs = [] }) => {
     </div>
   );
 };
-
 export default ExecutionConsole;
