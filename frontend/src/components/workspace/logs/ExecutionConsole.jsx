@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import ConsoleToolbar from './ConsoleToolbar';
+import { usePipeline } from '../../../contexts/PipelineContext';
 
 const LEVEL_STYLE = {
   ERROR:   { color: '#ef4444', label: 'ERR ' },
@@ -7,18 +8,24 @@ const LEVEL_STYLE = {
   INFO:    { color: '#3b82f6', label: 'INFO' },
 };
 
-const LogRow = React.memo(({ log }) => {
+const LogRow = React.memo(({ log, isSelected, onClick }) => {
   const ls = LEVEL_STYLE[log.level] || LEVEL_STYLE.INFO;
   return (
     <div
+      onClick={onClick}
       style={{
         display: 'flex',
         gap: 10,
         alignItems: 'baseline',
         animation: 'fadeInLog 0.12s ease-out',
-        padding: '1px 0',
-        borderRadius: 3,
+        padding: '3px 8px',
+        borderRadius: 4,
+        cursor: 'pointer',
+        background: isSelected ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
+        borderLeft: isSelected ? '3px solid #3b82f6' : '3px solid transparent',
+        transition: 'background 0.15s, border-left 0.15s',
       }}
+      className="log-row-hover"
     >
       {/* Timestamp */}
       <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '10.5px', flexShrink: 0, userSelect: 'none' }}>
@@ -57,6 +64,12 @@ const LogRow = React.memo(({ log }) => {
 });
 
 export const ExecutionConsole = ({ events = [], loading = false, error = null }) => {
+  const {
+    selectedTaskId, setSelectedTaskId,
+    selectedTraceId, setSelectedTraceId,
+    selectedWorkerId, setSelectedWorkerId
+  } = usePipeline();
+
   const [searchQuery, setSearchQuery]       = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [levelFilter, setLevelFilter]       = useState('all');
@@ -316,7 +329,31 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
         ) : (
           filteredEvents.map((log) => {
             if (log.id === null || log.id === undefined) return null;
-            return <LogRow key={log.id} log={log} />;
+            const key = `${log.source || 'task_log'}-${log.id}`;
+            const isSelected = (log.task_id && log.task_id === selectedTaskId) ||
+                               (log.correlation_id && log.correlation_id === selectedTraceId) ||
+                               (log.worker_id && log.worker_id !== 'system' && log.worker_id === selectedWorkerId);
+            
+            const handleRowClick = () => {
+              if (isSelected) {
+                setSelectedTaskId(null);
+                setSelectedTraceId(null);
+                setSelectedWorkerId(null);
+              } else {
+                setSelectedTaskId(log.task_id || null);
+                setSelectedTraceId(log.correlation_id || null);
+                setSelectedWorkerId((log.worker_id && log.worker_id !== 'system') ? log.worker_id : null);
+              }
+            };
+            
+            return (
+              <LogRow
+                key={key}
+                log={log}
+                isSelected={isSelected}
+                onClick={handleRowClick}
+              />
+            );
           })
         )}
         <div ref={consoleEndRef} tabIndex={-1} style={{ outline: 'none' }} />
@@ -346,6 +383,9 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
         }
         .console-scrollbar::-webkit-scrollbar-thumb:hover {
           background: rgba(255,255,255,0.15);
+        }
+        .log-row-hover:hover {
+          background: rgba(255,255,255,0.04) !important;
         }
       `}</style>
     </div>

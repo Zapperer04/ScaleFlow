@@ -258,6 +258,53 @@ def create_task_log(db, task_id, event_type, message, worker_id=None, payload=No
                     "lease_token": (task.lease_token if task else None) or "unknown"
                 }
                 
+        correlation_id = None
+        priority = None
+        retry_count = None
+        stage = None
+        queue = None
+        if task:
+            try:
+                task_data = json.loads(task.data) if task.data else {}
+                correlation_id = task_data.get("correlation_id")
+            except:
+                pass
+            priority = task.priority.value if hasattr(task.priority, 'value') else task.priority
+            retry_count = task.retry_count
+            stage = task.type
+            if priority:
+                queue = f"task_queue_{priority}"
+
+        leader_instance = None
+        try:
+            from services.ha_coordinator_service import is_leader_instance, ORCHESTRATOR_INSTANCE_ID
+            if is_leader_instance:
+                leader_instance = ORCHESTRATOR_INSTANCE_ID
+        except:
+            pass
+
+        trace_context = {
+            "correlation_id": correlation_id or f"corr-missing-{task_id}",
+            "pipeline_id": pipeline_id,
+            "task_id": task_id,
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+        if worker_id:
+            trace_context["worker_id"] = worker_id
+        elif task and task.assigned_worker_id:
+            trace_context["worker_id"] = task.assigned_worker_id
+
+        if leader_instance:
+            trace_context["leader_instance"] = leader_instance
+        if retry_count is not None:
+            trace_context["retry_count"] = retry_count
+        if queue:
+            trace_context["queue"] = queue
+        if stage:
+            trace_context["stage"] = stage
+        if priority:
+            trace_context["priority"] = priority
+
         try:
             publish_event(
                 db=db,
@@ -267,7 +314,8 @@ def create_task_log(db, task_id, event_type, message, worker_id=None, payload=No
                 message=message,
                 worker_id=worker_id,
                 lease_token=task.lease_token if task else None,
-                payload=payload
+                payload=payload,
+                trace_context=trace_context
             )
         except Exception as publish_err:
             print(f"EVENT SOURCING PUBLISH ERROR: {publish_err}", flush=True)
@@ -1750,6 +1798,8 @@ def create_pipeline():
         
         # Initialize local ownership fencing version token
         owned_pipelines_versions[pipeline.id] = 1
+        # Generate trace correlation ID at pipeline creation
+        correlation_id = f"corr-{uuid.uuid4().hex[:12]}"
         
         # Publish PIPELINE_CREATED event sourcing
         try:
@@ -1761,6 +1811,10 @@ def create_pipeline():
                 payload={
                     "pipeline_type": pipeline_type,
                     "name": name
+                },
+                trace_context={
+                    "correlation_id": correlation_id,
+                    "pipeline_id": pipeline.id
                 }
             )
         except Exception as e:
@@ -1775,10 +1829,14 @@ def create_pipeline():
                 if isinstance(retry_policy, dict):
                     default_max_retries = retry_policy.get("max_retries", 3)
             
+            node_payload = node.get("payload") or {}
+            if isinstance(node_payload, dict):
+                node_payload["correlation_id"] = correlation_id
+
             initial_status = "blocked" if node.get("depends_on") else "pending"
             task = Task(
                 type=node["task_type"],
-                data=json.dumps(node["payload"]),
+                data=json.dumps(node_payload),
                 priority=node.get("priority", "medium"),
                 max_retries=default_max_retries,
                 status=initial_status,
@@ -1991,33 +2049,110 @@ def get_pipeline_dag(pipeline_id):
 def get_pipeline_timeline(pipeline_id):
     db = SessionLocal()
     try:
+        from models import OrchestrationEvent
         pipeline = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
         if not pipeline:
             return jsonify({"error": "Pipeline not found"}), 404
-            
+
         tasks = db.query(Task).filter(Task.pipeline_id == pipeline_id).all()
         task_ids = [t.id for t in tasks]
-        
-        timeline = []
+        task_type_map = {t.id: t.type for t in tasks}
+
+        # --- Collect task_log entries ---
+        task_log_events = []
         if task_ids:
-            logs = db.query(TaskLog).filter(TaskLog.task_id.in_(task_ids)).order_by(TaskLog.created_at.asc()).all()
-            task_type_map = {t.id: t.type for t in tasks}
-            
+            logs = db.query(TaskLog).filter(TaskLog.task_id.in_(task_ids)).all()
             for log in logs:
-                timeline.append({
+                # Extract correlation_id from task payload (task owns the corr-id it was created with)
+                correlation_id = None
+                task_obj = next((t for t in tasks if t.id == log.task_id), None)
+                if task_obj and task_obj.data:
+                    try:
+                        task_data = json.loads(task_obj.data)
+                        correlation_id = task_data.get("correlation_id")
+                    except Exception:
+                        pass
+
+                task_log_events.append({
+                    "_sort_key": (
+                        log.created_at or datetime.min,
+                        0,          # source priority: task_log = 0
+                        log.id
+                    ),
                     "id": log.id,
+                    "source": "task_log",
                     "task_id": log.task_id,
                     "task_type": task_type_map.get(log.task_id, "unknown"),
                     "event_type": log.event_type,
                     "message": log.message,
                     "worker_id": log.worker_id,
                     "pipeline_id": pipeline_id,
+                    "correlation_id": correlation_id,
                     "created_at": log.created_at.isoformat() + "Z" if log.created_at else None
                 })
-                
-        return jsonify(timeline), 200
+
+        # --- Collect orchestration_event entries ---
+        orch_events = []
+        orch_rows = db.query(OrchestrationEvent).filter(
+            OrchestrationEvent.pipeline_id == pipeline_id
+        ).all()
+        for ev in orch_rows:
+            orch_events.append({
+                "_sort_key": (
+                    ev.created_at or datetime.min,
+                    1,          # source priority: orchestration_event = 1
+                    ev.id
+                ),
+                "id": ev.id,
+                "source": "orchestration_event",
+                "task_id": ev.task_id,
+                "task_type": task_type_map.get(ev.task_id, "unknown") if ev.task_id else None,
+                "event_type": ev.event_type,
+                "event_category": ev.event_category.value if ev.event_category else None,
+                "message": ev.message,
+                "worker_id": ev.worker_id,
+                "pipeline_id": pipeline_id,
+                "correlation_id": ev.correlation_id,
+                "created_at": ev.created_at.isoformat() + "Z" if ev.created_at else None
+            })
+
+        # --- Merge and sort: created_at ASC → source priority → primary key ASC ---
+        merged = sorted(task_log_events + orch_events, key=lambda e: e["_sort_key"])
+        timeline = [{k: v for k, v in entry.items() if k != "_sort_key"} for entry in merged]
+
+        # --- Build correlation metadata block ---
+        correlation_id = None
+        for t in tasks:
+            if t.data:
+                try:
+                    d = json.loads(t.data)
+                    cid = d.get("correlation_id")
+                    if cid:
+                        correlation_id = cid
+                        break
+                except Exception:
+                    pass
+        # Fallback: try orchestration events
+        if not correlation_id and orch_rows:
+            for ev in orch_rows:
+                if ev.correlation_id:
+                    correlation_id = ev.correlation_id
+                    break
+
+        correlation_meta = {
+            "correlation_id": correlation_id,
+            "pipeline_id": pipeline_id,
+            "task_count": len(tasks),
+            "event_count": len(timeline)
+        }
+
+        return jsonify({
+            "correlation": correlation_meta,
+            "timeline": timeline
+        }), 200
     finally:
         db.close()
+
 
 @app.route('/pipelines/<int:pipeline_id>/metadata', methods=['GET'])
 def get_pipeline_metadata(pipeline_id):
@@ -2390,6 +2525,28 @@ def upload_file():
         except ValueError as ve:
             raise ve
             
+        # Generate trace correlation ID at pipeline creation
+        correlation_id = f"corr-{uuid.uuid4().hex[:12]}"
+        
+        # Publish PIPELINE_CREATED event sourcing
+        try:
+            from services.event_sourcing_service import publish_event
+            publish_event(
+                db=db,
+                event_type="PIPELINE_CREATED",
+                pipeline_id=pipeline.id,
+                payload={
+                    "pipeline_type": pipeline_type,
+                    "name": pipeline_name
+                },
+                trace_context={
+                    "correlation_id": correlation_id,
+                    "pipeline_id": pipeline.id
+                }
+            )
+        except Exception as e:
+            print(f"EVENT SOURCING ERROR during pipeline creation: {e}", flush=True)
+
         node_to_task_map = {}
         for node in dag_definition["nodes"]:
             registry_info = TASK_REGISTRY.get(node["task_type"], {})
@@ -2405,9 +2562,13 @@ def upload_file():
             if not node.get("depends_on"):
                 input_ids_str = json.dumps([artifact.id])
                 
+            node_payload = node.get("payload") or {}
+            if isinstance(node_payload, dict):
+                node_payload["correlation_id"] = correlation_id
+
             task = Task(
                 type=node["task_type"],
-                data=json.dumps(node["payload"]),
+                data=json.dumps(node_payload),
                 priority=node.get("priority", "medium"),
                 max_retries=default_max_retries,
                 status=initial_status,
@@ -3284,6 +3445,28 @@ def create_query_pipeline():
         db.add(pipeline)
         db.flush()
         
+        # Generate trace correlation ID at pipeline creation
+        correlation_id = f"corr-{uuid.uuid4().hex[:12]}"
+        
+        # Publish PIPELINE_CREATED event sourcing
+        try:
+            from services.event_sourcing_service import publish_event
+            publish_event(
+                db=db,
+                event_type="PIPELINE_CREATED",
+                pipeline_id=pipeline.id,
+                payload={
+                    "pipeline_type": pipeline_type,
+                    "name": pipeline_name
+                },
+                trace_context={
+                    "correlation_id": correlation_id,
+                    "pipeline_id": pipeline.id
+                }
+            )
+        except Exception as e:
+            print(f"EVENT SOURCING ERROR during query pipeline creation: {e}", flush=True)
+
         node_to_task_map = {}
         for node in dag_definition["nodes"]:
             registry_info = TASK_REGISTRY.get(node["task_type"], {})
@@ -3294,9 +3477,14 @@ def create_query_pipeline():
                     default_max_retries = retry_policy.get("max_retries", 3)
             
             initial_status = "blocked" if node.get("depends_on") else "pending"
+            
+            node_payload = node.get("payload") or {}
+            if isinstance(node_payload, dict):
+                node_payload["correlation_id"] = correlation_id
+
             task = Task(
                 type=node["task_type"],
-                data=json.dumps(node["payload"]),
+                data=json.dumps(node_payload),
                 priority=node.get("priority", "medium"),
                 max_retries=default_max_retries,
                 status=initial_status,
@@ -5701,6 +5889,28 @@ def api_create_query_pipeline():
         db.add(pipeline)
         db.flush()
         
+        # Generate trace correlation ID at pipeline creation
+        correlation_id = f"corr-{uuid.uuid4().hex[:12]}"
+
+        # Publish PIPELINE_CREATED event sourcing
+        try:
+            from services.event_sourcing_service import publish_event
+            publish_event(
+                db=db,
+                event_type="PIPELINE_CREATED",
+                pipeline_id=pipeline.id,
+                payload={
+                    "pipeline_type": pipeline_type,
+                    "name": pipeline_name
+                },
+                trace_context={
+                    "correlation_id": correlation_id,
+                    "pipeline_id": pipeline.id
+                }
+            )
+        except Exception as e:
+            print(f"EVENT SOURCING ERROR during test dag pipeline creation: {e}", flush=True)
+
         node_to_task_map = {}
         for node in dag_definition["nodes"]:
             registry_info = TASK_REGISTRY.get(node["task_type"], {})
@@ -5711,9 +5921,14 @@ def api_create_query_pipeline():
                     default_max_retries = retry_policy.get("max_retries", 3)
             
             initial_status = "blocked" if node.get("depends_on") else "pending"
+            
+            node_payload = node.get("payload") or {}
+            if isinstance(node_payload, dict):
+                node_payload["correlation_id"] = correlation_id
+
             task = Task(
                 type=node["task_type"],
-                data=json.dumps(node["payload"]),
+                data=json.dumps(node_payload),
                 priority=node.get("priority", "medium"),
                 max_retries=default_max_retries,
                 status=initial_status,

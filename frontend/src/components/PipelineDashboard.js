@@ -16,6 +16,7 @@ import {
   getClusterStatus, getWorkersRegistry, getClusterFailovers
 } from '../services/api';
 import { formatTimeIST } from '../utils/timeUtils';
+import { usePipeline } from '../contexts/PipelineContext';
 
 import ReactFlow, { MiniMap, Controls, Background, Position, Handle } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -536,8 +537,14 @@ const reconstructStateClient = (events) => {
 };
 
 const PipelineDashboard = () => {
+  const {
+    selectedPipelineId, setSelectedPipelineId,
+    setSelectedTaskId,
+    setSelectedTraceId,
+    selectedWorkerId, setSelectedWorkerId
+  } = usePipeline();
+
   const [pipelines, setPipelines] = useState([]);
-  const [selectedPipelineId, setSelectedPipelineId] = useState(null);
   const [selectedPipelineData, setSelectedPipelineData] = useState(null);
   const selectedPipelineDataRef = React.useRef(null);
   useEffect(() => {
@@ -2880,9 +2887,33 @@ const PipelineDashboard = () => {
                     if (score < 60) barColor = '#ef4444';
                     else if (score < 85) barColor = '#fbbf24';
                     
+                    const isSelected = selectedWorkerId === wid;
+                    const handleRowClick = () => {
+                      if (isSelected) {
+                        setSelectedWorkerId(null);
+                        setSelectedTaskId(null);
+                        setSelectedTraceId(null);
+                      } else {
+                        setSelectedWorkerId(wid);
+                        setSelectedTaskId(null);
+                        setSelectedTraceId(null);
+                      }
+                    };
+
                     return (
-                      <tr key={wid} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                        <td style={{ padding: '12px 10px', fontWeight: 'bold', color: '#ffffff' }}>{wid}</td>
+                      <tr 
+                        key={wid} 
+                        onClick={handleRowClick}
+                        style={{ 
+                          borderBottom: '1px solid var(--border-subtle)',
+                          background: isSelected ? 'rgba(167, 139, 250, 0.12)' : 'transparent',
+                          cursor: 'pointer',
+                          transition: 'background 0.15s'
+                        }}
+                      >
+                        <td style={{ padding: '12px 10px', fontWeight: 'bold', color: isSelected ? '#a78bfa' : '#ffffff' }}>
+                          {isSelected ? `👉 ${wid}` : wid}
+                        </td>
                         <td style={{ padding: '12px 10px' }}>{stats.completions}</td>
                         <td style={{ padding: '12px 10px', color: stats.failures > 0 ? '#fca5a5' : '#cbd5e1' }}>{stats.failures}</td>
                         <td style={{ padding: '12px 10px', color: stats.stale_incidents > 0 ? '#fca5a5' : '#cbd5e1' }}>{stats.stale_incidents}</td>
@@ -3024,15 +3055,38 @@ const PipelineDashboard = () => {
                 workersRegistry.map((w) => {
                   const lastSeenDate = new Date(w.last_seen);
                   const isAlive = (new Date() - lastSeenDate) < 15000 && w.status === 'active'; // 15s timeout
+                  const isSelected = selectedWorkerId === w.worker_id;
+
+                  const handleWorkerClick = () => {
+                    if (isSelected) {
+                      setSelectedWorkerId(null);
+                      setSelectedTaskId(null);
+                      setSelectedTraceId(null);
+                    } else {
+                      setSelectedWorkerId(w.worker_id);
+                      setSelectedTaskId(null);
+                      setSelectedTraceId(null);
+                    }
+                  };
                   
                   return (
-                    <div key={w.worker_id} style={{
-                      background: 'var(--bg-panel)',
-                      border: isAlive ? '1px solid rgba(52, 211, 153, 0.25)' : '1px solid var(--border-subtle)',
-                      borderRadius: '4px',
-                      padding: '16px',
-                      position: 'relative'
-                    }}>
+                    <div
+                      key={w.worker_id}
+                      onClick={handleWorkerClick}
+                      style={{
+                        background: 'var(--bg-panel)',
+                        border: isSelected 
+                          ? '2.5px solid #a78bfa' 
+                          : (isAlive ? '1px solid rgba(52, 211, 153, 0.25)' : '1px solid var(--border-subtle)'),
+                        borderRadius: '4px',
+                        padding: '16px',
+                        position: 'relative',
+                        cursor: 'pointer',
+                        transition: 'border 0.15s, transform 0.15s',
+                        transform: isSelected ? 'scale(1.02)' : 'none',
+                        boxShadow: isSelected ? '0 4px 12px rgba(167, 139, 250, 0.2)' : 'none',
+                      }}
+                    >
                       {/* Header */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                         <span style={{ fontWeight: 'bold', color: '#ffffff', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { usePipeline } from '../../../contexts/PipelineContext';
 
 /**
  * PipelineDAG Component
@@ -14,6 +15,11 @@ import React from 'react';
  * - retrying / paused: Amber (#f59e0b)
  */
 export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdges = [], onSelectNode, selectedNodeId }) => {
+  const {
+    selectedTaskId, setSelectedTaskId,
+    setSelectedTraceId, setSelectedWorkerId
+  } = usePipeline();
+
   // Frozen MR-RAG Pipeline layout nodes if backend nodes are not pre-positioned
   const defaultNodes = [
     { id: 'upload',        name: 'Upload',               ref: 'upload',              x: 40,  y: 100 },
@@ -141,13 +147,43 @@ export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdge
           const status = task ? task.status : (node.id === 'upload' ? 'completed' : (tasks.every(t => t.status === 'completed') && tasks.length > 0 ? 'completed' : 'pending'));
           const color = getStatusColor(status, isFailed);
           const bg = getStatusBg(status, isFailed);
-          const isSelected = selectedNodeId === node.id || (task && selectedNodeId === task.id);
+          
+          const isSelected = selectedNodeId === node.id || 
+                             (task && selectedNodeId === task.id) ||
+                             (task && selectedTaskId === task.id);
+
+          const handleNodeClick = () => {
+            if (task) {
+              const alreadySelected = selectedTaskId === task.id;
+              if (alreadySelected) {
+                setSelectedTaskId(null);
+                setSelectedTraceId(null);
+                setSelectedWorkerId(null);
+              } else {
+                setSelectedTaskId(task.id);
+                // Extract correlation_id from task.payload or task.data
+                let cid = null;
+                if (task.payload && typeof task.payload === 'object') {
+                  cid = task.payload.correlation_id;
+                }
+                if (!cid && task.data) {
+                  try {
+                    const parsed = JSON.parse(task.data);
+                    cid = parsed.correlation_id;
+                  } catch (_) {}
+                }
+                setSelectedTraceId(cid || null);
+                setSelectedWorkerId(task.worker_id || null);
+              }
+            }
+            onSelectNode?.(task || node);
+          };
 
           return (
             <g 
               key={node.id} 
               transform={`translate(${node.x}, ${node.y})`}
-              onClick={() => onSelectNode?.(task || node)}
+              onClick={handleNodeClick}
               style={{ cursor: 'pointer' }}
             >
               {/* Outer boundary box */}

@@ -128,7 +128,8 @@ def log_event(db, task_id, event_type, message, worker_id=None, payload=None):
     
     try:
         from services.event_sourcing_service import publish_event
-        from models import Task
+        from models import Task, Pipeline
+        from datetime import datetime
         
         task = db.query(Task).filter(Task.id == task_id).first()
         pipeline_id = task.pipeline_id if task else None
@@ -137,7 +138,7 @@ def log_event(db, task_id, event_type, message, worker_id=None, payload=None):
         upper_event = canonical_type.upper()
         if upper_event in ("TASK_RELEASED", "DEPENDENCY_RELEASED"):
             if "priority" not in event_payload:
-                event_payload["priority"] = task.priority if task else "medium"
+                event_payload["priority"] = task.priority.value if task and hasattr(task.priority, 'value') else (task.priority if task else "medium")
         elif upper_event in ("TASK_BLOCKED", "DEPENDENCY_BLOCKED"):
             if "blocked_reason" not in event_payload:
                 event_payload["blocked_reason"] = message or "dependencies not met"
@@ -158,7 +159,54 @@ def log_event(db, task_id, event_type, message, worker_id=None, payload=None):
                             is_test = True
                     queue_name = get_queue_name(task.type, task.priority, is_test) if task else "task_queue_medium"
                 event_payload["queue_name"] = queue_name
-            
+
+        correlation_id = None
+        priority = None
+        retry_count = None
+        stage = None
+        queue = None
+        if task:
+            try:
+                task_data = json.loads(task.data) if task.data else {}
+                correlation_id = task_data.get("correlation_id")
+            except:
+                pass
+            priority = task.priority.value if hasattr(task.priority, 'value') else task.priority
+            retry_count = task.retry_count
+            stage = task.type
+            if priority:
+                queue = f"task_queue_{priority}"
+
+        leader_instance = None
+        try:
+            from services.ha_coordinator_service import is_leader_instance, ORCHESTRATOR_INSTANCE_ID
+            if is_leader_instance:
+                leader_instance = ORCHESTRATOR_INSTANCE_ID
+        except:
+            pass
+
+        trace_context = {
+            "correlation_id": correlation_id or f"corr-missing-{task_id}",
+            "pipeline_id": pipeline_id,
+            "task_id": task_id,
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+        if worker_id:
+            trace_context["worker_id"] = worker_id
+        elif task and task.assigned_worker_id:
+            trace_context["worker_id"] = task.assigned_worker_id
+
+        if leader_instance:
+            trace_context["leader_instance"] = leader_instance
+        if retry_count is not None:
+            trace_context["retry_count"] = retry_count
+        if queue:
+            trace_context["queue"] = queue
+        if stage:
+            trace_context["stage"] = stage
+        if priority:
+            trace_context["priority"] = priority
+
         publish_event(
             db=db,
             event_type=canonical_type,
@@ -167,7 +215,8 @@ def log_event(db, task_id, event_type, message, worker_id=None, payload=None):
             message=message,
             worker_id=worker_id,
             lease_token=task.lease_token if task else None,
-            payload=event_payload
+            payload=event_payload,
+            trace_context=trace_context
         )
     except Exception as e:
         logger.error(f"EVENT SOURCING ERROR in dependency_resolver log_event: {e}")
@@ -401,13 +450,21 @@ def update_pipeline_status(db, pipeline_id):
         
         try:
             from services.event_sourcing_service import publish_event
+            correlation_id = None
+            if pipeline.tasks:
+                try:
+                    task_data = json.loads(pipeline.tasks[0].data) if pipeline.tasks[0].data else {}
+                    correlation_id = task_data.get("correlation_id")
+                except:
+                    pass
+            trace_ctx = {"correlation_id": correlation_id, "pipeline_id": pipeline.id}
             if new_status == PipelineStatus.completed:
                 duration = 0.0
                 if pipeline.completed_at and pipeline.started_at:
                     duration = (pipeline.completed_at - pipeline.started_at).total_seconds()
-                publish_event(db, "PIPELINE_COMPLETED", pipeline_id=pipeline.id, payload={"duration_seconds": duration})
+                publish_event(db, "PIPELINE_COMPLETED", pipeline_id=pipeline.id, payload={"duration_seconds": duration}, trace_context=trace_ctx)
             elif new_status in (PipelineStatus.failed, PipelineStatus.cancelled, PipelineStatus.blocked):
-                publish_event(db, "PIPELINE_FAILED", pipeline_id=pipeline.id, payload={"error_message": pipeline.error_message or f"Pipeline status changed to {new_status}"})
+                publish_event(db, "PIPELINE_FAILED", pipeline_id=pipeline.id, payload={"error_message": pipeline.error_message or f"Pipeline status changed to {new_status}"}, trace_context=trace_ctx)
         except Exception as e:
             logger.error(f"EVENT SOURCING ERROR in update_pipeline_status: {e}")
 

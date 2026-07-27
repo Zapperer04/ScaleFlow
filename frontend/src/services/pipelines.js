@@ -101,6 +101,11 @@ export const runPipelineTests = async () => {
 
 export const fetchPipelineTimeline = async (pipelineId, signal) => {
   const response = await apiClient.get(`/pipelines/${pipelineId}/timeline`, { signal });
+  if (response.data && Array.isArray(response.data.timeline)) {
+    const arr = response.data.timeline;
+    arr.correlation = response.data.correlation;
+    return arr;
+  }
   return response.data;
 };
 

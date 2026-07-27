@@ -1,12 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, ShieldAlert, RefreshCw } from 'lucide-react';
-
-
+import { usePipeline } from '../../../contexts/PipelineContext';
 
 export const ErrorPanel = ({ errors = [], onRetryTask }) => {
+  const {
+    selectedTaskId, setSelectedTaskId,
+    setSelectedTraceId, setSelectedWorkerId
+  } = usePipeline();
+
   const [expandedTaskId, setExpandedTaskId] = useState(null);
   const [loadingTaskId, setLoadingTaskId] = useState(null);
   const [retryErrors, setRetryErrors] = useState({}); // taskId -> error message string
+
+  // Auto-expand task when it is selected elsewhere
+  useEffect(() => {
+    if (selectedTaskId !== null && errors.some(err => err.id === selectedTaskId)) {
+      setExpandedTaskId(selectedTaskId);
+    }
+  }, [selectedTaskId, errors]);
 
   const handleTaskRetryClick = async (e, task, force = false) => {
     e.stopPropagation();
@@ -124,11 +135,25 @@ export const ErrorPanel = ({ errors = [], onRetryTask }) => {
             // Force Retry action is disabled because the backend does not expose a machine-readable force indicator.
             const showForceRetry = false;
 
+            const isSelected = selectedTaskId === err.id;
+
             return (
               <div key={err.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                 {/* Accordion header */}
                 <div
-                  onClick={() => setExpandedTaskId(expanded ? null : err.id)}
+                  onClick={() => {
+                    const nextExpanded = expanded ? null : err.id;
+                    setExpandedTaskId(nextExpanded);
+                    if (nextExpanded) {
+                      setSelectedTaskId(err.id);
+                      setSelectedTraceId(err.correlation_id || null);
+                      setSelectedWorkerId(err.worker_id || err.worker || null);
+                    } else {
+                      setSelectedTaskId(null);
+                      setSelectedTraceId(null);
+                      setSelectedWorkerId(null);
+                    }
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -136,10 +161,12 @@ export const ErrorPanel = ({ errors = [], onRetryTask }) => {
                     padding: '14px 18px',
                     cursor: 'pointer',
                     userSelect: 'none',
-                    transition: 'background 0.15s',
+                    transition: 'background 0.15s, border-left 0.15s',
+                    background: isSelected ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
+                    borderLeft: isSelected ? '3px solid #3b82f6' : '3px solid transparent',
                   }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  onMouseEnter={e => e.currentTarget.style.background = isSelected ? 'rgba(59, 130, 246, 0.18)' : 'rgba(255,255,255,0.02)'}
+                  onMouseLeave={e => e.currentTarget.style.background = isSelected ? 'rgba(59, 130, 246, 0.12)' : 'transparent'}
                 >
                   <span style={{
                     fontSize: '9px',

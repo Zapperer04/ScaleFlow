@@ -302,16 +302,27 @@ class HACoordinator:
                 # Publish events and reconcile in a single batch
                 if newly_claimed:
                     # Publish events
-                    try:
                         from services.event_sourcing_service import publish_event
+                        from models import Task
+                        import json
                         for pid, version in newly_claimed:
+                            correlation_id = None
+                            try:
+                                task = db.query(Task).filter(Task.pipeline_id == pid).first()
+                                if task and task.data:
+                                    task_data = json.loads(task.data)
+                                    correlation_id = task_data.get("correlation_id")
+                            except Exception:
+                                pass
+                            
                             publish_event(
                                 db=db,
                                 event_type="PIPELINE_OWNERSHIP_TAKEN_OVER",
                                 pipeline_id=pid,
                                 message=f"Orchestrator {self.instance_id} assumed ownership (batch).",
                                 worker_id=self.instance_id,
-                                payload={"instance_id": self.instance_id, "ownership_version": version}
+                                payload={"instance_id": self.instance_id, "ownership_version": version},
+                                trace_context={"correlation_id": correlation_id, "pipeline_id": pid}
                             )
                         db.commit()
                     except Exception as evt_err:
@@ -373,13 +384,25 @@ def verify_fencing_token(db, pipeline_id):
 
             try:
                 from services.event_sourcing_service import publish_event
+                from models import Task
+                import json
+                correlation_id = None
+                try:
+                    task = db.query(Task).filter(Task.pipeline_id == pipeline_id).first()
+                    if task and task.data:
+                        task_data = json.loads(task.data)
+                        correlation_id = task_data.get("correlation_id")
+                except Exception:
+                    pass
+                
                 publish_event(
                     db=db,
                     event_type="PIPELINE_OWNERSHIP_TAKEN_OVER",
                     pipeline_id=pipeline_id,
                     message=f"Orchestrator {ORCHESTRATOR_INSTANCE_ID} JIT claimed ownership.",
                     worker_id=ORCHESTRATOR_INSTANCE_ID,
-                    payload={"instance_id": ORCHESTRATOR_INSTANCE_ID, "ownership_version": claimed_pipe.ownership_version}
+                    payload={"instance_id": ORCHESTRATOR_INSTANCE_ID, "ownership_version": claimed_pipe.ownership_version},
+                    trace_context={"correlation_id": correlation_id, "pipeline_id": pipeline_id}
                 )
                 db.commit()
                 global coordinator

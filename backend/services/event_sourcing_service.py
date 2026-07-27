@@ -310,7 +310,7 @@ def validate_event_payload(event_type, payload):
 
 def publish_event(db, event_type, pipeline_id=None, task_id=None, message=None, worker_id=None,
                   lease_token=None, correlation_id=None, payload=None, segment_index=0,
-                  idempotency_key=None):
+                  idempotency_key=None, trace_context=None):
     """
     Validates, categorizes, and logs an orchestration event into the database.
     Supports idempotency via idempotency_key using a nested transaction (savepoint)
@@ -318,6 +318,40 @@ def publish_event(db, event_type, pipeline_id=None, task_id=None, message=None, 
     """
     event_type = event_type.upper()
     payload = payload or {}
+
+    # Extract/merge trace_context values if provided
+    if trace_context:
+        if not correlation_id:
+            correlation_id = trace_context.get("correlation_id")
+        if not pipeline_id:
+            pipeline_id = trace_context.get("pipeline_id")
+        if not task_id:
+            task_id = trace_context.get("task_id")
+        if not worker_id:
+            worker_id = trace_context.get("worker_id")
+
+        # Inject trace fields into the event payload
+        payload["correlation_id"] = correlation_id or "unknown"
+        payload["pipeline_id"] = pipeline_id
+        payload["task_id"] = task_id
+        payload["timestamp"] = trace_context.get("timestamp") or datetime.utcnow().isoformat() + "Z"
+
+        # Optional fields from trace_context if available
+        for field in ["worker_id", "leader_instance", "queue", "priority", "retry_count", "stage"]:
+            if field in trace_context and trace_context[field] is not None:
+                payload[field] = trace_context[field]
+    else:
+        # Ensure required trace fields are in the payload even if trace_context was not provided
+        if "correlation_id" not in payload:
+            payload["correlation_id"] = correlation_id or "unknown"
+        if "pipeline_id" not in payload:
+            payload["pipeline_id"] = pipeline_id
+        if "task_id" not in payload:
+            payload["task_id"] = task_id
+        if "timestamp" not in payload:
+            payload["timestamp"] = datetime.utcnow().isoformat() + "Z"
+        if worker_id and "worker_id" not in payload:
+            payload["worker_id"] = worker_id
 
     # 1. Generate idempotency key if not provided
     if idempotency_key is None:

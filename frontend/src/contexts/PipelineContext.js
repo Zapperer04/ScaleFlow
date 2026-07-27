@@ -35,12 +35,14 @@ export const normalizeTimelineEvent = (e) => {
 
   return {
     id:           e.id,
+    source:       e.source || "task_log",
     event_type:   e.event_type  || "unknown",
     task_id:      taskId,
     task_type:    taskType,
     message:      e.message     || "Not Available",
     worker_id:    e.worker_id   || "system",
     pipeline_id:  e.pipeline_id ?? "Not Available",
+    correlation_id: e.correlation_id ?? null,
     level,
     rawTimestamp,
     displayTime,
@@ -49,8 +51,8 @@ export const normalizeTimelineEvent = (e) => {
 
 const mergeEvents = (prev, raw) => {
   const normalized = raw.map(normalizeTimelineEvent);
-  const existingIds = new Set(prev.map(e => e.id));
-  const newEntries = normalized.filter(e => e.id !== undefined && e.id !== null && !existingIds.has(e.id));
+  const existingKeys = new Set(prev.map(e => `${e.source}-${e.id}`));
+  const newEntries = normalized.filter(e => e.id !== undefined && e.id !== null && !existingKeys.has(`${e.source}-${e.id}`));
   if (newEntries.length === 0) return prev;
   const combined = [...prev, ...newEntries];
   combined.sort((a, b) => {
@@ -65,6 +67,8 @@ export const PipelineProvider = ({ children }) => {
   const [selectedPipelineId, setSelectedPipelineId] = useState(null);
   const [pipelines, setPipelines] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [selectedTraceId, setSelectedTraceId] = useState(null);
+  const [selectedWorkerId, setSelectedWorkerId] = useState(null);
   const [testing, setTesting] = useState(false);
   const [showTestModal, setShowTestModal] = useState(false);
   const [testResults, setTestResults] = useState(null);
@@ -83,6 +87,13 @@ export const PipelineProvider = ({ children }) => {
     // Invalidate pipeline cache and trigger a coordinated refresh cycle
     setRefreshTrigger(prev => prev + 1);
   };
+
+  // Clear active selections when selectedPipelineId changes
+  useEffect(() => {
+    setSelectedTaskId(null);
+    setSelectedTraceId(null);
+    setSelectedWorkerId(null);
+  }, [selectedPipelineId]);
 
   useEffect(() => {
     if (abortRef.current) abortRef.current.abort();
@@ -131,6 +142,10 @@ export const PipelineProvider = ({ children }) => {
       setPipelines,
       selectedTaskId,
       setSelectedTaskId,
+      selectedTraceId,
+      setSelectedTraceId,
+      selectedWorkerId,
+      setSelectedWorkerId,
       testing,
       setTesting,
       showTestModal,

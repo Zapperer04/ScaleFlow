@@ -30,7 +30,10 @@ export const WorkspaceHome = () => {
   const { 
     selectedPipelineId, setSelectedPipelineId, pipelines,
     timelineEvents, timelineLoading, timelineError,
-    refreshTrigger, onRetryTask
+    refreshTrigger, onRetryTask,
+    selectedTaskId, setSelectedTaskId,
+    selectedTraceId, setSelectedTraceId,
+    selectedWorkerId, setSelectedWorkerId
   } = usePipeline();
   const { selectedDocumentId, setSelectedDocumentId, uploadedFiles, setUploadedFiles } = useDocument();
   const { selectDocument } = useWorkspace();
@@ -502,18 +505,49 @@ export const WorkspaceHome = () => {
                     // Retrieve pre-calculated backend validation status
                     const failedValidation = outputArtifacts.find(art => art.metadata_json?.validation?.is_valid === false);
                     const validationError = failedValidation ? failedValidation.metadata_json?.validation?.error_message : null;
+                    const isSelected = selectedTaskId === task.id;
+
+                    const handleCardClick = () => {
+                      if (isSelected) {
+                        setSelectedTaskId(null);
+                        setSelectedTraceId(null);
+                        setSelectedWorkerId(null);
+                      } else {
+                        setSelectedTaskId(task.id);
+                        let cid = null;
+                        if (task.payload && typeof task.payload === 'object') {
+                          cid = task.payload.correlation_id;
+                        }
+                        if (!cid && task.data) {
+                          try {
+                            const parsed = JSON.parse(task.data);
+                            cid = parsed.correlation_id;
+                          } catch (_) {}
+                        }
+                        setSelectedTraceId(cid || null);
+                        setSelectedWorkerId(task.assigned_worker_id || task.worker_id || null);
+                      }
+                    };
 
                     return (
-                      <div key={idx} style={{ 
-                        padding: '16px', 
-                        border: failedValidation ? '1px solid var(--color-failure)' : '1px solid var(--border-subtle)', 
-                        borderRadius: '12px', 
-                        background: 'var(--bg-panel)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '12px',
-                        boxShadow: 'var(--shadow-sm)'
-                      }}>
+                      <div 
+                        key={idx} 
+                        onClick={handleCardClick}
+                        style={{ 
+                          padding: '16px', 
+                          border: isSelected 
+                            ? '2.5px solid #a78bfa' 
+                            : (failedValidation ? '1px solid var(--color-failure)' : '1px solid var(--border-subtle)'), 
+                          borderRadius: '12px', 
+                          background: 'var(--bg-panel)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '12px',
+                          boxShadow: isSelected ? '0 4px 12px rgba(167, 139, 250, 0.2)' : 'var(--shadow-sm)',
+                          cursor: 'pointer',
+                          transition: 'border 0.15s, box-shadow 0.15s',
+                        }}
+                      >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#fff' }}>{task.type || task.task_type}</div>
