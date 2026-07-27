@@ -9,7 +9,10 @@ export const ErrorPanel = ({ errors = [], onRetryTask }) => {
     setSelectedWorkerId,
     replayMode,
     replayIndex,
-    replaySnapshots
+    replaySnapshots,
+    comparisonMode,
+    selectedSnapshotAIndex,
+    selectedSnapshotBIndex
   } = usePipeline();
 
   const [expandedTaskId, setExpandedTaskId] = useState(null);
@@ -18,11 +21,69 @@ export const ErrorPanel = ({ errors = [], onRetryTask }) => {
 
   // Replay-aware errors filtering
   const activeErrors = React.useMemo(() => {
+    if (replayMode && comparisonMode && selectedSnapshotAIndex !== null && selectedSnapshotBIndex !== null && replaySnapshots.length > 0) {
+      const snapA = replaySnapshots[selectedSnapshotAIndex];
+      const snapB = replaySnapshots[selectedSnapshotBIndex];
+
+      const categorized = [];
+
+      errors.forEach(err => {
+        const idStr = String(err.id);
+        const taskA = snapA?.taskStates?.[idStr];
+        const taskB = snapB?.taskStates?.[idStr];
+
+        const failedInA = taskA && (taskA.status === 'failed' || taskA.status === 'cancelled');
+        const failedInB = taskB && (taskB.status === 'failed' || taskB.status === 'cancelled');
+
+        let category = null;
+        let activeStatus = 'failed';
+        let activeWorker = err.worker;
+        let activeRetries = err.retries;
+
+        if (failedInB && !failedInA) {
+          category = 'Introduced';
+          activeStatus = taskB.status;
+          activeWorker = taskB.workerId || err.worker;
+          activeRetries = taskB.retryCount;
+        } else if (failedInA && !failedInB) {
+          category = 'Resolved';
+          activeStatus = taskA.status;
+          activeWorker = taskA.workerId || err.worker;
+          activeRetries = taskA.retryCount;
+        } else if (failedInA && failedInB) {
+          category = 'Persistent';
+          activeStatus = taskB.status;
+          activeWorker = taskB.workerId || err.worker;
+          activeRetries = taskB.retryCount;
+        }
+
+        if (category) {
+          categorized.push({
+            ...err,
+            category,
+            status: activeStatus,
+            worker: activeWorker,
+            retries: activeRetries
+          });
+        }
+      });
+
+      const categoryOrder = { 'Introduced': 1, 'Resolved': 2, 'Persistent': 3 };
+      categorized.sort((a, b) => {
+        const ordA = categoryOrder[a.category];
+        const ordB = categoryOrder[b.category];
+        if (ordA !== ordB) return ordA - ordB;
+        return Number(a.id) - Number(b.id);
+      });
+
+      return categorized;
+    }
+
     if (!replayMode || !replaySnapshots || replayIndex < 0) return errors;
     const snapshot = replaySnapshots[replayIndex];
     return errors.filter(err => {
       const snapTask = snapshot.taskStates[String(err.id)];
-      return snapTask && snapTask.status === 'failed';
+      return snapTask && (snapTask.status === 'failed' || snapTask.status === 'cancelled');
     }).map(err => {
       const snapTask = snapshot.taskStates[String(err.id)];
       return {
@@ -32,7 +93,7 @@ export const ErrorPanel = ({ errors = [], onRetryTask }) => {
         retries: snapTask.retryCount
       };
     });
-  }, [replayMode, replaySnapshots, replayIndex, errors]);
+  }, [replayMode, comparisonMode, selectedSnapshotAIndex, selectedSnapshotBIndex, replaySnapshots, replayIndex, errors]);
 
   // Auto-expand task when it is selected elsewhere
   useEffect(() => {
@@ -114,10 +175,22 @@ export const ErrorPanel = ({ errors = [], onRetryTask }) => {
             border: '1px solid rgba(239,68,68,0.25)',
             color: '#ef4444',
             borderRadius: 20,
-            padding: '1px 8px',
+            padding: '2px 10px',
             fontWeight: 700,
+            display: 'flex',
+            gap: '8px'
           }}>
-            {activeErrors.length} fault{activeErrors.length > 1 ? 's' : ''}
+            {comparisonMode ? (
+              <>
+                <span style={{ color: '#ef4444' }}>Introduced ({activeErrors.filter(e => e.category === 'Introduced').length})</span>
+                <span style={{ color: 'rgba(255,255,255,0.3)' }}>|</span>
+                <span style={{ color: '#10b981' }}>Resolved ({activeErrors.filter(e => e.category === 'Resolved').length})</span>
+                <span style={{ color: 'rgba(255,255,255,0.3)' }}>|</span>
+                <span style={{ color: '#f59e0b' }}>Persistent ({activeErrors.filter(e => e.category === 'Persistent').length})</span>
+              </>
+            ) : (
+              `${activeErrors.length} fault${activeErrors.length > 1 ? 's' : ''}`
+            )}
           </span>
         )}
       </div>
@@ -210,6 +283,22 @@ export const ErrorPanel = ({ errors = [], onRetryTask }) => {
                   }}>
                     {err.stage?.toUpperCase() || 'FAULT'}
                   </span>
+
+                  {err.category && (
+                    <span style={{
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      letterSpacing: '0.05em',
+                      padding: '2px 7px',
+                      borderRadius: 4,
+                      background: err.category === 'Introduced' ? 'rgba(239, 68, 68, 0.15)' : err.category === 'Resolved' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                      color: err.category === 'Introduced' ? '#ef4444' : err.category === 'Resolved' ? '#10b981' : '#f59e0b',
+                      border: `1px solid ${err.category === 'Introduced' ? '#ef4444' : err.category === 'Resolved' ? '#10b981' : '#f59e0b'}30`,
+                      flexShrink: 0,
+                    }}>
+                      {err.category.toUpperCase()}
+                    </span>
+                  )}
 
                   <span style={{
                     fontSize: '9px',

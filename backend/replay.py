@@ -125,15 +125,52 @@ def build_replay(db, pipeline_id):
     started_at = pipeline.started_at.isoformat() + "Z" if pipeline.started_at else (events[0]["timestamp"] if events else None)
     finished_at = pipeline.completed_at.isoformat() + "Z" if pipeline.completed_at else (events[-1]["timestamp"] if events else None)
 
+    # Calculate metadata
+    event_count = len(events)
+    snapshot_count = event_count
+    task_count = len(task_ids)
+    
+    workers = set()
+    for t in tasks:
+        if t.assigned_worker_id:
+            workers.add(t.assigned_worker_id)
+    for e in events:
+        w_id = e.get("worker_id")
+        if w_id and w_id != "system":
+            workers.add(w_id)
+    worker_count = len(workers)
+    
+    first_timestamp = events[0]["timestamp"] if events else None
+    last_timestamp = events[-1]["timestamp"] if events else None
+    
+    duration = 0.0
+    if first_timestamp and last_timestamp:
+        try:
+            start_dt = datetime.fromisoformat(first_timestamp.replace("Z", ""))
+            end_dt = datetime.fromisoformat(last_timestamp.replace("Z", ""))
+            duration = (end_dt - start_dt).total_seconds()
+        except Exception:
+            pass
+
     replay = {
         "version": 1,
         "pipeline_id": pipeline_id,
         "correlation_id": correlation_id,
         "started_at": started_at,
         "finished_at": finished_at,
-        "events": events
+        "events": events,
+        "metadata": {
+            "event_count": event_count,
+            "snapshot_count": snapshot_count,
+            "task_count": task_count,
+            "worker_count": worker_count,
+            "first_timestamp": first_timestamp,
+            "last_timestamp": last_timestamp,
+            "duration": duration
+        }
     }
     return replay
+
 
 
 def analyze_execution(replay):

@@ -22,7 +22,11 @@ export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdge
     setSelectedTraceId, setSelectedWorkerId,
     replayMode,
     replayIndex,
-    replaySnapshots
+    replaySnapshots,
+    selectedSnapshotAIndex,
+    selectedSnapshotBIndex,
+    comparisonMode,
+    snapshotDiff
   } = usePipeline();
 
   const defaultNodes = [
@@ -36,6 +40,54 @@ export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdge
     { id: 'retrieval',     name: 'Hybrid Retrieval',     ref: 'query_pipeline',      x: 830, y: 100 },
     { id: 'ready',         name: 'Retrieval Ready',      ref: 'ready',               x: 950, y: 100 }
   ];
+
+  const getTaskDiffForRef = (refName) => {
+    if (!comparisonMode || !snapshotDiff || !replaySnapshots) return null;
+    const task = tasks.find(t => t.type === refName || t.task_type === refName);
+    if (!task) return null;
+    const idStr = String(task.id);
+    const hasDiff = snapshotDiff.tasks.some(d => String(d.taskId) === idStr);
+    if (!hasDiff) return null;
+
+    const snapA = replaySnapshots[selectedSnapshotAIndex];
+    const snapB = replaySnapshots[selectedSnapshotBIndex];
+    const taskA = snapA?.taskStates?.[idStr] || { status: 'pending', workerId: null };
+    const taskB = snapB?.taskStates?.[idStr] || { status: 'pending', workerId: null };
+
+    return {
+      before: taskA,
+      after: taskB
+    };
+  };
+
+  const buildTooltipText = (node, diffInfo, task) => {
+    if (diffInfo) {
+      let lines = [`Diff Details for ${node.name}:`];
+      if (diffInfo.before.status !== diffInfo.after.status) {
+        lines.push(`• Status: ${diffInfo.before.status} ➔ ${diffInfo.after.status}`);
+      }
+      if (diffInfo.before.workerId !== diffInfo.after.workerId) {
+        lines.push(`• Worker: ${diffInfo.before.workerId || 'None'} ➔ ${diffInfo.after.workerId || 'None'}`);
+      }
+      if (diffInfo.before.retryCount !== diffInfo.after.retryCount) {
+        lines.push(`• Retry: ${diffInfo.before.retryCount} ➔ ${diffInfo.after.retryCount}`);
+      }
+      if (diffInfo.before.queue !== diffInfo.after.queue) {
+        lines.push(`• Queue: ${diffInfo.before.queue || 'None'} ➔ ${diffInfo.after.queue || 'None'}`);
+      }
+      if (diffInfo.before.progress !== diffInfo.after.progress) {
+        lines.push(`• Progress: ${diffInfo.before.progress || 'None'} ➔ ${diffInfo.after.progress || 'None'}`);
+      }
+      return lines.join('\n');
+    }
+    if (task) {
+      return `${node.name}
+Status: ${task.status}
+Worker: ${task.assigned_worker_id || 'None'}
+Retries: ${task.retry_count || 0}`;
+    }
+    return node.name;
+  };
 
   const getTaskForRef = (refName) => {
     if (replayMode && replaySnapshots && replayIndex >= 0 && replayIndex < replaySnapshots.length) {
@@ -204,6 +256,9 @@ export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdge
             onSelectNode?.(task || node);
           };
 
+          const diffInfo = getTaskDiffForRef(node.ref);
+          const hasDiff = !!diffInfo;
+
           return (
             <g 
               key={node.id} 
@@ -211,6 +266,7 @@ export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdge
               onClick={handleNodeClick}
               style={{ cursor: 'pointer' }}
             >
+              <title>{buildTooltipText(node, diffInfo, task)}</title>
               {/* Outer boundary box */}
               <rect
                 x="-50"
@@ -220,7 +276,8 @@ export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdge
                 rx="7"
                 fill={bg}
                 stroke={isSelected ? '#a78bfa' : color}
-                strokeWidth={status === 'running' || isSelected ? '2.5' : '1.5'}
+                strokeWidth={status === 'running' || isSelected || hasDiff ? '3' : '1.5'}
+                strokeDasharray={hasDiff ? "4 2" : "none"}
                 style={{ transition: 'all 0.2s ease' }}
               />
               {/* Text label */}

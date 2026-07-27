@@ -94,7 +94,17 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
     stepBackwardReplay,
     restartReplay,
     enterReplayMode,
-    exitReplayMode
+    exitReplayMode,
+
+    // Comparison integration
+    selectedSnapshotAIndex,
+    selectedSnapshotBIndex,
+    comparisonMode,
+    snapshotDiff,
+    selectSnapshotAIndex,
+    selectSnapshotBIndex,
+    swapSnapshots,
+    clearComparison
   } = usePipeline();
 
   const [searchQuery, setSearchQuery]       = useState('');
@@ -104,6 +114,49 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
   const [autoScroll, setAutoScroll]         = useState(true);
   const [paused, setPaused]                 = useState(false);
   const [newEventCount, setNewEventCount]   = useState(0);
+  const [jumpInput, setJumpInput]           = useState('');
+
+  const handleJumpSubmit = (e) => {
+    e.preventDefault();
+    if (!jumpInput.trim()) return;
+    const input = jumpInput.trim();
+
+    // 1. Check if it's a numeric event index (1-based index)
+    if (/^\d+$/.test(input)) {
+      const num = parseInt(input, 10);
+      if (num >= 1 && num <= replayEvents.length) {
+        seekReplay(num - 1);
+        setJumpInput('');
+        return;
+      }
+    }
+
+    // 2. Otherwise assume it's a timestamp
+    const targetTime = new Date(input).getTime();
+    if (!isNaN(targetTime)) {
+      let low = 0;
+      let high = replayEvents.length - 1;
+      let resultIdx = -1;
+
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const midTime = new Date(replayEvents[mid].rawTimestamp).getTime();
+        if (midTime >= targetTime) {
+          resultIdx = mid;
+          high = mid - 1;
+        } else {
+          low = mid + 1;
+        }
+      }
+
+      if (resultIdx !== -1) {
+        seekReplay(resultIdx);
+      } else {
+        seekReplay(replayEvents.length - 1);
+      }
+      setJumpInput('');
+    }
+  };
 
   const consoleEndRef = useRef(null);
   const containerRef  = useRef(null);
@@ -387,40 +440,153 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
       {replayMode && (
         <div style={{
           display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          padding: '8px 16px',
+          flexDirection: 'column',
+          gap: '8px',
           background: 'rgba(255,255,255,0.01)',
           borderBottom: '1px solid rgba(255,255,255,0.04)',
-          overflowX: 'auto'
         }}>
-          <button onClick={restartReplay} style={controlBtnStyle}>↺ Restart</button>
-          <button onClick={stepBackwardReplay} style={controlBtnStyle}>◀ Prev</button>
-          <button onClick={replayPlaying ? pauseReplay : startReplay} style={{ ...controlBtnStyle, color: '#a78bfa', borderColor: 'rgba(167, 139, 250, 0.4)' }}>
-            {replayPlaying ? '⏸ Pause' : '▶ Play'}
-          </button>
-          <button onClick={stepForwardReplay} style={controlBtnStyle}>Next ▶</button>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            padding: '8px 16px 4px 16px',
+            overflowX: 'auto'
+          }}>
+            <button onClick={restartReplay} style={controlBtnStyle}>↺ Restart</button>
+            <button onClick={stepBackwardReplay} style={controlBtnStyle}>◀ Prev</button>
+            <button onClick={replayPlaying ? pauseReplay : startReplay} style={{ ...controlBtnStyle, color: '#a78bfa', borderColor: 'rgba(167, 139, 250, 0.4)' }}>
+              {replayPlaying ? '⏸ Pause' : '▶ Play'}
+            </button>
+            <button onClick={stepForwardReplay} style={controlBtnStyle}>Next ▶</button>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '12px' }}>
-            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>SPEED:</span>
-            {[0.5, 1, 2, 5].map((speed) => (
-              <button
-                key={speed}
-                onClick={() => setReplaySpeed(speed)}
-                style={{
-                  ...controlBtnStyle,
-                  background: replaySpeed === speed ? 'rgba(167, 139, 250, 0.2)' : 'transparent',
-                  borderColor: replaySpeed === speed ? '#a78bfa' : 'rgba(255,255,255,0.1)',
-                  color: replaySpeed === speed ? '#a78bfa' : 'rgba(255,255,255,0.5)'
-                }}
-              >
-                {speed}x
-              </button>
-            ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '12px' }}>
+              <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>SPEED:</span>
+              {[0.5, 1, 2, 5].map((speed) => (
+                <button
+                  key={speed}
+                  onClick={() => setReplaySpeed(speed)}
+                  style={{
+                    ...controlBtnStyle,
+                    background: replaySpeed === speed ? 'rgba(167, 139, 250, 0.2)' : 'transparent',
+                    borderColor: replaySpeed === speed ? '#a78bfa' : 'rgba(255,255,255,0.1)',
+                    color: replaySpeed === speed ? '#a78bfa' : 'rgba(255,255,255,0.5)'
+                  }}
+                >
+                  {speed}x
+                </button>
+              ))}
+            </div>
+
+            <div style={{ marginLeft: 'auto', fontSize: '10px', color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace' }}>
+              EVENT {replayIndex + 1} / {replayEvents.length}
+            </div>
           </div>
 
-          <div style={{ marginLeft: 'auto', fontSize: '10px', color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace' }}>
-            EVENT {replayIndex + 1} / {replayEvents.length}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            padding: '4px 16px 8px 16px',
+            borderTop: '1px solid rgba(255,255,255,0.02)',
+            flexWrap: 'wrap'
+          }}>
+            {/* Jump To Event */}
+            <form onSubmit={handleJumpSubmit} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <input
+                type="text"
+                placeholder="Jump event # or timestamp"
+                value={jumpInput}
+                onChange={(e) => setJumpInput(e.target.value)}
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '4px',
+                  color: '#fff',
+                  fontSize: '10px',
+                  padding: '3px 8px',
+                  fontFamily: 'monospace',
+                  width: '180px'
+                }}
+              />
+              <button type="submit" style={controlBtnStyle}>Go</button>
+            </form>
+
+            {/* Compare Selectors */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>COMPARE A:</span>
+                <select
+                  value={selectedSnapshotAIndex ?? ''}
+                  onChange={(e) => selectSnapshotAIndex(e.target.value !== '' ? parseInt(e.target.value, 10) : null)}
+                  style={{
+                    background: '#090d16',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '4px',
+                    color: 'rgba(255,255,255,0.8)',
+                    fontSize: '10px',
+                    fontFamily: 'monospace',
+                    padding: '2px 4px'
+                  }}
+                >
+                  <option value="">-- None --</option>
+                  {replayEvents.map((ev, idx) => (
+                    <option key={idx} value={idx}>#{idx + 1} ({ev.displayTime})</option>
+                  ))}
+                </select>
+              </div>
+
+              <button onClick={swapSnapshots} disabled={!comparisonMode} style={controlBtnStyle}>⇄ Swap</button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>WITH B:</span>
+                <select
+                  value={selectedSnapshotBIndex ?? ''}
+                  onChange={(e) => selectSnapshotBIndex(e.target.value !== '' ? parseInt(e.target.value, 10) : null)}
+                  style={{
+                    background: '#090d16',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '4px',
+                    color: 'rgba(255,255,255,0.8)',
+                    fontSize: '10px',
+                    fontFamily: 'monospace',
+                    padding: '2px 4px'
+                  }}
+                >
+                  <option value="">-- None --</option>
+                  {replayEvents.map((ev, idx) => (
+                    <option key={idx} value={idx}>#{idx + 1} ({ev.displayTime})</option>
+                  ))}
+                </select>
+              </div>
+
+              {(selectedSnapshotAIndex !== null || selectedSnapshotBIndex !== null) && (
+                <button onClick={clearComparison} style={{ ...controlBtnStyle, color: '#ef4444' }}>Clear</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Comparison Diff Summary */}
+      {replayMode && comparisonMode && (
+        <div style={{
+          background: 'rgba(59, 130, 246, 0.08)',
+          borderBottom: '1px solid rgba(59, 130, 246, 0.2)',
+          padding: '8px 16px',
+          fontSize: '10.5px',
+          color: 'rgba(255,255,255,0.7)',
+          fontFamily: 'monospace',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px'
+        }}>
+          <div style={{ fontWeight: 'bold', color: '#3b82f6', textTransform: 'uppercase' }}>Comparison Mode Active</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px 16px' }}>
+            <div>Changed Tasks: <strong style={{ color: '#fff' }}>{snapshotDiff.tasks.length}</strong></div>
+            <div>Changed Workers: <strong style={{ color: '#fff' }}>{snapshotDiff.workers.length}</strong></div>
+            <div>Retry Delta: <strong style={{ color: '#fff' }}>{snapshotDiff.retryDelta >= 0 ? `+${snapshotDiff.retryDelta}` : snapshotDiff.retryDelta}</strong></div>
+            <div>Queue Changes: <strong style={{ color: '#fff' }}>{snapshotDiff.queueChanges.length}</strong></div>
           </div>
         </div>
       )}

@@ -67,6 +67,17 @@ def test_replay_read_only_and_rca():
         assert len(replay["events"]) >= 2
         assert replay["version"] == 1
 
+        # Check metadata
+        assert "metadata" in replay
+        meta = replay["metadata"]
+        assert meta["event_count"] == len(replay["events"])
+        assert meta["snapshot_count"] == len(replay["events"])
+        assert meta["task_count"] == 2
+        assert meta["worker_count"] == 0 # no worker IDs assigned in this dummy test
+        assert meta["first_timestamp"] == replay["events"][0]["timestamp"]
+        assert meta["last_timestamp"] == replay["events"][-1]["timestamp"]
+
+
         # Check fields of normalized events
         for e in replay["events"]:
             assert "timestamp" in e

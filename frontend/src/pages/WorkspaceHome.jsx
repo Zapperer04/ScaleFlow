@@ -34,7 +34,8 @@ export const WorkspaceHome = () => {
     selectedTaskId, setSelectedTaskId,
     selectedTraceId, setSelectedTraceId,
     selectedWorkerId, setSelectedWorkerId,
-    replayMode, replayIndex, replaySnapshots
+    replayMode, replayIndex, replaySnapshots,
+    comparisonMode
   } = usePipeline();
   const { selectedDocumentId, setSelectedDocumentId, uploadedFiles, setUploadedFiles } = useDocument();
   const { selectDocument } = useWorkspace();
@@ -908,7 +909,7 @@ export const WorkspaceHome = () => {
               />
 
               {/* Error Panel — derived from failed backend tasks, no hardcoded errors */}
-              {currentActiveDag?.tasks?.some(t => t.status === 'failed' || t.status === 'cancelled') && (
+              {(comparisonMode || currentActiveDag?.tasks?.some(t => t.status === 'failed' || t.status === 'cancelled')) && (
                 <ErrorPanel
                   errors={(currentActiveDag.tasks || [])
                     .filter(t => t.status === 'failed' || t.status === 'cancelled')

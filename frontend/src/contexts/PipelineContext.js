@@ -1,7 +1,139 @@
-import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
+import React, { createContext, useState, useContext, useEffect, useRef, useMemo } from 'react';
 import { fetchPipelineTimeline, retryTask, fetchPipelineReplay } from '../services/pipelines';
 
 const PipelineContext = createContext(null);
+
+export const computeSnapshotDiff = (snapA, snapB) => {
+  if (!snapA || !snapB) {
+    return {
+      tasks: [],
+      workers: [],
+      retryDelta: 0,
+      queueChanges: [],
+      progressChanges: []
+    };
+  }
+
+  const tasksDiff = [];
+  const workersDiff = [];
+  let retryDelta = 0;
+  const queueChanges = [];
+  const progressChanges = [];
+
+  // Get union of all task IDs
+  const allTaskIds = Array.from(new Set([
+    ...Object.keys(snapA.taskStates || {}),
+    ...Object.keys(snapB.taskStates || {})
+  ]));
+
+  for (const taskId of allTaskIds) {
+    const taskA = snapA.taskStates?.[taskId] || {
+      status: 'pending',
+      workerId: null,
+      retryCount: 0,
+      queue: null,
+      progress: null
+    };
+    const taskB = snapB.taskStates?.[taskId] || {
+      status: 'pending',
+      workerId: null,
+      retryCount: 0,
+      queue: null,
+      progress: null
+    };
+
+    // 1. Task Status
+    if (taskA.status !== taskB.status) {
+      tasksDiff.push({
+        taskId,
+        field: 'status',
+        before: taskA.status,
+        after: taskB.status
+      });
+    }
+
+    // 2. Worker Assignment
+    if (taskA.workerId !== taskB.workerId) {
+      tasksDiff.push({
+        taskId,
+        field: 'workerId',
+        before: taskA.workerId,
+        after: taskB.workerId
+      });
+    }
+
+    // 3. Retry Count (mutually exclusive retryDelta)
+    if (taskA.retryCount !== taskB.retryCount) {
+      retryDelta += (taskB.retryCount - taskA.retryCount);
+    }
+
+    // 4. Queue
+    if (taskA.queue !== taskB.queue) {
+      queueChanges.push({
+        taskId,
+        before: taskA.queue,
+        after: taskB.queue
+      });
+    }
+
+    // 5. Progress
+    if (taskA.progress !== taskB.progress) {
+      progressChanges.push({
+        taskId,
+        before: taskA.progress,
+        after: taskB.progress
+      });
+    }
+  }
+
+  // Get union of all worker IDs
+  const allWorkerIds = Array.from(new Set([
+    ...Object.keys(snapA.workerStates || {}),
+    ...Object.keys(snapB.workerStates || {})
+  ]));
+
+  for (const wId of allWorkerIds) {
+    const workerA = snapA.workerStates?.[wId] || {
+      state: 'idle',
+      currentTask: null,
+      leaseStatus: 'valid'
+    };
+    const workerB = snapB.workerStates?.[wId] || {
+      state: 'idle',
+      currentTask: null,
+      leaseStatus: 'valid'
+    };
+
+    if (
+      workerA.state !== workerB.state ||
+      workerA.currentTask !== workerB.currentTask ||
+      workerA.leaseStatus !== workerB.leaseStatus
+    ) {
+      workersDiff.push({
+        workerId: wId,
+        before: {
+          state: workerA.state,
+          currentTask: workerA.currentTask,
+          leaseStatus: workerA.leaseStatus
+        },
+        after: {
+          state: workerB.state,
+          currentTask: workerB.currentTask,
+          leaseStatus: workerB.leaseStatus
+        }
+      });
+    }
+  }
+
+  return {
+    tasks: tasksDiff,
+    workers: workersDiff,
+    retryDelta,
+    queueChanges,
+    progressChanges
+  };
+};
+
 
 export const normalizeReplayEvent = (e) => {
   const level = SEVERITY_MAP[e.event_type] ?? "INFO";
@@ -152,7 +284,7 @@ export const computeReplaySnapshots = (events) => {
       selectedWorkerId,
       selectedTraceId
     };
-    snapshots.push(snapshot);
+    snapshots.push(Object.freeze(snapshot));
   }
 
   return snapshots;
@@ -250,6 +382,59 @@ export const PipelineProvider = ({ children }) => {
   const [replayError, setReplayError] = useState(null);
   const [replayLoading, setReplayLoading] = useState(false);
 
+  // Time-Travel Comparison State Hooks
+  const [selectedSnapshotAIndex, setSelectedSnapshotAIndex] = useState(null);
+  const [selectedSnapshotBIndex, setSelectedSnapshotBIndex] = useState(null);
+
+  const comparisonMode = selectedSnapshotAIndex !== null && selectedSnapshotBIndex !== null;
+
+  const diffCacheRef = useRef({});
+
+  const snapshotDiff = useMemo(() => {
+    if (!comparisonMode || !replaySnapshots || selectedSnapshotAIndex === null || selectedSnapshotBIndex === null) {
+      return {
+        tasks: [],
+        workers: [],
+        retryDelta: 0,
+        queueChanges: [],
+        progressChanges: []
+      };
+    }
+    // Bounds check
+    if (selectedSnapshotAIndex < 0 || selectedSnapshotAIndex >= replaySnapshots.length ||
+        selectedSnapshotBIndex < 0 || selectedSnapshotBIndex >= replaySnapshots.length) {
+      return {
+        tasks: [],
+        workers: [],
+        retryDelta: 0,
+        queueChanges: [],
+        progressChanges: []
+      };
+    }
+
+    const key = `${selectedSnapshotAIndex}|${selectedSnapshotBIndex}`;
+    if (diffCacheRef.current[key]) {
+      return diffCacheRef.current[key];
+    }
+
+    const snapA = replaySnapshots[selectedSnapshotAIndex];
+    const snapB = replaySnapshots[selectedSnapshotBIndex];
+    const diff = computeSnapshotDiff(snapA, snapB);
+    diffCacheRef.current[key] = diff;
+    return diff;
+  }, [replaySnapshots, selectedSnapshotAIndex, selectedSnapshotBIndex, comparisonMode]);
+
+  // Freeze automatic replay-driven selections in comparison mode
+  useEffect(() => {
+    if (replayMode && !comparisonMode && replaySnapshots && replayIndex >= 0 && replayIndex < replaySnapshots.length) {
+      const snap = replaySnapshots[replayIndex];
+      if (snap.selectedTaskId !== undefined) setSelectedTaskId(snap.selectedTaskId);
+      if (snap.selectedWorkerId !== undefined) setSelectedWorkerId(snap.selectedWorkerId);
+      if (snap.selectedTraceId !== undefined) setSelectedTraceId(snap.selectedTraceId);
+    }
+  }, [replayIndex, replayMode, comparisonMode, replaySnapshots]);
+
+
   const abortRef = useRef(null);
   const intervalRef = useRef(null);
   const replayTimerRef = useRef(null);
@@ -308,6 +493,9 @@ export const PipelineProvider = ({ children }) => {
     setReplayIndex(-1);
     setReplayAnalysis(null);
     setReplayError(null);
+    setSelectedSnapshotAIndex(null);
+    setSelectedSnapshotBIndex(null);
+    diffCacheRef.current = {};
   }, [selectedPipelineId]);
 
   // Playback Control Actions
@@ -395,6 +583,9 @@ export const PipelineProvider = ({ children }) => {
     setReplaySnapshots([]);
     setReplayIndex(-1);
     setReplayAnalysis(null);
+    setSelectedSnapshotAIndex(null);
+    setSelectedSnapshotBIndex(null);
+    diffCacheRef.current = {};
   };
 
   // Live Polling effect
@@ -442,6 +633,35 @@ export const PipelineProvider = ({ children }) => {
     };
   }, [selectedPipelineId, refreshTrigger, replayMode]);
 
+  const selectSnapshotAIndex = (idx) => {
+    setReplayPlaying(false);
+    if (replaySnapshots && idx >= 0 && idx < replaySnapshots.length) {
+      setSelectedSnapshotAIndex(idx);
+    } else {
+      setSelectedSnapshotAIndex(null);
+    }
+  };
+
+  const selectSnapshotBIndex = (idx) => {
+    setReplayPlaying(false);
+    if (replaySnapshots && idx >= 0 && idx < replaySnapshots.length) {
+      setSelectedSnapshotBIndex(idx);
+    } else {
+      setSelectedSnapshotBIndex(null);
+    }
+  };
+
+  const swapSnapshots = () => {
+    const temp = selectedSnapshotAIndex;
+    setSelectedSnapshotAIndex(selectedSnapshotBIndex);
+    setSelectedSnapshotBIndex(temp);
+  };
+
+  const clearComparison = () => {
+    setSelectedSnapshotAIndex(null);
+    setSelectedSnapshotBIndex(null);
+  };
+
   return (
     <PipelineContext.Provider value={{
       selectedPipelineId,
@@ -484,7 +704,19 @@ export const PipelineProvider = ({ children }) => {
       stepBackwardReplay,
       restartReplay,
       enterReplayMode,
-      exitReplayMode
+      exitReplayMode,
+
+      // Comparison exports
+      selectedSnapshotAIndex,
+      setSelectedSnapshotAIndex,
+      selectedSnapshotBIndex,
+      setSelectedSnapshotBIndex,
+      comparisonMode,
+      snapshotDiff,
+      selectSnapshotAIndex,
+      selectSnapshotBIndex,
+      swapSnapshots,
+      clearComparison
     }}>
       {children}
     </PipelineContext.Provider>
