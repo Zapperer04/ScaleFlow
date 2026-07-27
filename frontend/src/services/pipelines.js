@@ -70,8 +70,8 @@ export const normalizeArtifact = (rawArt) => {
   };
 };
 
-export const fetchPipelineDetails = async (pipelineId) => {
-  const response = await apiClient.get(`/pipelines/${pipelineId}`);
+export const fetchPipelineDetails = async (pipelineId, signal) => {
+  const response = await apiClient.get(`/pipelines/${pipelineId}`, { signal });
   const data = response.data;
   if (data && Array.isArray(data.artifacts)) {
     data.artifacts = data.artifacts.map(normalizeArtifact);
@@ -79,8 +79,8 @@ export const fetchPipelineDetails = async (pipelineId) => {
   return data;
 };
 
-export const fetchPipelineDag = async (pipelineId) => {
-  const response = await apiClient.get(`/pipelines/${pipelineId}/dag`);
+export const fetchPipelineDag = async (pipelineId, signal) => {
+  const response = await apiClient.get(`/pipelines/${pipelineId}/dag`, { signal });
   return response.data;
 };
 

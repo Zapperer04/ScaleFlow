@@ -25,8 +25,8 @@ export const getScalingMetrics = async () => {
   return response.data;
 };
 
-export const getPipelineMetrics = async (pipelineId) => {
-  const response = await apiClient.get(`/metrics/pipelines/${pipelineId}`);
+export const getPipelineMetrics = async (pipelineId, signal) => {
+  const response = await apiClient.get(`/metrics/pipelines/${pipelineId}`, { signal });
   return response.data;
 };
 

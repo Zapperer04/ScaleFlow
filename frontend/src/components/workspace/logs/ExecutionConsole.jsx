@@ -124,7 +124,7 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
   // Auto scroll effect
   useEffect(() => {
     if (autoScroll && !paused) {
-      consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      consoleEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
     }
   }, [filteredEvents, autoScroll, paused]);
 

@@ -1,15 +1,21 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { AppShell } from '../components/layout/AppShell';
 import { NotificationProvider } from '../contexts/NotificationContext';
+import { PipelineProvider } from '../contexts/PipelineContext';
+import { DocumentProvider } from '../contexts/DocumentContext';
+import { AppShell } from '../components/layout/AppShell';
 
 describe('Global Search Integration', () => {
   test('renders search trigger and input elements', () => {
     render(
       <NotificationProvider>
-        <AppShell activeView="workspace" onNavigateToView={() => {}} leaderId="Checking...">
-          <div>Workspace Content</div>
-        </AppShell>
+        <DocumentProvider>
+          <PipelineProvider>
+            <AppShell activeView="workspace" onNavigateToView={() => {}} leaderId="Checking...">
+              <div>Workspace Content</div>
+            </AppShell>
+          </PipelineProvider>
+        </DocumentProvider>
       </NotificationProvider>
     );
 

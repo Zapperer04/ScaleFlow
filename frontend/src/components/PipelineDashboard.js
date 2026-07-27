@@ -726,20 +726,34 @@ const PipelineDashboard = () => {
     }
   };
 
-  // Sync selected pipeline DAG
-  const loadPipelineDag = async (id) => {
+  const detailsAbortRef = React.useRef(null);
+  const [pipelineDetailsLoading, setPipelineDetailsLoading] = useState(false);
+
+  const loadPipelineDetailsAndDag = async (id, signal) => {
     try {
-      const data = await fetchPipelineDag(id);
+      const details = await fetchPipelineDetails(id, signal);
+      if (signal.aborted) return;
+      setSelectedPipelineData(details);
+
+      const dagData = await fetchPipelineDag(id, signal);
+      if (signal.aborted) return;
+
       let metrics = null;
       try {
-        metrics = await getPipelineMetrics(id);
-        setPipelineMetrics(metrics);
+        metrics = await getPipelineMetrics(id, signal);
       } catch (err) {
-        console.error('Failed to load pipeline metrics:', err);
+        if (err.name !== 'AbortError' && err.name !== 'CanceledError') {
+          console.error('Failed to load pipeline metrics:', err);
+        }
       }
+      if (signal.aborted) return;
+      setPipelineMetrics(metrics);
 
-      if (data && data.nodes && data.edges) {
-        // Pre-process nodes with critical path and bottleneck flags
+      const timeline = await fetchPipelineTimeline(id, signal);
+      if (signal.aborted) return;
+      setPipelineTimeline(timeline || []);
+
+      if (dagData && dagData.nodes && dagData.edges) {
         const criticalNodeIds = metrics && metrics.critical_path 
           ? metrics.critical_path.map(tid => `task-${tid}`) 
           : [];
@@ -747,11 +761,10 @@ const PipelineDashboard = () => {
           ? `task-${metrics.bottleneck_node_id}` 
           : null;
 
-        const updatedNodes = data.nodes.map(node => {
+        const updatedNodes = dagData.nodes.map(node => {
           const isOnCriticalPath = criticalNodeIds.includes(node.id);
           const isBottleneck = node.id === bottleneckNodeId;
           
-          // Inject wait/execution details if present in metrics node_weights
           let weightDetails = null;
           if (node.type === 'taskNode' && metrics && metrics.node_weights) {
             const taskId = node.id.replace('task-', '');
@@ -769,10 +782,8 @@ const PipelineDashboard = () => {
           };
         });
 
-        // Highlight critical path edges and congested edges
-        const updatedEdges = data.edges.map(edge => {
-          // Check if target is throttled due to upstream congestion
-          const targetNode = data.nodes.find(n => n.id === edge.target);
+        const updatedEdges = dagData.edges.map(edge => {
+          const targetNode = dagData.nodes.find(n => n.id === edge.target);
           const isTargetThrottled = targetNode && targetNode.type === 'taskNode' && 
             targetNode.data?.status === 'blocked' && 
             targetNode.data?.blocked_reason === 'Upstream congestion: throttled';
@@ -782,7 +793,7 @@ const PipelineDashboard = () => {
               ...edge,
               animated: true,
               style: {
-                stroke: '#f87171', // Dotted light-red
+                stroke: '#f87171',
                 strokeDasharray: '5,5',
                 strokeWidth: 2.5
               }
@@ -792,7 +803,6 @@ const PipelineDashboard = () => {
           let isCriticalEdge = false;
           
           if (metrics && metrics.critical_path) {
-
             if (edge.source.startsWith('task-') && edge.target.startsWith('task-')) {
               const srcId = parseInt(edge.source.replace('task-', ''));
               const tgtId = parseInt(edge.target.replace('task-', ''));
@@ -801,12 +811,12 @@ const PipelineDashboard = () => {
               isCriticalEdge = srcIdx !== -1 && tgtIdx !== -1 && (srcIdx + 1 === tgtIdx || tgtIdx + 1 === srcIdx);
             } else if (edge.source.startsWith('task-') && edge.target.startsWith('artifact-')) {
               const srcId = parseInt(edge.source.replace('task-', ''));
-              const artNode = data.nodes.find(n => n.id === edge.target);
+              const artNode = dagData.nodes.find(n => n.id === edge.target);
               const isSourceInPath = metrics.critical_path.includes(srcId);
               isCriticalEdge = isSourceInPath && artNode && artNode.data.task_id === srcId;
             } else if (edge.source.startsWith('artifact-') && edge.target.startsWith('task-')) {
               const tgtId = parseInt(edge.target.replace('task-', ''));
-              const artNode = data.nodes.find(n => n.id === edge.source);
+              const artNode = dagData.nodes.find(n => n.id === edge.source);
               const isTargetInPath = metrics.critical_path.includes(tgtId);
               const parentId = artNode ? artNode.data.task_id : null;
               isCriticalEdge = isTargetInPath && parentId && metrics.critical_path.includes(parentId) && metrics.critical_path.indexOf(parentId) < metrics.critical_path.indexOf(tgtId);
@@ -818,7 +828,7 @@ const PipelineDashboard = () => {
               ...edge,
               animated: true,
               style: {
-                stroke: '#f43f5e', // Vibrant rose/crimson
+                stroke: '#f43f5e',
                 strokeWidth: 3.5
               }
             };
@@ -835,30 +845,9 @@ const PipelineDashboard = () => {
         setEdges(layoutedEdges);
       }
     } catch (err) {
-      console.error('Failed to load pipeline DAG:', err);
-    }
-  };
-
-  // Sync selected pipeline timeline
-  const loadPipelineTimeline = async (id) => {
-    try {
-      const data = await fetchPipelineTimeline(id);
-      setPipelineTimeline(data || []);
-    } catch (err) {
-      console.error('Failed to load pipeline timeline:', err);
-    }
-  };
-
-  // Sync selected pipeline details
-  const loadPipelineDetails = async (id) => {
-    try {
-      const data = await fetchPipelineDetails(id);
-      setSelectedPipelineData(data);
-      // Simultaneously fetch DAG and Timeline
-      await loadPipelineDag(id);
-      await loadPipelineTimeline(id);
-    } catch (err) {
-      console.error('Failed to load pipeline details:', err);
+      if (err.name !== 'AbortError' && err.name !== 'CanceledError') {
+        console.error('Failed to load pipeline details:', err);
+      }
     }
   };
 
@@ -1062,9 +1051,6 @@ const PipelineDashboard = () => {
     loadPipelinesList();
     loadUploadedFilesList();
     loadVectorStatsData();
-    if (selectedPipelineId) {
-      loadPipelineDetails(selectedPipelineId);
-    }
     if (dashboardTab === 'observability') {
       loadSystemObservabilityData();
     }
@@ -1072,21 +1058,64 @@ const PipelineDashboard = () => {
       loadPipelinesList();
       loadUploadedFilesList();
       loadVectorStatsData();
-      if (selectedPipelineId) {
-        const currentData = selectedPipelineDataRef.current;
-        const isTerminal = currentData && currentData.pipeline && 
-          ['completed', 'failed', 'cancelled'].includes(currentData.pipeline.status);
-        if (!isTerminal) {
-          loadPipelineDetails(selectedPipelineId);
-        }
-      }
       if (dashboardTab === 'observability') {
         loadSystemObservabilityData();
       }
     }, 5000); // 5-second polling refresh
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPipelineId, dashboardTab]);
+  }, [dashboardTab]);
+
+  useEffect(() => {
+    if (detailsAbortRef.current) {
+      detailsAbortRef.current.abort();
+      detailsAbortRef.current = null;
+    }
+
+    if (!selectedPipelineId) {
+      setSelectedPipelineData(null);
+      setPipelineMetrics(null);
+      setPipelineTimeline([]);
+      setNodes([]);
+      setEdges([]);
+      setPipelineDetailsLoading(false);
+      return;
+    }
+
+    // Clear stale state and show loading indicator (F-17 / F-20)
+    setSelectedPipelineData(null);
+    setPipelineMetrics(null);
+    setPipelineTimeline([]);
+    setNodes([]);
+    setEdges([]);
+    setPipelineDetailsLoading(true);
+
+    const controller = new AbortController();
+    detailsAbortRef.current = controller;
+
+    const runInit = async () => {
+      await loadPipelineDetailsAndDag(selectedPipelineId, controller.signal);
+      if (!controller.signal.aborted) {
+        setPipelineDetailsLoading(false);
+      }
+    };
+    runInit();
+
+    const interval = setInterval(async () => {
+      const currentData = selectedPipelineDataRef.current;
+      const isTerminal = currentData && currentData.pipeline && 
+        ['completed', 'failed', 'cancelled'].includes(currentData.pipeline.status);
+      
+      if (!isTerminal && !controller.signal.aborted) {
+        await loadPipelineDetailsAndDag(selectedPipelineId, controller.signal);
+      }
+    }, 5000);
+
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+    };
+  }, [selectedPipelineId]);
 
 
   const handleSearch = async (e) => {
@@ -1186,7 +1215,8 @@ const PipelineDashboard = () => {
       await cancelPipeline(id);
       loadPipelinesList();
       if (selectedPipelineId === id) {
-        loadPipelineDetails(id);
+        const tempCtrl = new AbortController();
+        loadPipelineDetailsAndDag(id, tempCtrl.signal);
       }
     } catch (err) {
       console.error('Failed to cancel pipeline:', err);
@@ -1622,7 +1652,12 @@ const PipelineDashboard = () => {
         {/* Right Side: Visual Graph & Artifact details */}
         <div style={{ gridColumn: 'span 8', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
-          {selectedPipelineId && selectedPipelineData ? (
+          {selectedPipelineId ? (pipelineDetailsLoading ? (
+            <div style={{ display: 'flex', height: '400px', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+              <RefreshCw className="animate-spin" size={24} />
+              <span style={{ marginLeft: '8px' }}>Loading pipeline details...</span>
+            </div>
+          ) : selectedPipelineData ? (
             <>
               {/* Pipeline Details Inspector Card */}
               <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '24px' }}>
@@ -2054,6 +2089,14 @@ const PipelineDashboard = () => {
               </div>
             </>
           ) : (
+            <div className="empty-state-container" style={{ flex: 1, minHeight: '400px', padding: '60px' }}>
+              <GitBranch size={48} className="empty-state-icon" />
+              <h3 className="empty-state-title" style={{ fontSize: '1.1rem' }}>No Pipeline Data Available</h3>
+              <p className="empty-state-text" style={{ maxWidth: '380px' }}>
+                The selected pipeline details could not be parsed or have no tasks.
+              </p>
+            </div>
+          )) : (
             <div className="empty-state-container" style={{ flex: 1, minHeight: '400px', padding: '60px' }}>
               <GitBranch size={48} className="empty-state-icon" />
               <h3 className="empty-state-title" style={{ fontSize: '1.1rem' }}>No Pipeline Selected</h3>

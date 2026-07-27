@@ -9,7 +9,12 @@ let telemetryState = {
   qdrantStatus: 'checking',
   leaderId: 'Checking...',
   orchestratorCount: 0,
-  stats: { total: 0, pending: 0, running: 0, completed: 0 }
+  stats: { total: 0, pending: 0, running: 0, completed: 0 },
+  metrics: {
+    system: null,
+    scaling: null,
+    backpressure: null
+  }
 };
 
 const listeners = new Set();

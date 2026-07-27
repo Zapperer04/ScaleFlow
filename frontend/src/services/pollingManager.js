@@ -1,4 +1,4 @@
-import { fetchTasks, fetchWorkers, getQueueStats, fetchPipelines, getDatabaseStatus, fetchVectorStats, getClusterStatus } from './api';
+import { fetchTasks, fetchWorkers, getQueueStats, fetchPipelines, getDatabaseStatus, fetchVectorStats, getClusterStatus, getSystemMetrics, getScalingMetrics, getBackpressureMetrics } from './api';
 import { telemetryStore } from './telemetryStore';
 
 let fastIntervalId = null;
@@ -91,6 +91,19 @@ const loadFastData = async () => {
     console.error('loadFastData: getQueueStats failed — Redis may be offline', error);
     telemetryStore.setState({ redisStatus: 'offline' });
   }
+
+  // 5. Fetch Live System Metrics
+  try {
+    const sysMetrics = await getSystemMetrics();
+    telemetryStore.setState({
+      metrics: {
+        ...telemetryStore.getState().metrics,
+        system: sysMetrics
+      }
+    });
+  } catch (error) {
+    console.warn('loadFastData: getSystemMetrics failed', error);
+  }
 };
 
 const loadSlowData = async () => {
@@ -123,6 +136,32 @@ const loadSlowData = async () => {
       leaderId: 'Unknown',
       orchestratorCount: 0
     });
+  }
+
+  // 4. Fetch Scaling Metrics
+  try {
+    const scaling = await getScalingMetrics();
+    telemetryStore.setState({
+      metrics: {
+        ...telemetryStore.getState().metrics,
+        scaling: scaling
+      }
+    });
+  } catch (error) {
+    console.warn('loadSlowData: getScalingMetrics failed', error);
+  }
+
+  // 5. Fetch Backpressure Metrics
+  try {
+    const backpressure = await getBackpressureMetrics();
+    telemetryStore.setState({
+      metrics: {
+        ...telemetryStore.getState().metrics,
+        backpressure: backpressure
+      }
+    });
+  } catch (error) {
+    console.warn('loadSlowData: getBackpressureMetrics failed', error);
   }
 };
 
