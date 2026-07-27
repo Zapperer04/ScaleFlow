@@ -14,13 +14,17 @@ import { usePipeline } from '../../../contexts/PipelineContext';
  * - failed: Red (#ef4444)
  * - retrying / paused: Amber (#f59e0b)
  */
+
+
 export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdges = [], onSelectNode, selectedNodeId }) => {
   const {
     selectedTaskId, setSelectedTaskId,
-    setSelectedTraceId, setSelectedWorkerId
+    setSelectedTraceId, setSelectedWorkerId,
+    replayMode,
+    replayIndex,
+    replaySnapshots
   } = usePipeline();
 
-  // Frozen MR-RAG Pipeline layout nodes if backend nodes are not pre-positioned
   const defaultNodes = [
     { id: 'upload',        name: 'Upload',               ref: 'upload',              x: 40,  y: 100 },
     { id: 'preprocess',    name: 'Preprocessing',        ref: 'preprocess_document', x: 160, y: 100 },
@@ -33,8 +37,25 @@ export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdge
     { id: 'ready',         name: 'Retrieval Ready',      ref: 'ready',               x: 950, y: 100 }
   ];
 
-  // Helper to resolve task state by matching task_type
   const getTaskForRef = (refName) => {
+    if (replayMode && replaySnapshots && replayIndex >= 0 && replayIndex < replaySnapshots.length) {
+      const snapshot = replaySnapshots[replayIndex];
+      const matchingTaskId = Object.keys(snapshot.taskStates).find(id => {
+        const originalTask = tasks.find(t => String(t.id) === id);
+        return originalTask && (originalTask.type === refName || originalTask.task_type === refName);
+      });
+      if (matchingTaskId) {
+        const snapTask = snapshot.taskStates[matchingTaskId];
+        const originalTask = tasks.find(t => String(t.id) === matchingTaskId);
+        return {
+          ...originalTask,
+          status: snapTask.status,
+          assigned_worker_id: snapTask.workerId,
+          retry_count: snapTask.retryCount
+        };
+      }
+      return null;
+    }
     return tasks.find(t => t.type === refName || t.task_type === refName) || null;
   };
 
@@ -144,7 +165,11 @@ export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdge
         {defaultNodes.map((node) => {
           const task = getTaskForRef(node.ref);
           const isFailed = task ? isNodeValidationFailed(task) : false;
-          const status = task ? task.status : (node.id === 'upload' ? 'completed' : (tasks.every(t => t.status === 'completed') && tasks.length > 0 ? 'completed' : 'pending'));
+          const status = task ? task.status : (node.id === 'upload' ? 'completed' : (
+            replayMode && replaySnapshots && replayIndex >= 0
+              ? (Object.values(replaySnapshots[replayIndex].taskStates).every(t => t.status === 'completed') && Object.keys(replaySnapshots[replayIndex].taskStates).length > 0 ? 'completed' : 'pending')
+              : (tasks.every(t => t.status === 'completed') && tasks.length > 0 ? 'completed' : 'pending')
+          ));
           const color = getStatusColor(status, isFailed);
           const bg = getStatusBg(status, isFailed);
           

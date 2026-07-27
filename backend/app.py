@@ -4974,6 +4974,26 @@ def trigger_pipeline_snapshot(pipeline_id):
     finally:
         db.close()
 
+@app.route('/pipelines/<int:pipeline_id>/replay', methods=['GET'])
+def get_pipeline_replay(pipeline_id):
+    db = SessionLocal()
+    try:
+        from replay import build_replay, analyze_execution
+        replay_data = build_replay(db, pipeline_id)
+        if not replay_data:
+            return jsonify({"error": "Pipeline not found"}), 404
+        
+        if not replay_data.get("events"):
+            return jsonify({"error": "Replay unavailable. No events recorded."}), 409
+            
+        analysis = analyze_execution(replay_data)
+        replay_data["analysis"] = analysis
+        return jsonify(replay_data), 200
+    except Exception as e:
+        return jsonify({"error": f"Replay generation failed: {str(e)}"}), 500
+    finally:
+        db.close()
+
 @app.route('/replay/pipelines/<int:pipeline_id>', methods=['GET'])
 def get_replay_details(pipeline_id):
     db = SessionLocal()

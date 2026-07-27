@@ -114,3 +114,8 @@ export const retryPipeline = async (pipelineId) => {
   return response.data;
 };
 
+export const fetchPipelineReplay = async (pipelineId, signal) => {
+  const response = await apiClient.get(`/pipelines/${pipelineId}/replay`, { signal });
+  return response.data;
+};
+

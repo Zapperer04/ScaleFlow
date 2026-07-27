@@ -8,7 +8,7 @@ const LEVEL_STYLE = {
   INFO:    { color: '#3b82f6', label: 'INFO' },
 };
 
-const LogRow = React.memo(({ log, isSelected, onClick }) => {
+const LogRow = React.memo(({ log, isSelected, isReplayActiveEvent, onClick }) => {
   const ls = LEVEL_STYLE[log.level] || LEVEL_STYLE.INFO;
   return (
     <div
@@ -21,8 +21,16 @@ const LogRow = React.memo(({ log, isSelected, onClick }) => {
         padding: '3px 8px',
         borderRadius: 4,
         cursor: 'pointer',
-        background: isSelected ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
-        borderLeft: isSelected ? '3px solid #3b82f6' : '3px solid transparent',
+        background: isReplayActiveEvent 
+          ? 'rgba(167, 139, 250, 0.15)' 
+          : isSelected 
+            ? 'rgba(59, 130, 246, 0.12)' 
+            : 'transparent',
+        borderLeft: isReplayActiveEvent
+          ? '3px solid #a78bfa'
+          : isSelected 
+            ? '3px solid #3b82f6' 
+            : '3px solid transparent',
         transition: 'background 0.15s, border-left 0.15s',
       }}
       className="log-row-hover"
@@ -67,7 +75,26 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
   const {
     selectedTaskId, setSelectedTaskId,
     selectedTraceId, setSelectedTraceId,
-    selectedWorkerId, setSelectedWorkerId
+    selectedWorkerId, setSelectedWorkerId,
+    
+    // Replay integration
+    replayMode,
+    replayEvents,
+    replayIndex,
+    replayPlaying,
+    replaySpeed,
+    setReplaySpeed,
+    replayAnalysis,
+    replayError,
+    replayLoading,
+    startReplay,
+    pauseReplay,
+    seekReplay,
+    stepForwardReplay,
+    stepBackwardReplay,
+    restartReplay,
+    enterReplayMode,
+    exitReplayMode
   } = usePipeline();
 
   const [searchQuery, setSearchQuery]       = useState('');
@@ -110,12 +137,14 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
 
   // Compute unique task types dynamically from current events array
   const taskTypeOptions = useMemo(() => {
-    const types = new Set(events.map(e => e.task_type).filter(Boolean));
+    const activeEvents = replayMode ? replayEvents : events;
+    const types = new Set(activeEvents.map(e => e.task_type).filter(Boolean));
     return ['all', ...Array.from(types)].sort();
-  }, [events]);
+  }, [events, replayMode, replayEvents]);
 
   const filteredEvents = useMemo(() => {
-    let result = events;
+    const activeEvents = replayMode ? replayEvents : events;
+    let result = activeEvents;
     if (levelFilter !== 'all') {
       result = result.filter(e => e.level === levelFilter.toUpperCase());
     }
@@ -132,14 +161,23 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
       );
     }
     return result;
-  }, [events, levelFilter, taskTypeFilter, debouncedSearch]);
+  }, [events, replayMode, replayEvents, levelFilter, taskTypeFilter, debouncedSearch]);
 
-  // Auto scroll effect
+  // Virtualized/windowed events slice around replayIndex
+  const slicedEvents = useMemo(() => {
+    if (!replayMode) return filteredEvents;
+    const startIdx = Math.max(0, replayIndex - 100);
+    const endIdx = Math.min(filteredEvents.length, replayIndex + 101);
+    return filteredEvents.slice(startIdx, endIdx);
+  }, [replayMode, filteredEvents, replayIndex]);
+
+  // Auto scroll effect (paused during replayMode)
   useEffect(() => {
+    if (replayMode) return;
     if (autoScroll && !paused) {
       consoleEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
     }
-  }, [filteredEvents, autoScroll, paused]);
+  }, [filteredEvents, autoScroll, paused, replayMode]);
 
   const handleScroll = useCallback(() => {
     if (!containerRef.current) return;
@@ -157,12 +195,10 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
     setPaused(false);
     setNewEventCount(0);
     consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    // Accessibility focus redirection: move focus to sentinel div
     consoleEndRef.current?.focus();
   };
 
   const handleCopy = () => {
-    // Preserve the exact visible ordering shown in the console
     const text = filteredEvents.map(l => 
       `[${l.rawTimestamp || 'Not Available'}] [${l.level}] [${l.worker_id}] [${l.task_type}] ${l.event_type}: ${l.message}`
     ).join('\n');
@@ -177,7 +213,6 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
   };
 
   const handleDownload = () => {
-    // Preserve the exact visible ordering shown in the console
     const text = filteredEvents.map(l => 
       `[${l.rawTimestamp || 'Not Available'}] [${l.level}] [${l.worker_id}] [${l.task_type}] ${l.event_type}: ${l.message}`
     ).join('\n');
@@ -196,7 +231,6 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
   };
 
   const handleDownloadJson = () => {
-    // Exclude displayTime from JSON export per specification
     const exportedEvents = filteredEvents.map(({ displayTime, ...rest }) => rest);
     const text = JSON.stringify(exportedEvents, null, 2);
     const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
@@ -216,6 +250,20 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
     setLevelFilter('all');
     setTaskTypeFilter('all');
   }, []);
+
+  const controlBtnStyle = {
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '4px',
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: '10px',
+    padding: '3px 8px',
+    cursor: 'pointer',
+    fontFamily: 'monospace',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px'
+  };
 
   return (
     <div style={{
@@ -256,9 +304,29 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
           <div key={c} style={{ width: 10, height: 10, borderRadius: '50%', background: c, opacity: 0.6 }} />
         ))}
         <span style={{ marginLeft: 8, fontSize: '10px', color: 'rgba(255,255,255,0.25)', fontFamily: 'monospace' }}>
-          scaleflow — live backend execution log stream
+          {replayMode ? 'scaleflow — execution replay viewer' : 'scaleflow — live backend execution log stream'}
         </span>
-        {paused && newEventCount > 0 && (
+
+        <button
+          onClick={replayMode ? exitReplayMode : enterReplayMode}
+          disabled={replayLoading}
+          style={{
+            marginLeft: '12px',
+            fontSize: '9px',
+            color: '#a78bfa',
+            background: 'rgba(167, 139, 250, 0.1)',
+            border: '1px solid rgba(167, 139, 250, 0.2)',
+            borderRadius: 4,
+            padding: '1px 8px',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            fontFamily: 'monospace'
+          }}
+        >
+          {replayLoading ? 'LOADING...' : replayMode ? 'EXIT REPLAY' : 'ENTER REPLAY'}
+        </button>
+
+        {paused && newEventCount > 0 && !replayMode && (
           <button
             onClick={handleJumpToLatest}
             aria-label={`Jump to latest log entry, ${newEventCount} new events`}
@@ -277,7 +345,7 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
             ⬇ {newEventCount} NEW EVENTS
           </button>
         )}
-        {paused && newEventCount === 0 && (
+        {paused && newEventCount === 0 && !replayMode && (
           <span style={{
             marginLeft: 'auto',
             fontSize: '9px',
@@ -292,6 +360,70 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
           </span>
         )}
       </div>
+
+      {/* Replay Mode Banner & RCA Summary */}
+      {replayMode && (
+        <div style={{
+          background: 'rgba(167, 139, 250, 0.12)',
+          borderBottom: '1px solid rgba(167, 139, 250, 0.25)',
+          padding: '8px 16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#a78bfa' }}>REPLAY MODE</span>
+            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)' }}>• Live updates paused • Viewing historical execution</span>
+          </div>
+          {replayAnalysis && (
+            <div style={{ fontSize: '10.5px', color: 'rgba(255,255,255,0.7)', fontFamily: 'monospace', marginTop: '4px' }}>
+              <strong>Root Cause Analysis:</strong> {replayAnalysis.root_cause} (Confidence: <span style={{ color: '#10b981', fontWeight: 'bold' }}>{replayAnalysis.confidence}</span>, Rule: <code>{replayAnalysis.rule}</code>)
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Playback Controls */}
+      {replayMode && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '8px 16px',
+          background: 'rgba(255,255,255,0.01)',
+          borderBottom: '1px solid rgba(255,255,255,0.04)',
+          overflowX: 'auto'
+        }}>
+          <button onClick={restartReplay} style={controlBtnStyle}>↺ Restart</button>
+          <button onClick={stepBackwardReplay} style={controlBtnStyle}>◀ Prev</button>
+          <button onClick={replayPlaying ? pauseReplay : startReplay} style={{ ...controlBtnStyle, color: '#a78bfa', borderColor: 'rgba(167, 139, 250, 0.4)' }}>
+            {replayPlaying ? '⏸ Pause' : '▶ Play'}
+          </button>
+          <button onClick={stepForwardReplay} style={controlBtnStyle}>Next ▶</button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '12px' }}>
+            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>SPEED:</span>
+            {[0.5, 1, 2, 5].map((speed) => (
+              <button
+                key={speed}
+                onClick={() => setReplaySpeed(speed)}
+                style={{
+                  ...controlBtnStyle,
+                  background: replaySpeed === speed ? 'rgba(167, 139, 250, 0.2)' : 'transparent',
+                  borderColor: replaySpeed === speed ? '#a78bfa' : 'rgba(255,255,255,0.1)',
+                  color: replaySpeed === speed ? '#a78bfa' : 'rgba(255,255,255,0.5)'
+                }}
+              >
+                {speed}x
+              </button>
+            ))}
+          </div>
+
+          <div style={{ marginLeft: 'auto', fontSize: '10px', color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace' }}>
+            EVENT {replayIndex + 1} / {replayEvents.length}
+          </div>
+        </div>
+      )}
 
       {/* Log viewport */}
       <div
@@ -314,35 +446,42 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
         }}
         className="console-scrollbar"
       >
-        {error ? (
+        {replayError || error ? (
           <div role="alert" style={{ color: '#ef4444', textAlign: 'center', marginTop: 60, fontSize: '12px' }}>
-            Error loading timeline: {error}
+            Error: {replayError || error}
           </div>
-        ) : loading && filteredEvents.length === 0 ? (
+        ) : (replayLoading || loading) && slicedEvents.length === 0 ? (
           <div role="status" style={{ color: 'rgba(255,255,255,0.2)', textAlign: 'center', marginTop: 60, fontSize: '12px' }}>
             Loading execution events...
           </div>
-        ) : filteredEvents.length === 0 ? (
+        ) : slicedEvents.length === 0 ? (
           <div role="status" style={{ color: 'rgba(255,255,255,0.2)', textAlign: 'center', marginTop: 60, fontSize: '12px' }}>
             No execution events have been recorded for this pipeline.
           </div>
         ) : (
-          filteredEvents.map((log) => {
+          slicedEvents.map((log) => {
             if (log.id === null || log.id === undefined) return null;
             const key = `${log.source || 'task_log'}-${log.id}`;
+            const globalIdx = filteredEvents.indexOf(log);
+            const isReplayActiveEvent = replayMode && globalIdx === replayIndex;
+
             const isSelected = (log.task_id && log.task_id === selectedTaskId) ||
                                (log.correlation_id && log.correlation_id === selectedTraceId) ||
                                (log.worker_id && log.worker_id !== 'system' && log.worker_id === selectedWorkerId);
             
             const handleRowClick = () => {
-              if (isSelected) {
-                setSelectedTaskId(null);
-                setSelectedTraceId(null);
-                setSelectedWorkerId(null);
+              if (replayMode) {
+                seekReplay(globalIdx);
               } else {
-                setSelectedTaskId(log.task_id || null);
-                setSelectedTraceId(log.correlation_id || null);
-                setSelectedWorkerId((log.worker_id && log.worker_id !== 'system') ? log.worker_id : null);
+                if (isSelected) {
+                  setSelectedTaskId(null);
+                  setSelectedTraceId(null);
+                  setSelectedWorkerId(null);
+                } else {
+                  setSelectedTaskId(log.task_id || null);
+                  setSelectedTraceId(log.correlation_id || null);
+                  setSelectedWorkerId((log.worker_id && log.worker_id !== 'system') ? log.worker_id : null);
+                }
               }
             };
             
@@ -351,6 +490,7 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
                 key={key}
                 log={log}
                 isSelected={isSelected}
+                isReplayActiveEvent={isReplayActiveEvent}
                 onClick={handleRowClick}
               />
             );

@@ -5,19 +5,48 @@ import { usePipeline } from '../../../contexts/PipelineContext';
 export const ErrorPanel = ({ errors = [], onRetryTask }) => {
   const {
     selectedTaskId, setSelectedTaskId,
-    setSelectedTraceId, setSelectedWorkerId
+    setSelectedTraceId,
+    setSelectedWorkerId,
+    replayMode,
+    replayIndex,
+    replaySnapshots
   } = usePipeline();
 
   const [expandedTaskId, setExpandedTaskId] = useState(null);
   const [loadingTaskId, setLoadingTaskId] = useState(null);
   const [retryErrors, setRetryErrors] = useState({}); // taskId -> error message string
 
+  // Replay-aware errors filtering
+  const activeErrors = React.useMemo(() => {
+    if (!replayMode || !replaySnapshots || replayIndex < 0) return errors;
+    const snapshot = replaySnapshots[replayIndex];
+    return errors.filter(err => {
+      const snapTask = snapshot.taskStates[String(err.id)];
+      return snapTask && snapTask.status === 'failed';
+    }).map(err => {
+      const snapTask = snapshot.taskStates[String(err.id)];
+      return {
+        ...err,
+        status: snapTask.status,
+        worker: snapTask.workerId || err.worker,
+        retries: snapTask.retryCount
+      };
+    });
+  }, [replayMode, replaySnapshots, replayIndex, errors]);
+
   // Auto-expand task when it is selected elsewhere
   useEffect(() => {
-    if (selectedTaskId !== null && errors.some(err => err.id === selectedTaskId)) {
+    if (selectedTaskId !== null && activeErrors.some(err => err.id === selectedTaskId)) {
       setExpandedTaskId(selectedTaskId);
     }
-  }, [selectedTaskId, errors]);
+  }, [selectedTaskId, activeErrors]);
+
+  // Auto-expand task when replay reaches its failure event
+  useEffect(() => {
+    if (replayMode && activeErrors.length > 0) {
+      setExpandedTaskId(activeErrors[0].id);
+    }
+  }, [replayMode, activeErrors]);
 
   const handleTaskRetryClick = async (e, task, force = false) => {
     e.stopPropagation();
@@ -62,22 +91,22 @@ export const ErrorPanel = ({ errors = [], onRetryTask }) => {
         alignItems: 'center',
         gap: 8,
         padding: '14px 18px',
-        borderBottom: errors.length > 0
+        borderBottom: activeErrors.length > 0
           ? '1px solid rgba(239,68,68,0.12)'
           : '1px solid rgba(255,255,255,0.04)',
-        background: errors.length > 0 ? 'rgba(239,68,68,0.03)' : 'rgba(255,255,255,0.01)',
+        background: activeErrors.length > 0 ? 'rgba(239,68,68,0.03)' : 'rgba(255,255,255,0.01)',
       }}>
-        <ShieldAlert size={15} style={{ color: errors.length > 0 ? '#ef4444' : 'rgba(255,255,255,0.25)' }} />
+        <ShieldAlert size={15} style={{ color: activeErrors.length > 0 ? '#ef4444' : 'rgba(255,255,255,0.25)' }} />
         <span style={{
           fontSize: '11px',
           fontWeight: 700,
           textTransform: 'uppercase',
           letterSpacing: '0.06em',
-          color: errors.length > 0 ? '#ef4444' : 'rgba(255,255,255,0.3)',
+          color: activeErrors.length > 0 ? '#ef4444' : 'rgba(255,255,255,0.3)',
         }}>
           Airflow Fault Diagnostics
         </span>
-        {errors.length > 0 && (
+        {activeErrors.length > 0 && (
           <span style={{
             marginLeft: 'auto',
             fontSize: '10px',
@@ -88,13 +117,13 @@ export const ErrorPanel = ({ errors = [], onRetryTask }) => {
             padding: '1px 8px',
             fontWeight: 700,
           }}>
-            {errors.length} fault{errors.length > 1 ? 's' : ''}
+            {activeErrors.length} fault{activeErrors.length > 1 ? 's' : ''}
           </span>
         )}
       </div>
 
       {/* Body */}
-      {errors.length === 0 ? (
+      {activeErrors.length === 0 ? (
         <div style={{
           padding: '30px 24px',
           textAlign: 'center',
@@ -118,7 +147,7 @@ export const ErrorPanel = ({ errors = [], onRetryTask }) => {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-          {errors.map((err) => {
+          {activeErrors.map((err) => {
             const expanded = expandedTaskId === err.id;
             const accent = '#ef4444'; // Capitalized statuses FAILED and CANCELLED are error level accent
             

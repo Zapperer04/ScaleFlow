@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars */
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Send, FileText, CheckCircle2, AlertTriangle, Play, HelpCircle, 
   ChevronRight, ChevronDown, Download, Layers, ShieldAlert, Cpu, 
@@ -33,7 +33,8 @@ export const WorkspaceHome = () => {
     refreshTrigger, onRetryTask,
     selectedTaskId, setSelectedTaskId,
     selectedTraceId, setSelectedTraceId,
-    selectedWorkerId, setSelectedWorkerId
+    selectedWorkerId, setSelectedWorkerId,
+    replayMode, replayIndex, replaySnapshots
   } = usePipeline();
   const { selectedDocumentId, setSelectedDocumentId, uploadedFiles, setUploadedFiles } = useDocument();
   const { selectDocument } = useWorkspace();
@@ -208,6 +209,10 @@ export const WorkspaceHome = () => {
       setPipelineMetadata(null);
       return;
     }
+    if (replayMode) {
+      // Pause DAG refresh during replay mode
+      return;
+    }
     const loadDag = async () => {
       try {
         const details = await fetchPipelineDetails(selectedPipelineId);
@@ -225,7 +230,33 @@ export const WorkspaceHome = () => {
     loadDag();
     const interval = setInterval(loadDag, 3000);
     return () => clearInterval(interval);
-  }, [selectedPipelineId, refreshTrigger]);
+  }, [selectedPipelineId, refreshTrigger, replayMode]);
+
+  // Derived Replay-aware DAG state
+  const currentActiveDag = useMemo(() => {
+    if (!replayMode || !replaySnapshots || replayIndex < 0 || !activeDag) {
+      return activeDag;
+    }
+    const snapshot = replaySnapshots[replayIndex];
+    const replayedTasks = (activeDag.tasks || []).map(t => {
+      const snapTask = snapshot.taskStates[String(t.id)];
+      return snapTask ? {
+        ...t,
+        status: snapTask.status,
+        assigned_worker_id: snapTask.workerId,
+        retry_count: snapTask.retryCount
+      } : t;
+    });
+
+    return {
+      ...activeDag,
+      pipeline: {
+        ...activeDag.pipeline,
+        status: replayedTasks.every(t => t.status === 'completed') ? 'completed' : replayedTasks.some(t => t.status === 'failed') ? 'failed' : 'running'
+      },
+      tasks: replayedTasks
+    };
+  }, [replayMode, replaySnapshots, replayIndex, activeDag]);
 
 
 
@@ -478,16 +509,16 @@ export const WorkspaceHome = () => {
           {workspaceState === 'timeline' && (
             <div style={{ padding: '32px', overflowY: 'auto', height: '100%' }}>
               {/* Pipeline header — all values from backend; nothing invented */}
-              {activeDag && activeDag.pipeline && (
+              {currentActiveDag && currentActiveDag.pipeline && (
                 <div style={{ marginBottom: '20px' }}>
                   <PipelineHeader
                     pipelineId={selectedPipelineId}
                     documentName={activeDoc?.original_filename}
-                    workerId={activeDag.tasks?.find(t => t.status === 'running')?.assigned_worker_id || 'Unassigned'}
-                    status={activeDag.pipeline.status}
-                    elapsedSeconds={activeDag.pipeline.started_at ? Math.round((new Date(activeDag.pipeline.completed_at || new Date().toISOString()) - new Date(activeDag.pipeline.started_at)) / 1000) : 0}
-                    queuePosition={activeDag.tasks?.find(t => t.status === 'pending')?.queue_position || null}
-                    startTime={activeDag.pipeline.started_at}
+                    workerId={currentActiveDag.tasks?.find(t => t.status === 'running')?.assigned_worker_id || 'Unassigned'}
+                    status={currentActiveDag.pipeline.status}
+                    elapsedSeconds={currentActiveDag.pipeline.started_at ? Math.round((new Date(currentActiveDag.pipeline.completed_at || new Date().toISOString()) - new Date(currentActiveDag.pipeline.started_at)) / 1000) : 0}
+                    queuePosition={currentActiveDag.tasks?.find(t => t.status === 'pending')?.queue_position || null}
+                    startTime={currentActiveDag.pipeline.started_at}
                   />
                 </div>
               )}
@@ -497,10 +528,10 @@ export const WorkspaceHome = () => {
               </h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '800px' }}>
-                {activeDag?.tasks?.length > 0 ? (
-                  activeDag.tasks.map((task, idx) => {
-                    const inputArtifacts = (activeDag.artifacts || []).filter(art => (task.input_artifact_ids || []).includes(art.id));
-                    const outputArtifacts = (activeDag.artifacts || []).filter(art => (task.output_artifact_ids || []).includes(art.id));
+                {currentActiveDag?.tasks?.length > 0 ? (
+                  currentActiveDag.tasks.map((task, idx) => {
+                    const inputArtifacts = (currentActiveDag.artifacts || []).filter(art => (task.input_artifact_ids || []).includes(art.id));
+                    const outputArtifacts = (currentActiveDag.artifacts || []).filter(art => (task.output_artifact_ids || []).includes(art.id));
                     
                     // Retrieve pre-calculated backend validation status
                     const failedValidation = outputArtifacts.find(art => art.metadata_json?.validation?.is_valid === false);
@@ -642,16 +673,16 @@ export const WorkspaceHome = () => {
                   })
                 ) : (
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                    {activeDag ? 'No tasks reported by backend yet.' : 'Loading pipeline data...'}
+                    {currentActiveDag ? 'No tasks reported by backend yet.' : 'Loading pipeline data...'}
                   </div>
                 )}
               </div>
 
               {/* Pipeline action controls — wired to backend endpoints */}
-              {activeDag && activeDag.pipeline && (
+              {currentActiveDag && currentActiveDag.pipeline && (
                 <div style={{ marginTop: '24px' }}>
                   <PipelineControls
-                    status={activeDag.pipeline.status}
+                    status={currentActiveDag.pipeline.status}
                     onPause={null}  /* Backend pause endpoint not yet available */
                     onResume={null} /* Backend resume endpoint not yet available */
                     onCancel={async () => {
@@ -677,18 +708,18 @@ export const WorkspaceHome = () => {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', width: '100%', maxWidth: '520px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '20px', fontSize: '0.8rem' }}>
                 <div>Pages: <strong>{activeDoc?.page_count || pipelineMetadata?.summary?.pages || 'Not Available'}</strong></div>
-                <div>Chunks: <strong>{pipelineMetadata?.chunk_count || (activeDag?.artifacts || []).find(a => a.artifact_type === 'graph_chunks')?.metadata_json?.chunk_count || 'Not Available'}</strong></div>
-                <div>Embeddings: <strong>{pipelineMetadata?.embedding_count || (activeDag?.artifacts || []).find(a => a.artifact_type === 'graph_embeddings')?.metadata_json?.total_embeddings || 'Not Available'}</strong></div>
-                <div>Graph Nodes: <strong>{(activeDag?.artifacts || []).find(a => a.artifact_type === 'document_graph')?.metadata_json?.stats?.node_count || 'Not Available'}</strong></div>
-                <div>Graph Edges: <strong>{(activeDag?.artifacts || []).find(a => a.artifact_type === 'document_graph')?.metadata_json?.stats?.edge_count || 'Not Available'}</strong></div>
-                <div>Processing Time: <strong>{(activeDag?.artifacts || []).find(a => a.artifact_type === 'graph_embeddings')?.metadata_json?.embedding_generation_duration ? `${Math.round((activeDag?.artifacts || []).find(a => a.artifact_type === 'graph_embeddings')?.metadata_json?.embedding_generation_duration)}s` : 'Not Available'}</strong></div>
+                <div>Chunks: <strong>{pipelineMetadata?.chunk_count || (currentActiveDag?.artifacts || []).find(a => a.artifact_type === 'graph_chunks')?.metadata_json?.chunk_count || 'Not Available'}</strong></div>
+                <div>Embeddings: <strong>{pipelineMetadata?.embedding_count || (currentActiveDag?.artifacts || []).find(a => a.artifact_type === 'graph_embeddings')?.metadata_json?.total_embeddings || 'Not Available'}</strong></div>
+                <div>Graph Nodes: <strong>{(currentActiveDag?.artifacts || []).find(a => a.artifact_type === 'document_graph')?.metadata_json?.stats?.node_count || 'Not Available'}</strong></div>
+                <div>Graph Edges: <strong>{(currentActiveDag?.artifacts || []).find(a => a.artifact_type === 'document_graph')?.metadata_json?.stats?.edge_count || 'Not Available'}</strong></div>
+                <div>Processing Time: <strong>{(currentActiveDag?.artifacts || []).find(a => a.artifact_type === 'graph_embeddings')?.metadata_json?.embedding_generation_duration ? `${Math.round((currentActiveDag?.artifacts || []).find(a => a.artifact_type === 'graph_embeddings')?.metadata_json?.embedding_generation_duration)}s` : 'Not Available'}</strong></div>
               </div>
               <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
                 {/* Chat is only accessible when the backend confirms pipeline completion */}
                 <Button
                   variant="primary"
                   onClick={() => setWorkspaceState('chatting')}
-                  disabled={activeDag?.status?.toLowerCase() !== 'completed'}
+                  disabled={currentActiveDag?.status?.toLowerCase() !== 'completed'}
                 >
                   Open Chat
                 </Button>
@@ -839,8 +870,8 @@ export const WorkspaceHome = () => {
               <div>
                 <span style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>Pipeline Visual DAG (Frozen MR-RAG Flow)</span>
                 <PipelineDAG
-                  tasks={activeDag?.tasks || []}
-                  artifacts={activeDag?.artifacts || []}
+                  tasks={currentActiveDag?.tasks || []}
+                  artifacts={currentActiveDag?.artifacts || []}
                   selectedNodeId={selectedDagNode?.id}
                   onSelectNode={(node) => setSelectedDagNode(node)}
                 />
@@ -850,8 +881,8 @@ export const WorkspaceHome = () => {
               <div>
                 <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Pipeline Task Stages</span>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
-                  {activeDag?.tasks?.length > 0 ? (
-                    activeDag.tasks.map((task, idx) => (
+                  {currentActiveDag?.tasks?.length > 0 ? (
+                    currentActiveDag.tasks.map((task, idx) => (
                       <Badge
                         key={idx}
                         variant={task.status === 'completed' ? 'success' : task.status === 'failed' ? 'failure' : 'warning'}
@@ -877,9 +908,9 @@ export const WorkspaceHome = () => {
               />
 
               {/* Error Panel — derived from failed backend tasks, no hardcoded errors */}
-              {activeDag?.tasks?.some(t => t.status === 'failed' || t.status === 'cancelled') && (
+              {currentActiveDag?.tasks?.some(t => t.status === 'failed' || t.status === 'cancelled') && (
                 <ErrorPanel
-                  errors={(activeDag.tasks || [])
+                  errors={(currentActiveDag.tasks || [])
                     .filter(t => t.status === 'failed' || t.status === 'cancelled')
                     .map(t => {
                       const sortTimestamp = t.completed_at || t.updated_at || t.created_at || '';
@@ -921,8 +952,8 @@ export const WorkspaceHome = () => {
             <div style={{ padding: '16px', overflow: 'auto', height: '100%' }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Pipeline Artifact Files</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
-                {activeDag?.artifacts?.length > 0 ? (
-                  activeDag.artifacts.map((artifact, idx) => {
+                {currentActiveDag?.artifacts?.length > 0 ? (
+                  currentActiveDag.artifacts.map((artifact, idx) => {
                     const sizeKB = artifact.size_bytes ? `(${Math.round(artifact.size_bytes / 1024)} KB)` : '';
                     return (
                       <span key={idx} style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
