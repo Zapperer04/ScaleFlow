@@ -6,16 +6,15 @@ export const ConsoleToolbar = ({
   onSearchChange, 
   levelFilter, 
   onLevelFilterChange, 
-  categoryFilter,
-  onCategoryFilterChange,
+  taskTypeFilter,
+  onTaskTypeFilterChange,
+  taskTypeOptions = [],
   autoScroll, 
   onAutoScrollToggle, 
   onCopy, 
   onDownload, 
-  onClear 
+  onResetFilters 
 }) => {
-  const categories = ['ALL', 'SYSTEM', 'PIPELINE', 'WORKER', 'PROVIDER', 'DATABASE', 'VECTOR DB', 'GRAPH', 'LLM'];
-
   return (
     <div
       style={{
@@ -34,21 +33,24 @@ export const ConsoleToolbar = ({
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', padding: '2px 8px', backgroundColor: 'rgba(0,0,0,0.2)', width: '150px' }}>
         <Search size={12} style={{ color: 'rgba(255,255,255,0.4)' }} />
         <input
+          id="log-search"
           type="text"
           placeholder="Filter logs..."
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
+          aria-label="Search logs"
           style={{ background: 'none', border: 'none', color: '#fff', outline: 'none', width: '100%', fontSize: '10.5px' }}
         />
       </div>
 
-      {/* Category Filter */}
+      {/* Task Type Filter */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         <Filter size={11} style={{ color: 'rgba(255,255,255,0.4)' }} />
-        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px' }}>CAT:</span>
+        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '10px' }}>TASK:</span>
         <select
-          value={categoryFilter || 'ALL'}
-          onChange={(e) => onCategoryFilterChange?.(e.target.value)}
+          value={taskTypeFilter || 'all'}
+          onChange={(e) => onTaskTypeFilterChange?.(e.target.value)}
+          aria-label="Filter by task type"
           style={{
             backgroundColor: 'rgba(0,0,0,0.4)',
             border: '1px solid rgba(255,255,255,0.08)',
@@ -60,8 +62,8 @@ export const ConsoleToolbar = ({
             fontFamily: 'monospace',
           }}
         >
-          {categories.map(cat => (
-            <option key={cat} value={cat}>{cat}</option>
+          {taskTypeOptions.map(opt => (
+            <option key={opt} value={opt}>{opt.toUpperCase()}</option>
           ))}
         </select>
       </div>
@@ -72,6 +74,7 @@ export const ConsoleToolbar = ({
         <select
           value={levelFilter}
           onChange={(e) => onLevelFilterChange(e.target.value)}
+          aria-label="Filter by severity"
           style={{
             backgroundColor: 'rgba(0,0,0,0.4)',
             border: '1px solid rgba(255,255,255,0.08)',
@@ -85,7 +88,6 @@ export const ConsoleToolbar = ({
         >
           <option value="all">ALL</option>
           <option value="info">INFO</option>
-          <option value="success">SUCCESS</option>
           <option value="warning">WARN</option>
           <option value="error">ERR</option>
         </select>
@@ -106,6 +108,7 @@ export const ConsoleToolbar = ({
       <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
         <button
           onClick={onCopy}
+          aria-label="Copy visible logs to clipboard"
           style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', padding: '4px', fontSize: '10px' }}
           title="Copy to clipboard"
         >
@@ -114,6 +117,7 @@ export const ConsoleToolbar = ({
 
         <button
           onClick={onDownload}
+          aria-label="Download logs"
           style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', padding: '4px', fontSize: '10px' }}
           title="Download log file"
         >
@@ -121,11 +125,12 @@ export const ConsoleToolbar = ({
         </button>
 
         <button
-          onClick={onClear}
+          onClick={onResetFilters}
+          aria-label="Reset all log filters"
           style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px', fontSize: '10px' }}
-          title="Clear screen"
+          title="Reset filters"
         >
-          <Trash2 size={11} /> CLEAR
+          <Trash2 size={11} /> RESET FILTERS
         </button>
       </div>
     </div>

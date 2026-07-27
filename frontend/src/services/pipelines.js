@@ -99,8 +99,8 @@ export const runPipelineTests = async () => {
   return response.data;
 };
 
-export const fetchPipelineTimeline = async (pipelineId) => {
-  const response = await apiClient.get(`/pipelines/${pipelineId}/timeline`);
+export const fetchPipelineTimeline = async (pipelineId, signal) => {
+  const response = await apiClient.get(`/pipelines/${pipelineId}/timeline`, { signal });
   return response.data;
 };
 
@@ -108,3 +108,4 @@ export const retryPipeline = async (pipelineId) => {
   const response = await apiClient.post(`/pipelines/${pipelineId}/retry`);
   return response.data;
 };
+

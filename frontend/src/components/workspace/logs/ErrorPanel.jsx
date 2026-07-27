@@ -1,14 +1,39 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, ShieldAlert, RefreshCw } from 'lucide-react';
 
-const ToolIcon = ({ size }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-  </svg>
-);
 
-export const ErrorPanel = ({ errors = [], onRetry }) => {
-  const [expandedIndex, setExpandedIndex] = useState(null);
+
+export const ErrorPanel = ({ errors = [], onRetryTask }) => {
+  const [expandedTaskId, setExpandedTaskId] = useState(null);
+  const [loadingTaskId, setLoadingTaskId] = useState(null);
+  const [retryErrors, setRetryErrors] = useState({}); // taskId -> error message string
+
+  const handleTaskRetryClick = async (e, task, force = false) => {
+    e.stopPropagation();
+    if (loadingTaskId === task.id) return; // Reject duplicate clicks
+
+    setLoadingTaskId(task.id);
+    // Clear any previous retry error for this task
+    setRetryErrors(prev => {
+      const copy = { ...prev };
+      delete copy[task.id];
+      return copy;
+    });
+
+    try {
+      await onRetryTask(task.id, force);
+    } catch (err) {
+      console.error(`Failed to retry task ${task.id}:`, err);
+      // Retrieve the backend error message
+      const errMsg = err.response?.data?.error || err.message || "Failed to trigger retry.";
+      setRetryErrors(prev => ({
+        ...prev,
+        [task.id]: errMsg
+      }));
+    } finally {
+      setLoadingTaskId(null);
+    }
+  };
 
   return (
     <div style={{
@@ -82,18 +107,28 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-          {errors.map((err, idx) => {
-            const expanded = expandedIndex === idx;
-            const isErr    = err.level?.toLowerCase() === 'error';
-            const accent   = isErr ? '#ef4444' : '#f59e0b';
-            const isRecoverable = err.recoverable !== false;
-            const retriesText = `${err.retries || 0} / ${err.maxRetries || 3}`;
+          {errors.map((err) => {
+            const expanded = expandedTaskId === err.id;
+            const accent = '#ef4444'; // Capitalized statuses FAILED and CANCELLED are error level accent
+            
+            const retriesText = `${err.retries} / ${err.maxRetries}`;
+            const queueWaitText = typeof err.queueWait === 'number' ? `${err.queueWait.toFixed(2)} s` : 'Not Available';
+            const executionDurationText = typeof err.executionDuration === 'number' ? `${err.executionDuration.toFixed(2)} s` : 'Not Available';
+            
+            // Format state status verbatim (e.g. FAILED, CANCELLED)
+            const statusDisplay = String(err.status || 'failed').toUpperCase();
+            
+            const isTaskLoading = loadingTaskId === err.id;
+            const retryErrorMsg = retryErrors[err.id];
+            
+            // Force Retry action is disabled because the backend does not expose a machine-readable force indicator.
+            const showForceRetry = false;
 
             return (
-              <div key={idx} style={{ borderBottom: idx < errors.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+              <div key={err.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                 {/* Accordion header */}
                 <div
-                  onClick={() => setExpandedIndex(expanded ? null : idx)}
+                  onClick={() => setExpandedTaskId(expanded ? null : err.id)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -120,7 +155,21 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
                     {err.stage?.toUpperCase() || 'FAULT'}
                   </span>
 
-                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#fff', flex: 1 }}>
+                  <span style={{
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    letterSpacing: '0.05em',
+                    padding: '2px 7px',
+                    borderRadius: 4,
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    color: '#94a3b8',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    flexShrink: 0,
+                  }}>
+                    {statusDisplay}
+                  </span>
+
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#fff', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {err.message}
                   </span>
 
@@ -130,7 +179,7 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
                   </div>
                 </div>
 
-                {/* Expanded Airflow-style fault details */}
+                {/* Expanded Airflow-style fault details (strictly read-only) */}
                 {expanded && (
                   <div style={{
                     padding: '16px 18px 20px',
@@ -145,17 +194,16 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
                     {/* Airflow Properties grid */}
                     <div style={{
                       display: 'grid',
-                      gridTemplateColumns: '120px 1fr',
+                      gridTemplateColumns: '150px 1fr',
                       gap: '6px 12px',
                       color: 'rgba(255,255,255,0.6)',
                     }}>
                       {[
-                        ['Stage', err.stage || 'Unknown'],
-                        ['Worker ID', err.worker || 'Unassigned'],
-                        ['Recoverable', isRecoverable ? 'YES (Auto-recovery supported)' : 'NO (Fatal stage failure)'],
+                        ['Stage Name', err.stage || 'Not Available'],
+                        ['Worker ID', err.worker || 'Not Available'],
                         ['Retry Progress', retriesText],
-                        ['Queue Wait Time', err.queueWait ? `${err.queueWait}s` : 'Not Available'],
-                        ['Execution Duration', err.executionDuration ? `${err.executionDuration}s` : 'Not Available'],
+                        ['Queue Wait Time', queueWaitText],
+                        ['Execution Duration', executionDurationText],
                       ].map(([k, v]) => (
                         <React.Fragment key={k}>
                           <span style={{ color: 'rgba(255,255,255,0.35)' }}>{k}:</span>
@@ -164,69 +212,98 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
                       ))}
                     </div>
 
-                    {/* Suggested fix */}
-                    {err.suggestedFix && (
-                      <div style={{
-                        display: 'flex',
-                        gap: 10,
-                        alignItems: 'flex-start',
-                        padding: '10px 14px',
-                        background: 'rgba(16,185,129,0.05)',
-                        border: '1px solid rgba(16,185,129,0.2)',
-                        borderRadius: 8,
-                        color: '#10b981',
-                        fontSize: '11px',
-                      }}>
-                        <ToolIcon size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                        <div>
-                          <strong>Suggested Action:</strong><br />
-                          {err.suggestedFix}
-                        </div>
+                    {/* Backend Diagnostic Message */}
+                    {err.message && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span style={{ color: 'rgba(255,255,255,0.35)' }}>Backend Diagnostic Message:</span>
+                        <pre style={{
+                          margin: 0,
+                          padding: '12px 14px',
+                          background: 'rgba(0,0,0,0.5)',
+                          border: '1px solid rgba(255,255,255,0.06)',
+                          borderRadius: 8,
+                          overflowX: 'auto',
+                          color: '#ef4444',
+                          fontSize: '10.5px',
+                          lineHeight: 1.6,
+                        }}>
+                          {err.message}
+                        </pre>
                       </div>
                     )}
 
-                    {/* Stack trace */}
-                    {err.stackTrace && (
-                      <pre style={{
-                        margin: 0,
-                        padding: '12px 14px',
-                        background: 'rgba(0,0,0,0.5)',
-                        border: '1px solid rgba(255,255,255,0.06)',
+                    {/* Error display from failed retry trigger */}
+                    {retryErrorMsg && (
+                      <div style={{
+                        padding: '10px 14px',
+                        background: 'rgba(239,68,68,0.05)',
+                        border: '1px solid rgba(239,68,68,0.25)',
                         borderRadius: 8,
-                        overflowX: 'auto',
                         color: '#ef4444',
-                        fontSize: '10.5px',
-                        lineHeight: 1.6,
+                        fontSize: '11px',
                       }}>
-                        {err.stackTrace}
-                      </pre>
+                        <strong>Retry Failed:</strong> {retryErrorMsg}
+                      </div>
                     )}
 
                     {/* Interactive Retry Trigger */}
-                    {onRetry && (
-                      <button
-                        onClick={() => onRetry(err)}
-                        style={{
-                          alignSelf: 'flex-start',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          background: 'rgba(59,130,246,0.1)',
-                          border: '1px solid rgba(59,130,246,0.3)',
-                          color: '#3b82f6',
-                          borderRadius: 6,
-                          padding: '6px 14px',
-                          fontSize: '11px',
-                          cursor: 'pointer',
-                          fontWeight: 600,
-                          transition: 'all 0.2s',
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.18)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(59,130,246,0.1)'}
-                      >
-                        <RefreshCw size={12} />
-                        Retry Task Stage
-                      </button>
+                    {onRetryTask && (
+                      <div style={{ display: 'flex', gap: 10 }}>
+                        <button
+                          onClick={(e) => handleTaskRetryClick(e, err, false)}
+                          disabled={loadingTaskId !== null}
+                          aria-label={`Retry task ${err.stage}`}
+                          style={{
+                            alignSelf: 'flex-start',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            background: isTaskLoading ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.1)',
+                            border: '1px solid rgba(59,130,246,0.3)',
+                            color: '#3b82f6',
+                            borderRadius: 6,
+                            padding: '6px 14px',
+                            fontSize: '11px',
+                            cursor: loadingTaskId !== null ? 'not-allowed' : 'pointer',
+                            opacity: loadingTaskId !== null && !isTaskLoading ? 0.5 : 1,
+                            fontWeight: 600,
+                            transition: 'all 0.2s',
+                          }}
+                          onMouseEnter={e => { if (loadingTaskId === null) e.currentTarget.style.background = 'rgba(59,130,246,0.18)'; }}
+                          onMouseLeave={e => { if (loadingTaskId === null) e.currentTarget.style.background = 'rgba(59,130,246,0.1)'; }}
+                        >
+                          <RefreshCw size={12} className={isTaskLoading ? "spin" : ""} style={{ animation: isTaskLoading ? "spin 1s linear infinite" : "none" }} />
+                          {isTaskLoading ? 'Retrying Task...' : 'Retry Task Stage'}
+                        </button>
+
+                        {showForceRetry && (
+                          <button
+                            onClick={(e) => handleTaskRetryClick(e, err, true)}
+                            disabled={loadingTaskId !== null}
+                            aria-label={`Force retry task ${err.stage}`}
+                            style={{
+                              alignSelf: 'flex-start',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              background: 'rgba(239, 68, 68, 0.1)',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              color: '#ef4444',
+                              borderRadius: 6,
+                              padding: '6px 14px',
+                              fontSize: '11px',
+                              cursor: loadingTaskId !== null ? 'not-allowed' : 'pointer',
+                              fontWeight: 600,
+                              transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={e => { if (loadingTaskId === null) e.currentTarget.style.background = 'rgba(239, 68, 68, 0.18)'; }}
+                            onMouseLeave={e => { if (loadingTaskId === null) e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }}
+                          >
+                            <RefreshCw size={12} />
+                            Force Retry Stage
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
@@ -235,6 +312,16 @@ export const ErrorPanel = ({ errors = [], onRetry }) => {
           })}
         </div>
       )}
+
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .spin {
+          animation: spin 1s linear infinite;
+        }
+      `}</style>
     </div>
   );
 };

@@ -27,7 +27,11 @@ import { PipelineHeader } from '../components/workspace/pipeline/PipelineHeader'
 import { PipelineDAG } from '../components/workspace/pipeline/PipelineDAG';
 
 export const WorkspaceHome = () => {
-  const { selectedPipelineId, setSelectedPipelineId, pipelines } = usePipeline();
+  const { 
+    selectedPipelineId, setSelectedPipelineId, pipelines,
+    timelineEvents, timelineLoading, timelineError,
+    refreshTrigger, onRetryTask
+  } = usePipeline();
   const { selectedDocumentId, setSelectedDocumentId, uploadedFiles, setUploadedFiles } = useDocument();
   const { selectDocument } = useWorkspace();
 
@@ -76,9 +80,6 @@ export const WorkspaceHome = () => {
 
   // Server-side document summary metadata from GET /pipelines/{id}/metadata
   const [pipelineMetadata, setPipelineMetadata] = useState(null);
-
-  // Real pipeline execution logs from /pipelines/{id}/timeline
-  const [pipelineLogs, setPipelineLogs] = useState([]);
 
   // pdf.js state
   const canvasRef = useRef(null);
@@ -221,37 +222,9 @@ export const WorkspaceHome = () => {
     loadDag();
     const interval = setInterval(loadDag, 3000);
     return () => clearInterval(interval);
-  }, [selectedPipelineId]);
+  }, [selectedPipelineId, refreshTrigger]);
 
-  // Fetch pipeline execution logs from /pipelines/{id}/timeline every 3s
-  useEffect(() => {
-    if (!selectedPipelineId) {
-      setPipelineLogs([]);
-      return;
-    }
-    const loadLogs = async () => {
-      try {
-        const timeline = await fetchPipelineTimeline(selectedPipelineId);
-        // Normalise to the shape ExecutionConsole expects:
-        // { timestamp, level, worker, stage, message }
-        const entries = Array.isArray(timeline) ? timeline : (timeline?.entries || timeline?.logs || []);
-        const normalised = entries.map(e => ({
-          timestamp: e.timestamp || e.created_at || '',
-          level:     e.level || (e.status === 'failed' ? 'error' : 'info'),
-          worker:    e.worker_id || e.worker || 'system',
-          stage:     e.task_type || e.stage || '',
-          message:   e.message || e.log_message || e.detail || '',
-        }));
-        setPipelineLogs(normalised);
-      } catch (e) {
-        // Timeline endpoint may not exist for all pipelines — silently fail
-        console.warn('fetchPipelineTimeline failed', e);
-      }
-    };
-    loadLogs();
-    const interval = setInterval(loadLogs, 3000);
-    return () => clearInterval(interval);
-  }, [selectedPipelineId]);
+
 
   // Query Execution Stage Timer
   useEffect(() => {
@@ -863,23 +836,50 @@ export const WorkspaceHome = () => {
               </div>
 
               {/* Execution Console — real logs from /pipelines/{id}/timeline */}
-              <ExecutionConsole logs={pipelineLogs} />
+              <ExecutionConsole 
+                events={timelineEvents} 
+                loading={timelineLoading} 
+                error={timelineError} 
+              />
 
               {/* Error Panel — derived from failed backend tasks, no hardcoded errors */}
-              {activeDag?.tasks?.some(t => t.status === 'failed') && (
+              {activeDag?.tasks?.some(t => t.status === 'failed' || t.status === 'cancelled') && (
                 <ErrorPanel
-                  errors={(activeDag.tasks || []).filter(t => t.status === 'failed').map(t => ({
-                    level:        'error',
-                    message:      t.error_message || t.task_type || 'Task failed',
-                    stage:        t.task_type || 'Not Available',
-                    worker:       t.worker_id   || 'Not Available',
-                    retries:      t.retry_count !== undefined ? t.retry_count : undefined,
-                    stackTrace:   t.error_details || null,
-                    timestamp:    t.completed_at || t.updated_at || '',
-                  }))}
-                  onRetry={async () => {
-                    try { await retryPipeline(selectedPipelineId); } catch (e) { console.error('retry failed', e); }
-                  }}
+                  errors={(activeDag.tasks || [])
+                    .filter(t => t.status === 'failed' || t.status === 'cancelled')
+                    .map(t => {
+                      const sortTimestamp = t.completed_at || t.updated_at || t.created_at || '';
+                      const displayTime = sortTimestamp
+                        ? new Date(sortTimestamp).toLocaleString()
+                        : 'Not Available';
+                      return {
+                        id:                t.id,
+                        level:             'error',
+                        status:            t.status,
+                        message:           t.error_message || `${t.type} stage failed`,
+                        stage:             t.type || 'Not Available',
+                        worker:            t.assigned_worker_id ?? 'Not Available',
+                        retries:           t.retry_count !== undefined ? t.retry_count : 0,
+                        maxRetries:        t.max_retries !== undefined ? t.max_retries : 3,
+                        queueWait:         t.queue_wait_duration !== undefined ? t.queue_wait_duration : 'Not Available',
+                        executionDuration: t.execution_duration !== undefined ? t.execution_duration : 'Not Available',
+                        timestamp:         displayTime,
+                        sortTimestamp:     sortTimestamp ? new Date(sortTimestamp).getTime() : 0,
+                      };
+                    })
+                    .sort((a, b) => {
+                      // 1. Newest timestamp first
+                      if (b.sortTimestamp !== a.sortTimestamp) {
+                        return b.sortTimestamp - a.sortTimestamp;
+                      }
+                      // 2. Highest retry count first
+                      if (b.retries !== a.retries) {
+                        return b.retries - a.retries;
+                      }
+                      // 3. Stage name order (alphabetical fallback)
+                      return a.stage.localeCompare(b.stage);
+                    })}
+                  onRetryTask={onRetryTask}
                 />
               )}
             </div>

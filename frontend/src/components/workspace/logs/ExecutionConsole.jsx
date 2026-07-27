@@ -1,94 +1,208 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import ConsoleToolbar from './ConsoleToolbar';
 
 const LEVEL_STYLE = {
-  error:   { color: '#ef4444', label: 'ERR ' },
-  warning: { color: '#f59e0b', label: 'WARN' },
-  success: { color: '#10b981', label: 'OK  ' },
-  info:    { color: '#3b82f6', label: 'INFO' },
+  ERROR:   { color: '#ef4444', label: 'ERR ' },
+  WARNING: { color: '#f59e0b', label: 'WARN' },
+  INFO:    { color: '#3b82f6', label: 'INFO' },
 };
 
-const CATEGORY_COLORS = {
-  SYSTEM:    '#94a3b8',
-  PIPELINE:  '#a78bfa',
-  WORKER:    '#34d399',
-  PROVIDER:  '#fbbf24',
-  DATABASE:  '#60a5fa',
-  'VECTOR DB': '#f472b6',
-  GRAPH:     '#38bdf8',
-  LLM:       '#c084fc',
-};
+const LogRow = React.memo(({ log }) => {
+  const ls = LEVEL_STYLE[log.level] || LEVEL_STYLE.INFO;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 10,
+        alignItems: 'baseline',
+        animation: 'fadeInLog 0.12s ease-out',
+        padding: '1px 0',
+        borderRadius: 3,
+      }}
+    >
+      {/* Timestamp */}
+      <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '10.5px', flexShrink: 0, userSelect: 'none' }}>
+        {log.displayTime}
+      </span>
 
-const inferCategory = (log) => {
-  const text = `${log.stage || ''} ${log.message || ''} ${log.event_type || ''}`.toUpperCase();
-  if (text.includes('VECTOR') || text.includes('QDRANT') || text.includes('UPSERT')) return 'VECTOR DB';
-  if (text.includes('GRAPH') || text.includes('NODE') || text.includes('EDGE')) return 'GRAPH';
-  if (text.includes('GEMINI') || text.includes('LLM') || text.includes('GROQ') || text.includes('OPENROUTER')) return 'LLM';
-  if (text.includes('OCR') || text.includes('PARSER') || text.includes('PROVIDER')) return 'PROVIDER';
-  if (text.includes('DATABASE') || text.includes('POSTGRES') || text.includes('SQL')) return 'DATABASE';
-  if (text.includes('WORKER') || text.includes('LEASE') || text.includes('CLAIM')) return 'WORKER';
-  if (text.includes('PIPELINE') || text.includes('DAG') || text.includes('TASK')) return 'PIPELINE';
-  return 'SYSTEM';
-};
+      {/* Level badge */}
+      <span style={{
+        color: ls.color,
+        fontWeight: 700,
+        fontSize: '10px',
+        flexShrink: 0,
+        letterSpacing: '0.05em',
+      }}>
+        {ls.label}
+      </span>
 
-export const ExecutionConsole = ({ logs = [] }) => {
+      {/* Worker */}
+      <span style={{ color: 'rgba(255,255,255,0.4)', flexShrink: 0, fontSize: '10.5px' }}>
+        {log.worker_id || 'system'}
+      </span>
+
+      {/* Task Type */}
+      {log.task_type && log.task_type !== 'unknown' && (
+        <span style={{ color: 'rgba(255,255,255,0.35)', flexShrink: 0, fontSize: '10.5px' }}>
+          {log.task_type}:
+        </span>
+      )}
+
+      {/* Message */}
+      <span style={{ color: 'rgba(255,255,255,0.75)', flex: 1, wordBreak: 'break-all' }}>
+        {log.message}
+      </span>
+    </div>
+  );
+});
+
+export const ExecutionConsole = ({ events = [], loading = false, error = null }) => {
   const [searchQuery, setSearchQuery]       = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [levelFilter, setLevelFilter]       = useState('all');
-  const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [taskTypeFilter, setTaskTypeFilter]   = useState('all');
   const [autoScroll, setAutoScroll]         = useState(true);
   const [paused, setPaused]                 = useState(false);
+  const [newEventCount, setNewEventCount]   = useState(0);
+
   const consoleEndRef = useRef(null);
   const containerRef  = useRef(null);
+  const prevEventsLengthRef = useRef(events.length);
 
-  const filteredLogs = logs.filter(log => {
-    const category = log.category || inferCategory(log);
-    const matchSearch = searchQuery
-      ? [log.message, log.stage, log.worker, log.category].some(v =>
-          v?.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-      : true;
-    const matchLevel = levelFilter === 'all' || log.level?.toLowerCase() === levelFilter;
-    const matchCategory = categoryFilter === 'ALL' || category === categoryFilter;
-    return matchSearch && matchLevel && matchCategory;
-  });
+  // Debounce search query
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 150);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
+  // Reset new event count when auto-scrolling is active or user reaches bottom
+  useEffect(() => {
+    if (autoScroll && !paused) {
+      setNewEventCount(0);
+    }
+  }, [autoScroll, paused]);
+
+  // Track new incoming events while paused to increment counter
+  useEffect(() => {
+    if (events.length > prevEventsLengthRef.current) {
+      if (paused) {
+        const added = events.length - prevEventsLengthRef.current;
+        setNewEventCount(prev => prev + added);
+      }
+    }
+    prevEventsLengthRef.current = events.length;
+  }, [events, paused]);
+
+  // Compute unique task types dynamically from current events array
+  const taskTypeOptions = useMemo(() => {
+    const types = new Set(events.map(e => e.task_type).filter(Boolean));
+    return ['all', ...Array.from(types)].sort();
+  }, [events]);
+
+  const filteredEvents = useMemo(() => {
+    let result = events;
+    if (levelFilter !== 'all') {
+      result = result.filter(e => e.level === levelFilter.toUpperCase());
+    }
+    if (taskTypeFilter !== 'all') {
+      result = result.filter(e => e.task_type === taskTypeFilter);
+    }
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
+      result = result.filter(e =>
+        e.event_type?.toLowerCase().includes(q) ||
+        e.task_type?.toLowerCase().includes(q) ||
+        e.worker_id?.toLowerCase().includes(q) ||
+        e.message?.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [events, levelFilter, taskTypeFilter, debouncedSearch]);
+
+  // Auto scroll effect
   useEffect(() => {
     if (autoScroll && !paused) {
       consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [logs, autoScroll, paused]);
+  }, [filteredEvents, autoScroll, paused]);
 
   const handleScroll = useCallback(() => {
     if (!containerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < 48;
-    if (!isNearBottom) setPaused(true);
-    else setPaused(false);
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 50;
+    if (isNearBottom) {
+      setPaused(false);
+      setNewEventCount(0);
+    } else {
+      setPaused(true);
+    }
   }, []);
 
+  const handleJumpToLatest = () => {
+    setPaused(false);
+    setNewEventCount(0);
+    consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Accessibility focus redirection: move focus to sentinel div
+    consoleEndRef.current?.focus();
+  };
+
   const handleCopy = () => {
-    navigator.clipboard.writeText(
-      filteredLogs.map(l => {
-        const cat = l.category || inferCategory(l);
-        return `${l.timestamp} [${(l.level || 'info').toUpperCase()}] [${cat}] ${l.worker || 'system'} — ${l.stage || 'exec'}: ${l.message}`;
-      }).join('\n')
-    );
+    // Preserve the exact visible ordering shown in the console
+    const text = filteredEvents.map(l => 
+      `[${l.rawTimestamp || 'Not Available'}] [${l.level}] [${l.worker_id}] [${l.task_type}] ${l.event_type}: ${l.message}`
+    ).join('\n');
+    
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).catch(() => {
+        alert("Clipboard copy failed. Try downloading the file.");
+      });
+    } else {
+      alert("Clipboard API not available. Try downloading the file.");
+    }
   };
 
   const handleDownload = () => {
-    const text = filteredLogs.map(l => {
-      const cat = l.category || inferCategory(l);
-      return `${l.timestamp} [${(l.level || 'info').toUpperCase()}] [${cat}] ${l.worker || 'system'} — ${l.stage || 'exec'}: ${l.message}`;
-    }).join('\n');
+    // Preserve the exact visible ordering shown in the console
+    const text = filteredEvents.map(l => 
+      `[${l.rawTimestamp || 'Not Available'}] [${l.level}] [${l.worker_id}] [${l.task_type}] ${l.event_type}: ${l.message}`
+    ).join('\n');
+    
+    const bom = '\uFEFF';
+    const blob = new Blob([bom + text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    
+    const dateStr = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').split('.')[0];
     const a = Object.assign(document.createElement('a'), {
-      href: URL.createObjectURL(new Blob([text], { type: 'text/plain' })),
-      download: `pipeline_log_${Date.now()}.txt`,
+      href: url,
+      download: `scaleflow_pipeline_${events[0]?.pipeline_id || 'log'}_${dateStr}.txt`,
     });
     a.click();
-    URL.revokeObjectURL(a.href);
+    URL.revokeObjectURL(url);
   };
 
-  const handleClear = () => { setSearchQuery(''); setLevelFilter('all'); setCategoryFilter('ALL'); };
+  const handleDownloadJson = () => {
+    // Exclude displayTime from JSON export per specification
+    const exportedEvents = filteredEvents.map(({ displayTime, ...rest }) => rest);
+    const text = JSON.stringify(exportedEvents, null, 2);
+    const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    
+    const dateStr = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').split('.')[0];
+    const a = Object.assign(document.createElement('a'), {
+      href: url,
+      download: `scaleflow_pipeline_${events[0]?.pipeline_id || 'log'}_${dateStr}.json`,
+    });
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleResetFilters = useCallback(() => {
+    setSearchQuery('');
+    setLevelFilter('all');
+    setTaskTypeFilter('all');
+  }, []);
 
   return (
     <div style={{
@@ -106,13 +220,14 @@ export const ExecutionConsole = ({ logs = [] }) => {
         onSearchChange={setSearchQuery}
         levelFilter={levelFilter}
         onLevelFilterChange={setLevelFilter}
-        categoryFilter={categoryFilter}
-        onCategoryFilterChange={setCategoryFilter}
+        taskTypeFilter={taskTypeFilter}
+        onTaskTypeFilterChange={setTaskTypeFilter}
+        taskTypeOptions={taskTypeOptions}
         autoScroll={autoScroll}
         onAutoScrollToggle={setAutoScroll}
         onCopy={handleCopy}
         onDownload={handleDownload}
-        onClear={handleClear}
+        onResetFilters={handleResetFilters}
       />
 
       {/* Terminal title bar */}
@@ -130,7 +245,26 @@ export const ExecutionConsole = ({ logs = [] }) => {
         <span style={{ marginLeft: 8, fontSize: '10px', color: 'rgba(255,255,255,0.25)', fontFamily: 'monospace' }}>
           scaleflow — live backend execution log stream
         </span>
-        {paused && (
+        {paused && newEventCount > 0 && (
+          <button
+            onClick={handleJumpToLatest}
+            aria-label={`Jump to latest log entry, ${newEventCount} new events`}
+            style={{
+              marginLeft: 'auto',
+              fontSize: '9px',
+              color: '#3b82f6',
+              background: 'rgba(59,130,246,0.1)',
+              border: '1px solid rgba(59,130,246,0.2)',
+              borderRadius: 4,
+              padding: '1px 6px',
+              cursor: 'pointer',
+              fontFamily: 'monospace',
+            }}
+          >
+            ⬇ {newEventCount} NEW EVENTS
+          </button>
+        )}
+        {paused && newEventCount === 0 && (
           <span style={{
             marginLeft: 'auto',
             fontSize: '9px',
@@ -150,6 +284,9 @@ export const ExecutionConsole = ({ logs = [] }) => {
       <div
         ref={containerRef}
         onScroll={handleScroll}
+        role="log"
+        aria-live="polite"
+        aria-label="Pipeline execution log"
         style={{
           height: 280,
           overflowY: 'auto',
@@ -164,77 +301,36 @@ export const ExecutionConsole = ({ logs = [] }) => {
         }}
         className="console-scrollbar"
       >
-        {filteredLogs.length === 0 ? (
-          <div style={{ color: 'rgba(255,255,255,0.2)', textAlign: 'center', marginTop: 60, fontSize: '12px' }}>
-            — no log entries match active category or search filters —
+        {error ? (
+          <div role="alert" style={{ color: '#ef4444', textAlign: 'center', marginTop: 60, fontSize: '12px' }}>
+            Error loading timeline: {error}
           </div>
-        ) : filteredLogs.map((log, idx) => {
-          const lKey = log.level?.toLowerCase() || 'info';
-          const ls   = LEVEL_STYLE[lKey] || LEVEL_STYLE.info;
-          const cat  = log.category || inferCategory(log);
-          const catColor = CATEGORY_COLORS[cat] || '#94a3b8';
-          return (
-            <div
-              key={idx}
-              style={{
-                display: 'flex',
-                gap: 10,
-                alignItems: 'baseline',
-                animation: 'fadeInLog 0.12s ease-out',
-                padding: '1px 0',
-                borderRadius: 3,
-              }}
-            >
-              {/* Timestamp */}
-              <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '10.5px', flexShrink: 0, userSelect: 'none' }}>
-                {log.timestamp}
-              </span>
+        ) : loading && filteredEvents.length === 0 ? (
+          <div role="status" style={{ color: 'rgba(255,255,255,0.2)', textAlign: 'center', marginTop: 60, fontSize: '12px' }}>
+            Loading execution events...
+          </div>
+        ) : filteredEvents.length === 0 ? (
+          <div role="status" style={{ color: 'rgba(255,255,255,0.2)', textAlign: 'center', marginTop: 60, fontSize: '12px' }}>
+            No execution events have been recorded for this pipeline.
+          </div>
+        ) : (
+          filteredEvents.map((log) => {
+            if (log.id === null || log.id === undefined) return null;
+            return <LogRow key={log.id} log={log} />;
+          })
+        )}
+        <div ref={consoleEndRef} tabIndex={-1} style={{ outline: 'none' }} />
+      </div>
 
-              {/* Level badge */}
-              <span style={{
-                color: ls.color,
-                fontWeight: 700,
-                fontSize: '10px',
-                flexShrink: 0,
-                letterSpacing: '0.05em',
-              }}>
-                {ls.label}
-              </span>
-
-              {/* Category tag */}
-              <span style={{
-                color: catColor,
-                background: `${catColor}12`,
-                border: `1px solid ${catColor}30`,
-                fontSize: '9px',
-                fontWeight: 700,
-                padding: '1px 5px',
-                borderRadius: 3,
-                flexShrink: 0,
-              }}>
-                [{cat}]
-              </span>
-
-              {/* Worker */}
-              <span style={{ color: 'rgba(255,255,255,0.4)', flexShrink: 0, fontSize: '10.5px' }}>
-                {log.worker || 'system'}
-              </span>
-
-              {/* Stage */}
-              {log.stage && (
-                <span style={{ color: 'rgba(255,255,255,0.35)', flexShrink: 0, fontSize: '10.5px' }}>
-                  {log.stage}:
-                </span>
-              )}
-
-              {/* Message */}
-              <span style={{ color: 'rgba(255,255,255,0.75)', flex: 1, wordBreak: 'break-all' }}>
-                {log.message}
-              </span>
-            </div>
-          );
-        })}
-        <div ref={consoleEndRef} />
+      {/* Secondary JSON Download Action */}
+      <div style={{ padding: '4px 16px', display: 'flex', justifyContent: 'flex-end', background: 'rgba(0,0,0,0.1)' }}>
+        <button
+          onClick={handleDownloadJson}
+          aria-label="Download logs as JSON"
+          style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: '9px', fontFamily: 'monospace' }}
+        >
+          [DOWNLOAD JSON]
+        </button>
       </div>
 
       <style>{`
@@ -255,4 +351,5 @@ export const ExecutionConsole = ({ logs = [] }) => {
     </div>
   );
 };
+
 export default ExecutionConsole;

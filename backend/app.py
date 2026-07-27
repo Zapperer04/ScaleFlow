@@ -700,8 +700,9 @@ def retry_task(task_id):
         if not task:
             return jsonify({'error': 'Task not found'}), 404
             
-        if task.status not in ['failed', 'timed_out', 'cancelled', 'pending']:
-            return jsonify({'error': f'Cannot retry task with status {task.status}'}), 400
+        status_val = task.status.value if hasattr(task.status, 'value') else str(task.status)
+        if status_val not in ['failed', 'timed_out', 'cancelled', 'pending']:
+            return jsonify({'error': f'Cannot retry task with status {status_val}'}), 400
             
         data = request.json or {}
         force = data.get('force', False)
@@ -2011,7 +2012,7 @@ def get_pipeline_timeline(pipeline_id):
                     "message": log.message,
                     "worker_id": log.worker_id,
                     "pipeline_id": pipeline_id,
-                    "created_at": log.created_at.isoformat() if log.created_at else None
+                    "created_at": log.created_at.isoformat() + "Z" if log.created_at else None
                 })
                 
         return jsonify(timeline), 200
