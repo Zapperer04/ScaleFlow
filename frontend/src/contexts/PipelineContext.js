@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect, useRef, useMemo } from 'react';
-import { fetchPipelineTimeline, retryTask, fetchPipelineReplay } from '../services/pipelines';
+import { fetchPipelineTimeline, retryTask, fetchPipelineReplay, fetchPipelinePerformance } from '../services/pipelines';
 
 const PipelineContext = createContext(null);
 
@@ -382,6 +382,15 @@ export const PipelineProvider = ({ children }) => {
   const [replayError, setReplayError] = useState(null);
   const [replayLoading, setReplayLoading] = useState(false);
 
+  // Performance Analytics Hooks
+  const [performanceModel, setPerformanceModel] = useState(null);
+  const [performanceLoading, setPerformanceLoading] = useState(false);
+  const [performanceError, setPerformanceError] = useState(null);
+  const [timelineZoom, setTimelineZoom] = useState(0.1); // pixels per ms
+  const [timelineOffset, setTimelineOffset] = useState(0);
+  const [selectedPerformanceSpanId, setSelectedPerformanceSpanId] = useState(null);
+  const abortPerformanceFetchRef = useRef(null);
+
   // Time-Travel Comparison State Hooks
   const [selectedSnapshotAIndex, setSelectedSnapshotAIndex] = useState(null);
   const [selectedSnapshotBIndex, setSelectedSnapshotBIndex] = useState(null);
@@ -496,6 +505,13 @@ export const PipelineProvider = ({ children }) => {
     setSelectedSnapshotAIndex(null);
     setSelectedSnapshotBIndex(null);
     diffCacheRef.current = {};
+    if (abortPerformanceFetchRef.current) {
+      abortPerformanceFetchRef.current.abort();
+    }
+    setPerformanceModel(null);
+    setPerformanceLoading(false);
+    setPerformanceError(null);
+    setSelectedPerformanceSpanId(null);
   }, [selectedPipelineId]);
 
   // Playback Control Actions
@@ -555,6 +571,15 @@ export const PipelineProvider = ({ children }) => {
       setReplaySnapshots(computed);
       setReplayAnalysis(data.analysis || null);
       setReplayIndex(normalized.length > 0 ? 0 : -1);
+      
+      // Invalidate performance cache when replay is loaded/regenerated
+      if (abortPerformanceFetchRef.current) {
+        abortPerformanceFetchRef.current.abort();
+      }
+      setPerformanceModel(null);
+      setPerformanceError(null);
+      setSelectedPerformanceSpanId(null);
+      
       setReplayMode(true);
     } catch (err) {
       if (err.name === 'CanceledError' || err.name === 'AbortError') return;
@@ -586,7 +611,69 @@ export const PipelineProvider = ({ children }) => {
     setSelectedSnapshotAIndex(null);
     setSelectedSnapshotBIndex(null);
     diffCacheRef.current = {};
+    if (abortPerformanceFetchRef.current) {
+      abortPerformanceFetchRef.current.abort();
+    }
+    setPerformanceModel(null);
+    setPerformanceLoading(false);
+    setPerformanceError(null);
+    setSelectedPerformanceSpanId(null);
   };
+
+  const loadPerformance = async () => {
+    if (!selectedPipelineId) return;
+    if (performanceModel && performanceModel.pipeline_id === selectedPipelineId) {
+      return; // cached
+    }
+    if (abortPerformanceFetchRef.current) {
+      abortPerformanceFetchRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortPerformanceFetchRef.current = controller;
+    
+    setPerformanceLoading(true);
+    setPerformanceError(null);
+    try {
+      const data = await fetchPipelinePerformance(selectedPipelineId, controller.signal);
+      if (controller.signal.aborted) return;
+      setPerformanceModel(data);
+    } catch (err) {
+      if (err.name === 'CanceledError' || err.name === 'AbortError') return;
+      if (err.response && err.response.status === 409) {
+        setPerformanceError("Performance analytics unavailable: Replay unavailable.");
+      } else if (err.response && err.response.status === 404) {
+        setPerformanceError("Pipeline not found.");
+      } else {
+        setPerformanceError(err.message || "Failed to load performance analytics.");
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setPerformanceLoading(false);
+      }
+    }
+  };
+
+  // Synchronize selection state when span changes
+  useEffect(() => {
+    if (!selectedPerformanceSpanId || !performanceModel) return;
+    const timeline = performanceModel?.performance?.timeline || [];
+    const seg = timeline.find(s => s.segment_id === selectedPerformanceSpanId);
+    if (seg) {
+      setSelectedTaskId(seg.task_id);
+      if (replayEvents && replayEvents.length > 0) {
+        const eventIndex = replayEvents.findIndex(e => String(e.task_id) === String(seg.task_id) && e.timestamp === seg.started_at);
+        if (eventIndex !== -1) {
+          seekReplay(eventIndex);
+        } else {
+          const fallbackIdx = replayEvents.findIndex(e => String(e.task_id) === String(seg.task_id));
+          if (fallbackIdx !== -1) {
+            seekReplay(fallbackIdx);
+          }
+        }
+      }
+    }
+  }, [selectedPerformanceSpanId, performanceModel, replayEvents]);
+
 
   // Live Polling effect
   useEffect(() => {
@@ -716,7 +803,19 @@ export const PipelineProvider = ({ children }) => {
       selectSnapshotAIndex,
       selectSnapshotBIndex,
       swapSnapshots,
-      clearComparison
+      clearComparison,
+
+      // Performance exports
+      performanceModel,
+      performanceLoading,
+      performanceError,
+      timelineZoom,
+      setTimelineZoom,
+      timelineOffset,
+      setTimelineOffset,
+      selectedPerformanceSpanId,
+      setSelectedPerformanceSpanId,
+      loadPerformance
     }}>
       {children}
     </PipelineContext.Provider>

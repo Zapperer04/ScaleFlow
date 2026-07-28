@@ -25,6 +25,10 @@ import { ErrorPanel } from '../components/workspace/logs/ErrorPanel';
 import { PipelineControls } from '../components/workspace/pipeline/PipelineControls';
 import { PipelineHeader } from '../components/workspace/pipeline/PipelineHeader';
 import { PipelineDAG } from '../components/workspace/pipeline/PipelineDAG';
+import { PerformanceTimeline } from '../components/workspace/timeline/PerformanceTimeline';
+import { FlameGraph } from '../components/workspace/timeline/FlameGraph';
+import { WorkerUtilizationChart } from '../components/workspace/timeline/WorkerUtilizationChart';
+import { StageBreakdown } from '../components/workspace/timeline/StageBreakdown';
 
 export const WorkspaceHome = () => {
   const { 
@@ -35,7 +39,8 @@ export const WorkspaceHome = () => {
     selectedTraceId, setSelectedTraceId,
     selectedWorkerId, setSelectedWorkerId,
     replayMode, replayIndex, replaySnapshots,
-    comparisonMode
+    comparisonMode, loadPerformance,
+    performanceModel, performanceLoading, performanceError
   } = usePipeline();
   const { selectedDocumentId, setSelectedDocumentId, uploadedFiles, setUploadedFiles } = useDocument();
   const { selectDocument } = useWorkspace();
@@ -115,6 +120,13 @@ export const WorkspaceHome = () => {
     if (zoom) setZoomLevel(parseInt(zoom));
     if (page) setActivePdfPage(parseInt(page));
   }, [setSelectedDocumentId]);
+
+  // Load performance model once per replay session when Performance tab is opened
+  useEffect(() => {
+    if (bottomTab === 'performance' && replayMode) {
+      loadPerformance();
+    }
+  }, [bottomTab, replayMode, selectedPipelineId, loadPerformance]);
 
   useEffect(() => {
     if (!selectedDocumentId) {
@@ -856,8 +868,11 @@ export const WorkspaceHome = () => {
         {/* Collapsible Bottom Drawer */}
         <div style={{ borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-panel)', padding: '6px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: '16px' }}>
-            <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('dag'); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Pipeline Visual DAG</button>
-            <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('artifacts'); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Artifact Explorer</button>
+            <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('dag'); }} style={{ background: 'none', border: 'none', color: bottomTab === 'dag' ? 'var(--color-accent)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Pipeline Visual DAG</button>
+            <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('artifacts'); }} style={{ background: 'none', border: 'none', color: bottomTab === 'artifacts' ? 'var(--color-accent)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Artifact Explorer</button>
+            {replayMode && (
+              <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('performance'); }} style={{ background: 'none', border: 'none', color: bottomTab === 'performance' ? 'var(--color-accent)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Performance Analytics</button>
+            )}
           </div>
           <button onClick={() => setBottomDrawerCollapsed(!bottomDrawerCollapsed)} style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.75rem' }}>
             {bottomDrawerCollapsed ? '▲ Open Drawer' : '▼ Close'}
@@ -949,7 +964,7 @@ export const WorkspaceHome = () => {
                 />
               )}
             </div>
-          ) : (
+          ) : bottomTab === 'artifacts' ? (
             <div style={{ padding: '16px', overflow: 'auto', height: '100%' }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Pipeline Artifact Files</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
@@ -968,6 +983,29 @@ export const WorkspaceHome = () => {
                   </span>
                 )}
               </div>
+            </div>
+          ) : (
+            <div style={{ padding: '16px', overflow: 'auto', height: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Performance Analytics</span>
+              
+              {/* Load/Error states */}
+              {timelineLoading && (
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Analyzing pipeline execution latency...</div>
+              )}
+              {performanceError && (
+                <div style={{ fontSize: '0.75rem', color: 'var(--color-danger)' }}>{performanceError}</div>
+              )}
+              
+              {!timelineLoading && !performanceError && performanceModel && (
+                <>
+                  <PerformanceTimeline />
+                  <FlameGraph />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', minWidth: '800px' }}>
+                    <WorkerUtilizationChart workers={performanceModel.performance.workers} />
+                    <StageBreakdown stages={performanceModel.performance.stages} />
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

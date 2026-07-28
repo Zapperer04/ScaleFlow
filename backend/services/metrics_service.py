@@ -452,43 +452,13 @@ def calculate_pipeline_critical_path(db, pipeline_id):
         }
         
     # 3. Dynamic Programming for Longest Path in DAG
-    memo = {}
-    next_node = {}
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from critical_path import compute_dag_longest_path
+    task_ids = [t.id for t in tasks]
+    path, _ = compute_dag_longest_path(task_ids, adj, in_degree, weights)
     
-    def get_longest_path_from(node_id):
-        if node_id in memo:
-            return memo[node_id]
-            
-        max_weight = 0.0
-        best_child = None
-        for child_id in adj[node_id]:
-            child_weight = get_longest_path_from(child_id)
-            if child_weight > max_weight:
-                max_weight = child_weight
-                best_child = child_id
-                
-        memo[node_id] = weights[node_id]["total"] + max_weight
-        next_node[node_id] = best_child
-        return memo[node_id]
-        
-    roots = [t.id for t in tasks if in_degree[t.id] == 0]
-    if not roots:
+    if not path:
         return None
-        
-    longest_path_weight = -1.0
-    best_root = None
-    for r in roots:
-        w = get_longest_path_from(r)
-        if w > longest_path_weight:
-            longest_path_weight = w
-            best_root = r
-            
-    # Reconstruct path
-    path = []
-    curr = best_root
-    while curr is not None:
-        path.append(curr)
-        curr = next_node.get(curr)
         
     # Find bottleneck node (node on critical path with max weight)
     bottleneck_id = None

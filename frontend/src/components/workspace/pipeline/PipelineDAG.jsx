@@ -26,7 +26,8 @@ export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdge
     selectedSnapshotAIndex,
     selectedSnapshotBIndex,
     comparisonMode,
-    snapshotDiff
+    snapshotDiff,
+    performanceModel
   } = usePipeline();
 
   const defaultNodes = [
@@ -60,6 +61,21 @@ export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdge
     };
   };
 
+  const getPerformanceMetricsForTask = (taskId) => {
+    if (!performanceModel?.performance?.timeline) return null;
+    const taskSegs = performanceModel.performance.timeline.filter(s => String(s.task_id) === String(taskId));
+    if (taskSegs.length === 0) return null;
+    
+    const totalExec = taskSegs.reduce((acc, s) => acc + s.duration_ms, 0);
+    const totalWait = taskSegs.reduce((acc, s) => acc + (s.queue_wait_ms || 0), 0);
+    const retries = taskSegs.length - 1;
+    return {
+      execution_ms: totalExec,
+      queue_wait_ms: totalWait,
+      retries
+    };
+  };
+
   const buildTooltipText = (node, diffInfo, task) => {
     if (diffInfo) {
       let lines = [`Diff Details for ${node.name}:`];
@@ -81,10 +97,16 @@ export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdge
       return lines.join('\n');
     }
     if (task) {
-      return `${node.name}
+      const perf = getPerformanceMetricsForTask(task.id);
+      let base = `${node.name}
 Status: ${task.status}
 Worker: ${task.assigned_worker_id || 'None'}
 Retries: ${task.retry_count || 0}`;
+      
+      if (perf) {
+        base += `\nExecution Duration: ${perf.execution_ms}ms\nQueue Wait: ${perf.queue_wait_ms}ms`;
+      }
+      return base;
     }
     return node.name;
   };
@@ -183,11 +205,27 @@ Retries: ${task.retry_count || 0}`;
           const isActive = fromStatus === 'completed' && toStatus === 'running';
           const isDone = fromStatus === 'completed' && toStatus === 'completed';
 
+          const isCriticalEdge = (() => {
+            if (!performanceModel?.performance?.critical_path?.edges) return false;
+            return performanceModel.performance.critical_path.edges.some(edge => {
+              const [t1Id, t2Id] = edge;
+              const t1 = tasks.find(t => String(t.id) === String(t1Id));
+              const t2 = tasks.find(t => String(t.id) === String(t2Id));
+              return t1 && t2 && 
+                     (t1.type === fromNode.ref || t1.task_type === fromNode.ref) && 
+                     (t2.type === toNode.ref || t2.task_type === toNode.ref);
+            });
+          })();
+
           let strokeColor = '#334155';
           let strokeWidth = '1.5';
           let dashArray = '4 4';
 
-          if (isDone) {
+          if (isCriticalEdge) {
+            strokeColor = '#f59e0b'; // Amber warning color
+            strokeWidth = '4.5';
+            dashArray = 'none';
+          } else if (isDone) {
             strokeColor = '#10b981';
             strokeWidth = '2';
             dashArray = 'none';

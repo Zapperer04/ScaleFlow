@@ -119,3 +119,9 @@ export const fetchPipelineReplay = async (pipelineId, signal) => {
   return response.data;
 };
 
+export const fetchPipelinePerformance = async (pipelineId, signal) => {
+  const response = await apiClient.get(`/pipelines/${pipelineId}/performance`, { signal });
+  return response.data;
+};
+
+

@@ -104,7 +104,10 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
     selectSnapshotAIndex,
     selectSnapshotBIndex,
     swapSnapshots,
-    clearComparison
+    clearComparison,
+
+    // Performance Integration
+    performanceModel
   } = usePipeline();
 
   const [searchQuery, setSearchQuery]       = useState('');
@@ -431,6 +434,32 @@ export const ExecutionConsole = ({ events = [], loading = false, error = null })
           {replayAnalysis && (
             <div style={{ fontSize: '10.5px', color: 'rgba(255,255,255,0.7)', fontFamily: 'monospace', marginTop: '4px' }}>
               <strong>Root Cause Analysis:</strong> {replayAnalysis.root_cause} (Confidence: <span style={{ color: '#10b981', fontWeight: 'bold' }}>{replayAnalysis.confidence}</span>, Rule: <code>{replayAnalysis.rule}</code>)
+            </div>
+          )}
+          {performanceModel?.performance?.summary && (
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '16px',
+              fontSize: '10px',
+              color: 'rgba(255,255,255,0.6)',
+              fontFamily: 'monospace',
+              marginTop: '4px',
+              borderTop: '1px solid rgba(255,255,255,0.06)',
+              paddingTop: '4px'
+            }}>
+              <div>
+                DURATION: <strong style={{ color: '#60a5fa' }}>{performanceModel.performance.summary.pipeline_duration_ms}ms</strong>
+              </div>
+              <div>
+                CRITICAL PATH: <strong style={{ color: '#a78bfa' }}>{performanceModel.performance.summary.critical_path_duration_ms}ms</strong>
+              </div>
+              <div>
+                QUEUE WAIT: <strong style={{ color: '#fbbf24' }}>{performanceModel.performance.summary.queue_wait_ms}ms</strong>
+              </div>
+              <div>
+                RETRY OVERHEAD: <strong style={{ color: '#f87171' }}>{performanceModel.performance.summary.retry_ms}ms</strong>
+              </div>
             </div>
           )}
         </div>

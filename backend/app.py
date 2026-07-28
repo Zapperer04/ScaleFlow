@@ -4994,6 +4994,59 @@ def get_pipeline_replay(pipeline_id):
     finally:
         db.close()
 
+PERFORMANCE_CACHE = {}
+
+@app.route('/pipelines/<int:pipeline_id>/performance', methods=['GET'])
+def get_pipeline_performance(pipeline_id):
+    db = SessionLocal()
+    try:
+        from replay import build_replay
+        replay_data = build_replay(db, pipeline_id)
+        if not replay_data:
+            return jsonify({"error": "Pipeline not found"}), 404
+            
+        events = replay_data.get("events") or []
+        if not events:
+            return jsonify({"error": "Replay unavailable. No events recorded."}), 409
+            
+        event_count = len(events)
+        last_timestamp = events[-1]["timestamp"] if events else None
+        
+        # Check cache
+        cached = PERFORMANCE_CACHE.get(pipeline_id)
+        if cached and cached.get("event_count") == event_count and cached.get("last_timestamp") == last_timestamp:
+            return jsonify(cached["response"]), 200
+            
+        # Recompute
+        from performance_analysis import build_performance_model
+        try:
+            perf_model = build_performance_model(replay_data)
+        except Exception as ex:
+            return jsonify({"error": f"Analysis failed: {str(ex)}"}), 500
+            
+        response_body = {
+            "version": 1,
+            "schema": "performance-model-v1",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "pipeline_id": pipeline_id,
+            "correlation_id": replay_data.get("correlation_id"),
+            "performance": perf_model
+        }
+        
+        # Save to cache
+        PERFORMANCE_CACHE[pipeline_id] = {
+            "event_count": event_count,
+            "last_timestamp": last_timestamp,
+            "response": response_body
+        }
+        
+        return jsonify(response_body), 200
+    except Exception as e:
+        return jsonify({"error": f"Performance fetch failed: {str(e)}"}), 500
+    finally:
+        db.close()
+
+
 @app.route('/replay/pipelines/<int:pipeline_id>', methods=['GET'])
 def get_replay_details(pipeline_id):
     db = SessionLocal()
