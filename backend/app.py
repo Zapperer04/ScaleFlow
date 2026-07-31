@@ -5047,6 +5047,71 @@ def get_pipeline_performance(pipeline_id):
         db.close()
 
 
+OPTIMIZATION_CACHE = {}
+
+@app.route('/pipelines/<int:pipeline_id>/optimization', methods=['GET'])
+def get_pipeline_optimization(pipeline_id):
+    db = SessionLocal()
+    try:
+        from replay import build_replay
+        replay_data = build_replay(db, pipeline_id)
+        if not replay_data:
+            return jsonify({"error": "Pipeline not found"}), 404
+            
+        events = replay_data.get("events") or []
+        if not events:
+            return jsonify({"error": "Replay unavailable. No events recorded."}), 409
+            
+        event_count = len(events)
+        last_timestamp = events[-1]["timestamp"] if events else None
+        
+        # Check optimization cache
+        cached_opt = OPTIMIZATION_CACHE.get(pipeline_id)
+        if cached_opt and cached_opt.get("event_count") == event_count and cached_opt.get("last_timestamp") == last_timestamp:
+            return jsonify(cached_opt["response"]), 200
+            
+        # Get Performance Model (use cache or build)
+        from performance_analysis import build_performance_model
+        perf_model = None
+        cached_perf = PERFORMANCE_CACHE.get(pipeline_id)
+        if cached_perf and cached_perf.get("event_count") == event_count and cached_perf.get("last_timestamp") == last_timestamp:
+            perf_model = cached_perf["response"]["performance"]
+        else:
+            try:
+                perf_model = build_performance_model(replay_data)
+            except Exception as ex:
+                return jsonify({"error": f"Performance analysis failed: {str(ex)}"}), 500
+                
+        # Now perform optimization analysis
+        from performance_optimizer import analyze_performance
+        try:
+            opt_model = analyze_performance(perf_model)
+        except Exception as ex:
+            return jsonify({"error": f"Optimization analysis failed: {str(ex)}"}), 500
+            
+        response_body = {
+            "version": 1,
+            "schema": "optimization-model-v1",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "pipeline_id": pipeline_id,
+            "correlation_id": replay_data.get("correlation_id"),
+            "optimization": opt_model
+        }
+        
+        # Save to cache
+        OPTIMIZATION_CACHE[pipeline_id] = {
+            "event_count": event_count,
+            "last_timestamp": last_timestamp,
+            "response": response_body
+        }
+        
+        return jsonify(response_body), 200
+    except Exception as e:
+        return jsonify({"error": f"Optimization fetch failed: {str(e)}"}), 500
+    finally:
+        db.close()
+
+
 @app.route('/replay/pipelines/<int:pipeline_id>', methods=['GET'])
 def get_replay_details(pipeline_id):
     db = SessionLocal()

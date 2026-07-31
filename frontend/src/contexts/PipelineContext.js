@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect, useRef, useMemo } from 'react';
-import { fetchPipelineTimeline, retryTask, fetchPipelineReplay, fetchPipelinePerformance } from '../services/pipelines';
+import { fetchPipelineTimeline, retryTask, fetchPipelineReplay, fetchPipelinePerformance, fetchPipelineOptimization } from '../services/pipelines';
 
 const PipelineContext = createContext(null);
 
@@ -391,6 +391,12 @@ export const PipelineProvider = ({ children }) => {
   const [selectedPerformanceSpanId, setSelectedPerformanceSpanId] = useState(null);
   const abortPerformanceFetchRef = useRef(null);
 
+  // Optimization Hooks
+  const [optimizationModel, setOptimizationModel] = useState(null);
+  const [optimizationLoading, setOptimizationLoading] = useState(false);
+  const [optimizationError, setOptimizationError] = useState(null);
+  const abortOptimizationFetchRef = useRef(null);
+
   // Time-Travel Comparison State Hooks
   const [selectedSnapshotAIndex, setSelectedSnapshotAIndex] = useState(null);
   const [selectedSnapshotBIndex, setSelectedSnapshotBIndex] = useState(null);
@@ -508,10 +514,16 @@ export const PipelineProvider = ({ children }) => {
     if (abortPerformanceFetchRef.current) {
       abortPerformanceFetchRef.current.abort();
     }
+    if (abortOptimizationFetchRef.current) {
+      abortOptimizationFetchRef.current.abort();
+    }
     setPerformanceModel(null);
     setPerformanceLoading(false);
     setPerformanceError(null);
     setSelectedPerformanceSpanId(null);
+    setOptimizationModel(null);
+    setOptimizationLoading(false);
+    setOptimizationError(null);
   }, [selectedPipelineId]);
 
   // Playback Control Actions
@@ -572,13 +584,18 @@ export const PipelineProvider = ({ children }) => {
       setReplayAnalysis(data.analysis || null);
       setReplayIndex(normalized.length > 0 ? 0 : -1);
       
-      // Invalidate performance cache when replay is loaded/regenerated
+      // Invalidate performance & optimization cache when replay is loaded/regenerated
       if (abortPerformanceFetchRef.current) {
         abortPerformanceFetchRef.current.abort();
+      }
+      if (abortOptimizationFetchRef.current) {
+        abortOptimizationFetchRef.current.abort();
       }
       setPerformanceModel(null);
       setPerformanceError(null);
       setSelectedPerformanceSpanId(null);
+      setOptimizationModel(null);
+      setOptimizationError(null);
       
       setReplayMode(true);
     } catch (err) {
@@ -614,10 +631,16 @@ export const PipelineProvider = ({ children }) => {
     if (abortPerformanceFetchRef.current) {
       abortPerformanceFetchRef.current.abort();
     }
+    if (abortOptimizationFetchRef.current) {
+      abortOptimizationFetchRef.current.abort();
+    }
     setPerformanceModel(null);
     setPerformanceLoading(false);
     setPerformanceError(null);
     setSelectedPerformanceSpanId(null);
+    setOptimizationModel(null);
+    setOptimizationLoading(false);
+    setOptimizationError(null);
   };
 
   const loadPerformance = async () => {
@@ -649,6 +672,39 @@ export const PipelineProvider = ({ children }) => {
     } finally {
       if (!controller.signal.aborted) {
         setPerformanceLoading(false);
+      }
+    }
+  };
+
+  const loadOptimization = async () => {
+    if (!selectedPipelineId) return;
+    if (optimizationModel && optimizationModel.pipeline_id === selectedPipelineId) {
+      return; // cached
+    }
+    if (abortOptimizationFetchRef.current) {
+      abortOptimizationFetchRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortOptimizationFetchRef.current = controller;
+    
+    setOptimizationLoading(true);
+    setOptimizationError(null);
+    try {
+      const data = await fetchPipelineOptimization(selectedPipelineId, controller.signal);
+      if (controller.signal.aborted) return;
+      setOptimizationModel(data);
+    } catch (err) {
+      if (err.name === 'CanceledError' || err.name === 'AbortError') return;
+      if (err.response && err.response.status === 409) {
+        setOptimizationError("Optimization analysis unavailable: Replay unavailable.");
+      } else if (err.response && err.response.status === 404) {
+        setOptimizationError("Pipeline not found.");
+      } else {
+        setOptimizationError(err.message || "Failed to load optimization analysis.");
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setOptimizationLoading(false);
       }
     }
   };
@@ -815,7 +871,13 @@ export const PipelineProvider = ({ children }) => {
       setTimelineOffset,
       selectedPerformanceSpanId,
       setSelectedPerformanceSpanId,
-      loadPerformance
+      loadPerformance,
+
+      // Optimization exports
+      optimizationModel,
+      optimizationLoading,
+      optimizationError,
+      loadOptimization
     }}>
       {children}
     </PipelineContext.Provider>

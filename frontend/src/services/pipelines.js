@@ -124,4 +124,10 @@ export const fetchPipelinePerformance = async (pipelineId, signal) => {
   return response.data;
 };
 
+export const fetchPipelineOptimization = async (pipelineId, signal) => {
+  const response = await apiClient.get(`/pipelines/${pipelineId}/optimization`, { signal });
+  return response.data;
+};
+
+
 

@@ -29,6 +29,7 @@ import { PerformanceTimeline } from '../components/workspace/timeline/Performanc
 import { FlameGraph } from '../components/workspace/timeline/FlameGraph';
 import { WorkerUtilizationChart } from '../components/workspace/timeline/WorkerUtilizationChart';
 import { StageBreakdown } from '../components/workspace/timeline/StageBreakdown';
+import { OptimizationTab } from '../components/workspace/timeline/OptimizationTab';
 
 export const WorkspaceHome = () => {
   const { 
@@ -40,7 +41,9 @@ export const WorkspaceHome = () => {
     selectedWorkerId, setSelectedWorkerId,
     replayMode, replayIndex, replaySnapshots,
     comparisonMode, loadPerformance,
-    performanceModel, performanceLoading, performanceError
+    performanceModel, performanceLoading, performanceError,
+    optimizationModel, optimizationLoading, optimizationError,
+    loadOptimization
   } = usePipeline();
   const { selectedDocumentId, setSelectedDocumentId, uploadedFiles, setUploadedFiles } = useDocument();
   const { selectDocument } = useWorkspace();
@@ -121,12 +124,14 @@ export const WorkspaceHome = () => {
     if (page) setActivePdfPage(parseInt(page));
   }, [setSelectedDocumentId]);
 
-  // Load performance model once per replay session when Performance tab is opened
+  // Load performance & optimization model once per replay session when tab is opened
   useEffect(() => {
     if (bottomTab === 'performance' && replayMode) {
       loadPerformance();
+    } else if (bottomTab === 'optimization' && replayMode) {
+      loadOptimization();
     }
-  }, [bottomTab, replayMode, selectedPipelineId, loadPerformance]);
+  }, [bottomTab, replayMode, selectedPipelineId, loadPerformance, loadOptimization]);
 
   useEffect(() => {
     if (!selectedDocumentId) {
@@ -871,7 +876,10 @@ export const WorkspaceHome = () => {
             <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('dag'); }} style={{ background: 'none', border: 'none', color: bottomTab === 'dag' ? 'var(--color-accent)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Pipeline Visual DAG</button>
             <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('artifacts'); }} style={{ background: 'none', border: 'none', color: bottomTab === 'artifacts' ? 'var(--color-accent)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Artifact Explorer</button>
             {replayMode && (
-              <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('performance'); }} style={{ background: 'none', border: 'none', color: bottomTab === 'performance' ? 'var(--color-accent)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Performance Analytics</button>
+              <>
+                <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('performance'); }} style={{ background: 'none', border: 'none', color: bottomTab === 'performance' ? 'var(--color-accent)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Performance Analytics</button>
+                <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('optimization'); }} style={{ background: 'none', border: 'none', color: bottomTab === 'optimization' ? 'var(--color-accent)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Optimization</button>
+              </>
             )}
           </div>
           <button onClick={() => setBottomDrawerCollapsed(!bottomDrawerCollapsed)} style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.75rem' }}>
@@ -984,7 +992,7 @@ export const WorkspaceHome = () => {
                 )}
               </div>
             </div>
-          ) : (
+          ) : bottomTab === 'performance' ? (
             <div style={{ padding: '16px', overflow: 'auto', height: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Performance Analytics</span>
               
@@ -1006,6 +1014,16 @@ export const WorkspaceHome = () => {
                   </div>
                 </>
               )}
+            </div>
+          ) : (
+            <div style={{ padding: '16px', overflow: 'auto', height: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Performance Recommendations & Simulation</span>
+              <OptimizationTab 
+                key={optimizationModel?.pipeline_id || 'no-pipeline'}
+                optimizationModel={optimizationModel}
+                loading={optimizationLoading}
+                error={optimizationError}
+              />
             </div>
           )}
         </div>
