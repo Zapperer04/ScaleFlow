@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { usePipeline } from '../contexts/PipelineContext';
 import { useDocument } from '../contexts/DocumentContext';
@@ -6,14 +5,10 @@ import { useWorkspace } from '../contexts/WorkspaceContext';
 import {
   createQueryPipelineV1,
   fetchQueryPipelineAnswerV1,
-  explainQueryPipeline,
 } from '../services/search';
 import { fetchUploadedFiles, fetchPdfContent } from '../services/documents';
 import {
   fetchPipelineDetails,
-  fetchPipelineTimeline,
-  cancelPipeline,
-  retryPipeline,
 } from '../services/pipelines';
 import { apiClient } from '../services/apiClient';
 
@@ -64,13 +59,7 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
     timelineError,
     refreshTrigger,
     onRetryTask,
-    selectedTaskId, setSelectedTaskId,
-    selectedTraceId, setSelectedTraceId,
-    selectedWorkerId, setSelectedWorkerId,
     replayMode, replayIndex, replaySnapshots,
-    comparisonMode,
-    loadPerformance, loadOptimization, loadForecast, loadAdvisor,
-    performanceModel, optimizationModel, forecastModel,
   } = usePipeline();
 
   const { selectedDocumentId, setSelectedDocumentId, uploadedFiles, setUploadedFiles } = useDocument();
@@ -99,10 +88,8 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
       timestamp: new Date().toLocaleTimeString(),
     },
   ]);
-  const [activeQueryPipelineId, setActiveQueryPipelineId] = useState(null);
   const [currentQueryStage, setCurrentQueryStage] = useState('');
   const [queryTimer, setQueryTimer] = useState(0.0);
-  const [explainPayload, setExplainPayload] = useState(null);
   const [activeAnswerDetails, setActiveAnswerDetails] = useState(null);
 
   // Streaming stop ref
@@ -289,16 +276,14 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
   }, [currentQueryStage]);
 
   // ─────────────────────────────────────────────────────────
-  // Fetch explain payload after query completes
+  // Fetch answer details after query completes
   // ─────────────────────────────────────────────────────────
   const fetchAnswerExplain = async (pipelineId) => {
     try {
-      const exp = await explainQueryPipeline(pipelineId);
-      setExplainPayload(exp);
       const ans = await fetchQueryPipelineAnswerV1(pipelineId);
       setActiveAnswerDetails(ans);
     } catch (e) {
-      console.error('Error fetching explain metrics', e);
+      console.error('Error fetching answer details', e);
     }
   };
 
@@ -332,7 +317,6 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
       };
       const res = await createQueryPipelineV1(qpPayload);
       const pipeId = res.pipeline_id;
-      setActiveQueryPipelineId(pipeId);
       setCurrentQueryStage('embedding');
 
       const es = new EventSource(
