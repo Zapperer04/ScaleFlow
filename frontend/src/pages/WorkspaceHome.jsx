@@ -32,6 +32,12 @@ import { StageBreakdown } from '../components/workspace/timeline/StageBreakdown'
 import { OptimizationTab } from '../components/workspace/timeline/OptimizationTab';
 import { ForecastTab } from '../components/workspace/timeline/ForecastTab';
 import { SchedulingAdvisorTab } from '../components/workspace/timeline/SchedulingAdvisorTab';
+import { QueryWorkbench } from '../components/workspace/documents/QueryWorkbench';
+import { RetrievalInspector } from './RetrievalInspector';
+import { GraphExplorer } from '../components/workspace/documents/GraphExplorer';
+import { CitationViewer } from '../components/workspace/documents/CitationViewer';
+import { DocumentViewer } from '../components/workspace/documents/DocumentViewer';
+
 
 export const WorkspaceHome = () => {
   const { 
@@ -53,7 +59,7 @@ export const WorkspaceHome = () => {
   const { selectDocument } = useWorkspace();
 
   // Local UX States
-  const [activeCenterTab, setActiveCenterTab] = useState('chat'); // 'chat' | 'pdf'
+  const [activeCenterTab, setActiveCenterTab] = useState('query'); // 'query' | 'inspector' | 'graph' | 'citation' | 'pdf'
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [rightInspectorCollapsed, setRightInspectorCollapsed] = useState(false);
   const [bottomDrawerCollapsed, setBottomDrawerCollapsed] = useState(true);
@@ -473,19 +479,64 @@ export const WorkspaceHome = () => {
         <div style={{ display: 'flex', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-subtle)', padding: '0 16px', justifyContent: 'space-between', alignItems: 'center', height: '48px' }}>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button 
-              onClick={() => setActiveCenterTab('chat')}
+              onClick={() => setActiveCenterTab('query')}
               style={{
                 background: 'none',
                 border: 'none',
-                borderBottom: activeCenterTab === 'chat' ? '2px solid var(--color-accent)' : '2px solid transparent',
-                color: activeCenterTab === 'chat' ? 'var(--text-primary)' : 'var(--text-muted)',
+                borderBottom: activeCenterTab === 'query' ? '2px solid var(--color-accent)' : '2px solid transparent',
+                color: activeCenterTab === 'query' ? 'var(--text-primary)' : 'var(--text-muted)',
                 padding: '12px 16px',
                 cursor: 'pointer',
                 fontWeight: 600,
                 fontSize: '0.8rem'
               }}
             >
-              Interactive Chat
+              Query Workbench
+            </button>
+            <button 
+              onClick={() => setActiveCenterTab('inspector')}
+              style={{
+                background: 'none',
+                border: 'none',
+                borderBottom: activeCenterTab === 'inspector' ? '2px solid var(--color-accent)' : '2px solid transparent',
+                color: activeCenterTab === 'inspector' ? 'var(--text-primary)' : 'var(--text-muted)',
+                padding: '12px 16px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.8rem'
+              }}
+            >
+              Retrieval Inspector
+            </button>
+            <button 
+              onClick={() => setActiveCenterTab('graph')}
+              style={{
+                background: 'none',
+                border: 'none',
+                borderBottom: activeCenterTab === 'graph' ? '2px solid var(--color-accent)' : '2px solid transparent',
+                color: activeCenterTab === 'graph' ? 'var(--text-primary)' : 'var(--text-muted)',
+                padding: '12px 16px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.8rem'
+              }}
+            >
+              Graph Explorer
+            </button>
+            <button 
+              onClick={() => setActiveCenterTab('citation')}
+              style={{
+                background: 'none',
+                border: 'none',
+                borderBottom: activeCenterTab === 'citation' ? '2px solid var(--color-accent)' : '2px solid transparent',
+                color: activeCenterTab === 'citation' ? 'var(--text-primary)' : 'var(--text-muted)',
+                padding: '12px 16px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.8rem'
+              }}
+            >
+              Citation Viewer
             </button>
             <button 
               onClick={() => setActiveCenterTab('pdf')}
@@ -741,7 +792,6 @@ export const WorkspaceHome = () => {
                 <div>Processing Time: <strong>{(currentActiveDag?.artifacts || []).find(a => a.artifact_type === 'graph_embeddings')?.metadata_json?.embedding_generation_duration ? `${Math.round((currentActiveDag?.artifacts || []).find(a => a.artifact_type === 'graph_embeddings')?.metadata_json?.embedding_generation_duration)}s` : 'Not Available'}</strong></div>
               </div>
               <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
-                {/* Chat is only accessible when the backend confirms pipeline completion */}
                 <Button
                   variant="primary"
                   onClick={() => setWorkspaceState('chatting')}
@@ -749,131 +799,38 @@ export const WorkspaceHome = () => {
                 >
                   Open Chat
                 </Button>
-                <Button variant="secondary" onClick={() => setActiveCenterTab('pdf')}>View Document</Button>
+                <Button variant="secondary" onClick={() => { setWorkspaceState('chatting'); setActiveCenterTab('pdf'); }}>View Document</Button>
               </div>
             </div>
           )}
 
-          {workspaceState === 'chatting' && activeCenterTab === 'chat' && (
+          {workspaceState === 'chatting' && activeCenterTab === 'query' && (
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              
-              {/* Chat Thread */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                
-                {/* Active query step banner */}
-                {currentQueryStage && currentQueryStage !== 'completed' && (
-                  <div style={{ background: 'rgba(139, 92, 246, 0.08)', border: '1px solid rgba(139, 92, 246, 0.2)', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--color-accent)', textTransform: 'uppercase', marginBottom: '8px' }}>Current Status</div>
-                    <div style={{ fontSize: '0.8rem' }}>Stage: <strong>{currentQueryStage.toUpperCase()}</strong></div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>Elapsed: {queryTimer.toFixed(2)}s</div>
-                  </div>
-                )}
+              <QueryWorkbench />
+            </div>
+          )}
 
-                {chatThread.map((msg, idx) => (
-                  <div 
-                    key={idx}
-                    style={{
-                      alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                      background: msg.role === 'user' ? 'var(--color-accent)' : 'var(--bg-panel)',
-                      color: '#fff',
-                      borderRadius: '8px',
-                      padding: '12px 16px',
-                      maxWidth: '80%',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                    }}
-                  >
-                    <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.5 }}>{msg.content}</p>
-                    {msg.citations && (
-                      <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                        {msg.citations.map((cite, cIdx) => (
-                          <button
-                            key={cIdx}
-                            onClick={() => handleCitationClick(cite)}
-                            style={{
-                              background: 'rgba(255,255,255,0.1)',
-                              border: 'none',
-                              borderRadius: '4px',
-                              padding: '2px 6px',
-                              fontSize: '0.7rem',
-                              color: '#fff',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            [{cIdx + 1}] Page {cite.page || 1}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                <div ref={threadEndRef} />
-              </div>
+          {workspaceState === 'chatting' && activeCenterTab === 'inspector' && (
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <RetrievalInspector />
+            </div>
+          )}
 
-              {/* Chat Input */}
-              <form onSubmit={handleSendQuery} style={{ padding: '16px', borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-panel)', display: 'flex', gap: '12px' }}>
-                <input 
-                  type="text"
-                  placeholder="Ask a question about active document structures..."
-                  value={chatQuery}
-                  onChange={e => setChatQuery(e.target.value)}
-                  style={{
-                    flex: 1,
-                    background: 'var(--bg-primary)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '6px',
-                    padding: '10px 14px',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.85rem'
-                  }}
-                />
-                <Button variant="primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Send size={14} /> Send
-                </Button>
-              </form>
+          {workspaceState === 'chatting' && activeCenterTab === 'graph' && (
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <GraphExplorer />
+            </div>
+          )}
 
+          {workspaceState === 'chatting' && activeCenterTab === 'citation' && (
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <CitationViewer />
             </div>
           )}
 
           {workspaceState === 'chatting' && activeCenterTab === 'pdf' && (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-panel)', padding: '10px 16px', border: '1px solid var(--border-subtle)', borderBottom: 'none', borderTopLeftRadius: '6px', borderTopRightRadius: '6px' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>{activeDoc?.original_filename || 'No document loaded'}</span>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <Button size="small" variant="secondary" onClick={() => setZoomLevel(z => Math.max(50, z - 10))}><ZoomOut size={12} /></Button>
-                  <span style={{ fontSize: '0.75rem' }}>{zoomLevel}%</span>
-                  <Button size="small" variant="secondary" onClick={() => setZoomLevel(z => Math.min(200, z + 10))}><ZoomIn size={12} /></Button>
-                </div>
-              </div>
-
-              <div style={{ flex: 1, background: '#090d16', border: '1px solid var(--border-subtle)', overflow: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '20px', position: 'relative' }}>
-                {pdfDoc ? (
-                  <div style={{ position: 'relative' }}>
-                    <canvas ref={canvasRef} />
-                    {/* Bounding Box coordinate highlights */}
-                    {highlights.map((box, idx) => {
-                      if (box.page && box.page !== activePdfPage) return null;
-                      return (
-                        <div 
-                          key={idx}
-                          style={{
-                            position: 'absolute',
-                            left: `${box.x * (zoomLevel / 100)}px`,
-                            top: `${box.y * (zoomLevel / 100)}px`,
-                            width: `${box.width * (zoomLevel / 100)}px`,
-                            height: `${box.height * (zoomLevel / 100)}px`,
-                            background: 'rgba(254, 240, 138, 0.4)',
-                            border: '1.5px solid #eab308',
-                            borderRadius: '2px',
-                            pointerEvents: 'none'
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '40px' }}>Loading PDF content stream...</div>
-                )}
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <DocumentViewer />
             </div>
           )}
         </div>

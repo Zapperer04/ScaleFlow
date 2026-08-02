@@ -409,6 +409,15 @@ export const PipelineProvider = ({ children }) => {
   const [advisorError, setAdvisorError] = useState(null);
   const abortAdvisorFetchRef = useRef(null);
 
+  // RAG and Context Fusion states
+  const [retrievalModel, setRetrievalModel] = useState({ strategy: 'hybrid', traversalDepth: 2 });
+  const [graphModel, setGraphModel] = useState(null);
+  const [queryResult, setQueryResult] = useState(null);
+  const [selectedCitation, setSelectedCitation] = useState(null);
+  const [selectedChunk, setSelectedChunk] = useState(null);
+  const [selectedGraphNode, setSelectedGraphNode] = useState(null);
+  const [queryHistory, setQueryHistory] = useState([]);
+
   // Time-Travel Comparison State Hooks
   const [selectedSnapshotAIndex, setSelectedSnapshotAIndex] = useState(null);
   const [selectedSnapshotBIndex, setSelectedSnapshotBIndex] = useState(null);
@@ -1021,7 +1030,74 @@ export const PipelineProvider = ({ children }) => {
       advisorLoading,
       advisorError,
       loadAdvisor,
-      clearAdvisor
+      clearAdvisor,
+
+      // RAG and Context Fusion exports
+      retrievalModel,
+      setRetrievalModel,
+      graphModel,
+      setGraphModel,
+      queryResult,
+      setQueryResult,
+      selectedCitation,
+      setSelectedCitation,
+      selectedChunk,
+      setSelectedChunk,
+      selectedGraphNode,
+      setSelectedGraphNode,
+      queryHistory,
+      submitQuery: async (queryText, pipelineId) => {
+        try {
+          const response = await fetch('/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: queryText, pipeline_id: pipelineId })
+          });
+          const data = await response.json();
+          if (response.ok) {
+            setQueryResult(data);
+            setQueryHistory(prev => [...prev, { query: queryText, result: data }]);
+            if (data.context && data.context.graph_evidence) {
+              setGraphModel({
+                nodes: data.context.graph_evidence,
+                edges: []
+              });
+            }
+          } else {
+            console.error("Query failed:", data.error);
+          }
+        } catch (error) {
+          console.error("Error submitting query:", error);
+        }
+      },
+      selectChunk: (chunk) => {
+        setSelectedChunk(chunk);
+        if (chunk && chunk.graph_node_ids && chunk.graph_node_ids.length > 0) {
+          setSelectedGraphNode(chunk.graph_node_ids[0]);
+        }
+      },
+      selectCitation: (citation) => {
+        setSelectedCitation(citation);
+        if (citation && citation.chunk_id) {
+          const allChunks = queryResult?.context?.supporting_chunks || [];
+          const matchingChunk = allChunks.find(c => c.chunk_id === citation.chunk_id);
+          if (matchingChunk) {
+            setSelectedChunk(matchingChunk);
+          }
+        }
+        if (citation && citation.graph_node_id) {
+          setSelectedGraphNode(citation.graph_node_id);
+        }
+      },
+      selectGraphNode: (nodeId) => {
+        setSelectedGraphNode(nodeId);
+      },
+      clearQuery: () => {
+        setQueryResult(null);
+        setSelectedCitation(null);
+        setSelectedChunk(null);
+        setSelectedGraphNode(null);
+      }
     }}>
       {children}
     </PipelineContext.Provider>

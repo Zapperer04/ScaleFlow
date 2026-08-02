@@ -6382,6 +6382,67 @@ def api_get_query_pipeline_answer(pipeline_id):
     finally:
         db.close()
 
+@app.route('/query', methods=['POST'])
+def query_rag_pipeline():
+    db = SessionLocal()
+    try:
+        data = request.json or {}
+        query = data.get("query")
+        pipeline_id = data.get("pipeline_id")
+        
+        if not query:
+            return jsonify({"error": "Missing 'query' field"}), 400
+        if not pipeline_id:
+            return jsonify({"error": "Missing 'pipeline_id' field"}), 400
+
+        from document_graph import DocumentGraph
+        from rag_pipeline import RAGPipeline
+        from models import Artifact
+
+        # Resolve Graph
+        graph = None
+        artifact = db.query(Artifact).filter(
+            Artifact.pipeline_id == int(pipeline_id),
+            Artifact.artifact_type == "document_graph"
+        ).first()
+        if not artifact:
+            artifact = db.query(Artifact).filter(
+                Artifact.pipeline_id == int(pipeline_id),
+                Artifact.artifact_type == "parsed_text"
+            ).first()
+
+        if artifact:
+            from context.artifact_store import load_artifact_from_disk
+            try:
+                graph_data = load_artifact_from_disk(artifact.storage_uri)
+                if isinstance(graph_data, dict):
+                    graph = DocumentGraph.from_dict(graph_data)
+            except Exception as ge:
+                print(f"[APP QUERY] Error loading graph artifact: {ge}", flush=True)
+
+        rag = RAGPipeline()
+        result = rag.execute_rag(query=query, pipeline_id=int(pipeline_id), graph=graph)
+        
+        # Format exact schema response
+        return jsonify({
+            "version": 1,
+            "schema": "graph-rag-v1",
+            "answer": result["answer"],
+            "intent": result["intent"],
+            "routing": result["routing"],
+            "retrieval": result["retrieval"],
+            "reranking": result["reranking"],
+            "context": result["context"],
+            "citations": result["citations"],
+            "latency": result["latency"]
+        }), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
 if __name__ == '__main__':
     import urllib.parse
     masked_url = ACTIVE_DATABASE_URL
