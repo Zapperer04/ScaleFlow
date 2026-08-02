@@ -52,6 +52,17 @@ function AppContent() {
   // Navigation & Views
   const [activeView, setActiveView] = useState('workspace');
 
+  // Developer Panel — lifted here so both AppShell header button and WorkspaceHome
+  // BottomDrawer render from the same source of truth
+  const [devPanelOpen, setDevPanelOpen] = useState(() => {
+    return localStorage.getItem('scaleflow_dev_panel_open') === 'true';
+  });
+  const toggleDevPanel = () => {
+    const next = !devPanelOpen;
+    setDevPanelOpen(next);
+    localStorage.setItem('scaleflow_dev_panel_open', String(next));
+  };
+
 
   // Pipeline State Context
   const { 
@@ -167,6 +178,8 @@ function AppContent() {
         queuePressure={queuePressure}
         testing={testing}
         onRunTests={handleRunTests}
+        devPanelOpen={devPanelOpen}
+        onToggleDevPanel={toggleDevPanel}
       >
         <ErrorBoundary>
           {showStuckWarning && (
@@ -179,11 +192,11 @@ function AppContent() {
           )}
 
           <Suspense fallback={<WorkspaceSkeleton />}>
-            {activeView === 'workspace' && <WorkspaceHome activeTab="active" />}
+            {activeView === 'workspace' && <WorkspaceHome activeTab="active" devPanelOpen={devPanelOpen} onToggleDevPanel={toggleDevPanel} />}
             
-            {activeView === 'upload' && <WorkspaceHome activeTab="upload" />}
+            {activeView === 'upload' && <WorkspaceHome activeTab="upload" devPanelOpen={devPanelOpen} onToggleDevPanel={toggleDevPanel} />}
 
-            {activeView === 'chat' && <WorkspaceHome activeTab="chat" />}
+            {activeView === 'chat' && <WorkspaceHome activeTab="chat" devPanelOpen={devPanelOpen} onToggleDevPanel={toggleDevPanel} />}
             
             {activeView === 'documents' && (
               <DocumentsLibrary onNavigateToView={handleNavigateToView} />

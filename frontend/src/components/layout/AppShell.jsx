@@ -11,7 +11,6 @@ import { usePipeline } from '../../contexts/PipelineContext';
 import { useDocument } from '../../contexts/DocumentContext';
 import { fetchPipelineDetails } from '../../services/pipelines';
 import { globalSearch } from '../../services/search';
-import BottomDrawer from './BottomDrawer';
 
 /**
  * Reusable layout wrapper for the ScaleFlow application workspace.
@@ -29,6 +28,10 @@ export const AppShell = ({
   queuePressure,
   testing = false,
   onRunTests,
+  // Dev panel state is lifted to App.js so WorkspaceHome BottomDrawer
+  // and this header button share a single source of truth
+  devPanelOpen = false,
+  onToggleDevPanel,
   children
 }) => {
   const isMobile = useMediaQuery('(max-width: 768px)');
@@ -59,16 +62,7 @@ export const AppShell = ({
     }
   };
 
-  // Bottom Developer Drawer toggle state
-  const [devPanelOpen, setDevPanelOpen] = useState(() => {
-    return localStorage.getItem('scaleflow_dev_panel_open') === 'true';
-  });
-
-  const toggleDevPanel = () => {
-    const nextOpen = !devPanelOpen;
-    setDevPanelOpen(nextOpen);
-    localStorage.setItem('scaleflow_dev_panel_open', String(nextOpen));
-  };
+  // Local sidebar + dev-mode state (not lifted — OK to stay local)
 
   const { notifications, markAsRead, clearAll } = useNotification();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -445,7 +439,7 @@ export const AppShell = ({
 
             {/* Developer Panel Toggle Button */}
             <button 
-              onClick={toggleDevPanel}
+              onClick={onToggleDevPanel}
               style={{
                 background: devPanelOpen ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255, 255, 255, 0.03)',
                 border: devPanelOpen ? '1px solid var(--color-accent)' : '1px solid rgba(255, 255, 255, 0.06)',
@@ -656,8 +650,6 @@ export const AppShell = ({
           </div>
         </div>
       )}
-      {/* Resizable Developer Drawer / Bottom Panel */}
-      <BottomDrawer isOpen={devPanelOpen} onClose={toggleDevPanel} />
     </div>
   );
 };
