@@ -42,7 +42,7 @@ TASK_REGISTRY: Dict[str, Dict[str, Any]] = {
         "retry_policy": {"max_retries": 3, "retry_delay_seconds": 5},
         "estimated_runtime_seconds": 3,
         "handler_name": "worker.handle_send_email",
-        "capability": "default"
+        "capability": "test_isolated"
     },
     "send_email": {
         "label": "Email Delivery",

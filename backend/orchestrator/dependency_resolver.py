@@ -477,7 +477,6 @@ def update_pipeline_status(db, pipeline_id):
             message = f"Pipeline {pipeline.name} status updated to {new_status.value}."
             severity = "info"
             
-            from models import PipelineStatus
             if new_status == PipelineStatus.completed:
                 severity = "success"
                 title = "Ingestion Pipeline Completed"
