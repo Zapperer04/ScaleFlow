@@ -302,6 +302,7 @@ class HACoordinator:
                 # Publish events and reconcile in a single batch
                 if newly_claimed:
                     # Publish events
+                    try:
                         from services.event_sourcing_service import publish_event
                         from models import Task
                         import json
