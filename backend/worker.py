@@ -353,6 +353,93 @@ def handle_preprocess_document(payload, input_artifacts):
     return report_dict
 
 
+def validate_document_graph(graph: dict):
+    """
+    Validates document graph properties before indexing:
+    - Checks for duplicate node IDs
+    - Checks for missing bounding boxes (bbox)
+    - Checks for invalid reading order sequence
+    - Checks for broken references in edges
+    - Detects cycles in document graph hierarchy
+    - Identifies orphan nodes (unconnected nodes)
+    """
+    if not graph or not isinstance(graph, dict):
+        raise ValueError("Invalid graph: graph is empty or not a dict")
+    
+    pages = graph.get("pages", [])
+    seen_ids = set()
+    all_nodes = []
+    edges = graph.get("edges", [])
+    
+    # 1. Duplicate IDs, Missing Bboxes, and Invalid Reading Order
+    for page in pages:
+        nodes = page.get("nodes", [])
+        last_reading_order = -1
+        for node in nodes:
+            node_id = node.get("chunk_id")
+            if not node_id:
+                raise ValueError("Invalid graph: Node missing chunk_id")
+            if node_id in seen_ids:
+                raise ValueError(f"Invalid graph: Duplicate node ID found: {node_id}")
+            seen_ids.add(node_id)
+            all_nodes.append(node)
+            
+            bbox = node.get("bbox")
+            if not bbox or not isinstance(bbox, dict) or "x1" not in bbox or "y1" not in bbox:
+                raise ValueError(f"Invalid graph: Node {node_id} is missing a valid bbox")
+                
+            ro = node.get("reading_order")
+            if ro is None or not isinstance(ro, (int, float)):
+                raise ValueError(f"Invalid graph: Node {node_id} is missing reading_order")
+            if ro <= last_reading_order:
+                raise ValueError(f"Invalid graph: Node {node_id} has invalid reading order sequence (current: {ro}, previous: {last_reading_order})")
+            last_reading_order = ro
+
+    # 2. Broken References
+    node_id_set = set(seen_ids)
+    for edge in edges:
+        source = edge.get("source")
+        target = edge.get("target")
+        if source not in node_id_set:
+            raise ValueError(f"Invalid graph: Edge references non-existent source node: {source}")
+        if target not in node_id_set:
+            raise ValueError(f"Invalid graph: Edge references non-existent target node: {target}")
+
+    # 3. Cycles check
+    adj = {nid: [] for nid in node_id_set}
+    for edge in edges:
+        s = edge.get("source")
+        t = edge.get("target")
+        adj[s].append(t)
+        
+    visited = {}
+    def has_cycle(u):
+        visited[u] = 0
+        for v in adj[u]:
+            if visited.get(v) == 0:
+                return True
+            if v not in visited:
+                if has_cycle(v):
+                    return True
+        visited[u] = 1
+        return False
+        
+    for node_id in node_id_set:
+        if node_id not in visited:
+            if has_cycle(node_id):
+                raise ValueError("Invalid graph: Cycle detected in document graph hierarchy")
+
+    # 4. Orphan nodes
+    if len(node_id_set) > 1:
+        connected = set()
+        for edge in edges:
+            connected.add(edge.get("source"))
+            connected.add(edge.get("target"))
+        orphans = node_id_set - connected
+        if orphans:
+            raise ValueError(f"Invalid graph: Orphan nodes detected: {orphans}")
+
+
 def handle_parse_document(payload, input_artifacts):
     """Parse document into a document graph (VLM-first) or plain text (legacy)."""
     pipeline_id = payload.get('_pipeline_id')
@@ -400,6 +487,21 @@ def handle_parse_document(payload, input_artifacts):
                     "edges": []
                 }]
             }
+            
+            # Enrich metadata
+            import datetime
+            document_graph["version_metadata"] = {
+                "document_version": "1.0.0",
+                "graph_version": "1.0.0",
+                "chunk_version": "1.0.0",
+                "embedding_version": "1.5.0",
+                "graph_schema_version": "1.0.0",
+                "pipeline_version": "2.2.14",
+                "ingestion_timestamp": datetime.datetime.utcnow().isoformat() + "Z"
+            }
+            
+            validate_document_graph(document_graph)
+            
             return {
                 "document_graph": document_graph,
                 "parse_stats": {"parser": "plaintext"},
@@ -570,6 +672,21 @@ def handle_parse_document(payload, input_artifacts):
             document_graph = result.metadata.get("document_graph", {})
             parse_stats = result.metadata.get("stats", {})
             pages = result.metadata.get("pages", [])
+            
+            # Enrich metadata
+            import datetime
+            document_graph["version_metadata"] = {
+                "document_version": "1.0.0",
+                "graph_version": "1.0.0",
+                "chunk_version": "1.0.0",
+                "embedding_version": "1.5.0",
+                "graph_schema_version": "1.0.0",
+                "pipeline_version": "2.2.14",
+                "ingestion_timestamp": datetime.datetime.utcnow().isoformat() + "Z"
+            }
+            
+            validate_document_graph(document_graph)
+
             _trace(f"[PARSER] VLM parsing complete. Nodes: {parse_stats.get('node_count', 0)}, edges: {parse_stats.get('edge_count', 0)}")
             return {
                 "document_graph": document_graph,

@@ -1048,9 +1048,12 @@ export const PipelineProvider = ({ children }) => {
       queryHistory,
       submitQuery: async (queryText, pipelineId) => {
         try {
-          const response = await fetch('/query', {
+          const response = await fetch('/v1/query', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer jwt-admin-token'
+            },
             body: JSON.stringify({ query: queryText, pipeline_id: pipelineId })
           });
           const data = await response.json();
@@ -1068,6 +1071,55 @@ export const PipelineProvider = ({ children }) => {
           }
         } catch (error) {
           console.error("Error submitting query:", error);
+        }
+      },
+      submitQueryStream: async (queryText, pipelineId, onToken, onCitation, onComplete) => {
+        try {
+          const response = await fetch('/v1/query/stream', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer jwt-admin-token'
+            },
+            body: JSON.stringify({ query: queryText, pipeline_id: pipelineId })
+          });
+          if (!response.ok) {
+            throw new Error(`SSE stream failed: ${response.statusText}`);
+          }
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            
+            let currentEvent = '';
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (trimmed.startsWith('event:')) {
+                currentEvent = trimmed.slice(6).trim();
+              } else if (trimmed.startsWith('data:')) {
+                const dataStr = trimmed.slice(5).trim();
+                try {
+                  const parsed = JSON.parse(dataStr);
+                  if (currentEvent === 'delta') {
+                    onToken(parsed.text);
+                  } else if (currentEvent === 'citation') {
+                    onCitation(parsed.citation);
+                  } else if (currentEvent === 'complete') {
+                    onComplete(parsed);
+                  }
+                } catch (e) {
+                  // ignore
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error running query stream:", error);
         }
       },
       selectChunk: (chunk) => {
