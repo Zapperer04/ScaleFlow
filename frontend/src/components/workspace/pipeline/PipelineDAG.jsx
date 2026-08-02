@@ -27,7 +27,9 @@ export const PipelineDAG = ({ tasks = [], artifacts = [], dagNodes = [], dagEdge
     selectedSnapshotBIndex,
     comparisonMode,
     snapshotDiff,
-    performanceModel
+    performanceModel,
+    forecastModel,
+    advisorModel
   } = usePipeline();
 
   const defaultNodes = [
@@ -106,6 +108,15 @@ Retries: ${task.retry_count || 0}`;
       if (perf) {
         base += `\nExecution Duration: ${perf.execution_ms}ms\nQueue Wait: ${perf.queue_wait_ms}ms`;
       }
+      const isFuture = forecastModel?.forecast?.future_tasks?.some(ft => String(ft.status === 'running' || ft.task_id === task.id));
+      if (isFuture) {
+        const ft = forecastModel.forecast.future_tasks.find(ft => String(ft.task_id) === String(task.id));
+        if (ft) {
+          base += `\n[Forecast] Predicted Start: ${Math.round(ft.predicted_start_ms)}ms`;
+          base += `\n[Forecast] Predicted End: ${Math.round(ft.predicted_end_ms)}ms`;
+          base += `\n[Forecast] Status: Predicted ${ft.status}`;
+        }
+      }
       return base;
     }
     return node.name;
@@ -119,237 +130,240 @@ Retries: ${task.retry_count || 0}`;
         return originalTask && (originalTask.type === refName || originalTask.task_type === refName);
       });
       if (matchingTaskId) {
-        const snapTask = snapshot.taskStates[matchingTaskId];
-        const originalTask = tasks.find(t => String(t.id) === matchingTaskId);
+        const t = tasks.find(t => String(t.id) === matchingTaskId);
         return {
-          ...originalTask,
-          status: snapTask.status,
-          assigned_worker_id: snapTask.workerId,
-          retry_count: snapTask.retryCount
+          ...t,
+          status: snapshot.taskStates[matchingTaskId].status,
+          assigned_worker_id: snapshot.taskStates[matchingTaskId].workerId
         };
       }
-      return null;
     }
-    return tasks.find(t => t.type === refName || t.task_type === refName) || null;
+    return tasks.find(t => t.type === refName || t.task_type === refName);
   };
 
   const isNodeValidationFailed = (task) => {
-    if (!task || !task.output_artifact_ids) return false;
-    const taskOutputs = artifacts.filter(art => task.output_artifact_ids.includes(art.id));
-    return taskOutputs.some(art => art.metadata_json?.validation?.is_valid === false);
+    if (!task || !task.artifacts) return false;
+    return task.artifacts.some(art => art.metadata_json?.validation?.is_valid === false);
   };
 
-  const getStatusColor = (status, validationFailed = false) => {
-    if (validationFailed) return '#ef4444';
-    switch (status?.toLowerCase()) {
+  const getStatusColor = (status, isFailed) => {
+    if (isFailed) return '#ef4444';
+    switch (status) {
       case 'completed': return '#10b981';
       case 'running': return '#3b82f6';
       case 'failed': return '#ef4444';
-      case 'paused':
       case 'retrying': return '#f59e0b';
-      case 'pending':
-      case 'queued': return '#64748b';
+      case 'paused': return '#f59e0b';
       default: return '#64748b';
     }
   };
 
-  const getStatusBg = (status, validationFailed = false) => {
-    if (validationFailed) return 'rgba(239, 68, 68, 0.08)';
-    switch (status?.toLowerCase()) {
-      case 'completed': return 'rgba(16, 185, 129, 0.08)';
-      case 'running': return 'rgba(59, 130, 246, 0.08)';
-      case 'failed': return 'rgba(239, 68, 68, 0.08)';
-      case 'paused':
-      case 'retrying': return 'rgba(245, 158, 11, 0.08)';
-      default: return 'rgba(255, 255, 255, 0.02)';
+  const getStatusBg = (status, isFailed) => {
+    if (isFailed) return 'rgba(239, 68, 68, 0.1)';
+    switch (status) {
+      case 'completed': return 'rgba(16, 185, 129, 0.1)';
+      case 'running': return 'rgba(59, 130, 246, 0.1)';
+      case 'failed': return 'rgba(239, 68, 68, 0.1)';
+      case 'retrying': return 'rgba(245, 158, 11, 0.1)';
+      case 'paused': return 'rgba(245, 158, 11, 0.1)';
+      default: return 'rgba(100, 116, 139, 0.05)';
     }
   };
 
-  // Connections for frozen pipeline flow
-  const connections = [
-    { from: 'upload', to: 'preprocess' },
-    { from: 'preprocess', to: 'parse' },
-    { from: 'parse', to: 'graph' },
-    { from: 'parse', to: 'chunk' },
-    { from: 'graph', to: 'embedding' },
-    { from: 'chunk', to: 'embedding' },
-    { from: 'embedding', to: 'bm25' },
-    { from: 'bm25', to: 'retrieval' },
-    { from: 'retrieval', to: 'ready' }
-  ];
-
   return (
-    <div
-      style={{
-        backgroundColor: 'rgba(0,0,0,0.2)',
-        border: '1px solid rgba(255,255,255,0.06)',
-        borderRadius: '12px',
-        padding: '16px',
-        position: 'relative',
-        overflowX: 'auto',
-        width: '100%'
-      }}
-      className="custom-scrollbar"
-    >
-      <svg viewBox="0 0 1020 200" style={{ width: '100%', minWidth: '940px', height: '200px' }}>
-        {/* Render Connection Lines */}
-        {connections.map((c, i) => {
-          const fromNode = defaultNodes.find(n => n.id === c.from);
-          const toNode = defaultNodes.find(n => n.id === c.to);
-          const fromTask = getTaskForRef(fromNode.ref);
-          const toTask = getTaskForRef(toNode.ref);
+    <div className="flex flex-col gap-4">
+      <div className="overflow-x-auto custom-scrollbar border border-slate-800 rounded-xl bg-slate-950/20 p-6 flex justify-center">
+        <svg width="1020" height="200" style={{ background: 'transparent' }}>
+          <defs>
+            {/* Markers for Directed Edges */}
+            <marker id="arrow-pending"   viewBox="0 0 10 10" refX="24" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 1 L 10 5 L 0 9 z" fill="#475569" /></marker>
+            <marker id="arrow-completed" viewBox="0 0 10 10" refX="24" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 1 L 10 5 L 0 9 z" fill="#10b981" /></marker>
+            <marker id="arrow-running"   viewBox="0 0 10 10" refX="24" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" /></marker>
+            <marker id="arrow-failed"    viewBox="0 0 10 10" refX="24" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 1 L 10 5 L 0 9 z" fill="#ef4444" /></marker>
+            <marker id="arrow-retrying"  viewBox="0 0 10 10" refX="24" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 1 L 10 5 L 0 9 z" fill="#f59e0b" /></marker>
+          </defs>
 
-          const fromStatus = fromTask ? fromTask.status : (c.from === 'upload' || c.from === 'ready' ? 'completed' : 'pending');
-          const toStatus = toTask ? toTask.status : 'pending';
+          {/* Render Connections */}
+          {dagEdges.map((edge, index) => {
+            const sourceNode = defaultNodes.find(n => n.id === edge.source);
+            const targetNode = defaultNodes.find(n => n.id === edge.target);
+            if (!sourceNode || !targetNode) return null;
 
-          const isActive = fromStatus === 'completed' && toStatus === 'running';
-          const isDone = fromStatus === 'completed' && toStatus === 'completed';
+            // Compute connection state color
+            const sourceTask = getTaskForRef(sourceNode.ref);
+            const isFailed = sourceTask ? isNodeValidationFailed(sourceTask) : false;
+            const sourceStatus = sourceTask ? sourceTask.status : (sourceNode.id === 'upload' ? 'completed' : 'pending');
+            const color = getStatusColor(sourceStatus, isFailed);
+            const markerId = `arrow-${isFailed ? 'failed' : sourceStatus}`;
+            const isActive = sourceStatus === 'running';
 
-          const isCriticalEdge = (() => {
-            if (!performanceModel?.performance?.critical_path?.edges) return false;
-            return performanceModel.performance.critical_path.edges.some(edge => {
-              const [t1Id, t2Id] = edge;
-              const t1 = tasks.find(t => String(t.id) === String(t1Id));
-              const t2 = tasks.find(t => String(t.id) === String(t2Id));
-              return t1 && t2 && 
-                     (t1.type === fromNode.ref || t1.task_type === fromNode.ref) && 
-                     (t2.type === toNode.ref || t2.task_type === toNode.ref);
-            });
-          })();
-
-          let strokeColor = '#334155';
-          let strokeWidth = '1.5';
-          let dashArray = '4 4';
-
-          if (isCriticalEdge) {
-            strokeColor = '#f59e0b'; // Amber warning color
-            strokeWidth = '4.5';
-            dashArray = 'none';
-          } else if (isDone) {
-            strokeColor = '#10b981';
-            strokeWidth = '2';
-            dashArray = 'none';
-          } else if (isActive) {
-            strokeColor = '#3b82f6';
-            strokeWidth = '2.5';
-            dashArray = '6 4';
-          }
-
-          return (
-            <path
-              key={i}
-              d={`M ${fromNode.x + 50} ${fromNode.y} L ${toNode.x - 50} ${toNode.y}`}
-              stroke={strokeColor}
-              strokeWidth={strokeWidth}
-              strokeDasharray={dashArray}
-              fill="none"
-              style={{
-                transition: 'all 0.3s ease',
-                animation: isActive ? 'pulse-dash 1s linear infinite' : 'none'
-              }}
-            />
-          );
-        })}
-
-        {/* Render Nodes */}
-        {defaultNodes.map((node) => {
-          const task = getTaskForRef(node.ref);
-          const isFailed = task ? isNodeValidationFailed(task) : false;
-          const status = task ? task.status : (node.id === 'upload' ? 'completed' : (
-            replayMode && replaySnapshots && replayIndex >= 0
-              ? (Object.values(replaySnapshots[replayIndex].taskStates).every(t => t.status === 'completed') && Object.keys(replaySnapshots[replayIndex].taskStates).length > 0 ? 'completed' : 'pending')
-              : (tasks.every(t => t.status === 'completed') && tasks.length > 0 ? 'completed' : 'pending')
-          ));
-          const color = getStatusColor(status, isFailed);
-          const bg = getStatusBg(status, isFailed);
-          
-          const isSelected = selectedNodeId === node.id || 
-                             (task && selectedNodeId === task.id) ||
-                             (task && selectedTaskId === task.id);
-
-          const handleNodeClick = () => {
-            if (task) {
-              const alreadySelected = selectedTaskId === task.id;
-              if (alreadySelected) {
-                setSelectedTaskId(null);
-                setSelectedTraceId(null);
-                setSelectedWorkerId(null);
-              } else {
-                setSelectedTaskId(task.id);
-                // Extract correlation_id from task.payload or task.data
-                let cid = null;
-                if (task.payload && typeof task.payload === 'object') {
-                  cid = task.payload.correlation_id;
-                }
-                if (!cid && task.data) {
-                  try {
-                    const parsed = JSON.parse(task.data);
-                    cid = parsed.correlation_id;
-                  } catch (_) {}
-                }
-                setSelectedTraceId(cid || null);
-                setSelectedWorkerId(task.worker_id || null);
-              }
+            // Control points for nice curves
+            let d = `M ${sourceNode.x} ${sourceNode.y} L ${targetNode.x} ${targetNode.y}`;
+            if (sourceNode.y !== targetNode.y) {
+              const midX = (sourceNode.x + targetNode.x) / 2;
+              d = `M ${sourceNode.x} ${sourceNode.y} C ${midX} ${sourceNode.y}, ${midX} ${targetNode.y}, ${targetNode.x} ${targetNode.y}`;
             }
-            onSelectNode?.(task || node);
-          };
 
-          const diffInfo = getTaskDiffForRef(node.ref);
-          const hasDiff = !!diffInfo;
-
-          return (
-            <g 
-              key={node.id} 
-              transform={`translate(${node.x}, ${node.y})`}
-              onClick={handleNodeClick}
-              style={{ cursor: 'pointer' }}
-            >
-              <title>{buildTooltipText(node, diffInfo, task)}</title>
-              {/* Outer boundary box */}
-              <rect
-                x="-50"
-                y="-22"
-                width="100"
-                height="44"
-                rx="7"
-                fill={bg}
-                stroke={isSelected ? '#a78bfa' : color}
-                strokeWidth={status === 'running' || isSelected || hasDiff ? '3' : '1.5'}
-                strokeDasharray={hasDiff ? "4 2" : "none"}
-                style={{ transition: 'all 0.2s ease' }}
+            return (
+              <path
+                key={index}
+                d={d}
+                stroke={color}
+                strokeWidth={isActive ? "2.5" : "1.5"}
+                strokeDasharray={isActive ? "5 3" : "none"}
+                fill="none"
+                markerEnd={`url(#${markerId})`}
+                style={{
+                  transition: 'all 0.3s ease',
+                  animation: isActive ? 'pulse-dash 1s linear infinite' : 'none'
+                }}
               />
-              {/* Text label */}
-              <text
-                x="0"
-                y="-2"
-                textAnchor="middle"
-                fill="#f8fafc"
-                fontSize="9"
-                fontWeight="600"
-                fontFamily="'JetBrains Mono', monospace"
+            );
+          })}
+
+          {/* Render Nodes */}
+          {defaultNodes.map((node) => {
+            const task = getTaskForRef(node.ref);
+            const isFailed = task ? isNodeValidationFailed(task) : false;
+            
+            let status = task ? task.status : (node.id === 'upload' ? 'completed' : (
+              replayMode && replaySnapshots && replayIndex >= 0
+                ? (Object.values(replaySnapshots[replayIndex].taskStates).every(t => t.status === 'completed') && Object.keys(replaySnapshots[replayIndex].taskStates).length > 0 ? 'completed' : 'pending')
+                : (tasks.every(t => t.status === 'completed') && tasks.length > 0 ? 'completed' : 'pending')
+            ));
+            
+            const isFuture = task && forecastModel?.forecast?.future_tasks?.some(ft => String(ft.task_id) === String(task.id));
+            if (isFuture) {
+              const ft = forecastModel.forecast.future_tasks.find(ft => String(ft.task_id) === String(task.id));
+              if (ft) status = ft.status; 
+            }
+
+            const color = getStatusColor(status, isFailed);
+            const bg = getStatusBg(status, isFailed);
+            
+            const isSelected = selectedNodeId === node.id || 
+                               (task && selectedNodeId === task.id) ||
+                               (task && selectedTaskId === task.id);
+
+            const isBottleneckNode = (() => {
+              if (!forecastModel?.forecast?.current_bottleneck) return false;
+              const bt = forecastModel.forecast.current_bottleneck.toLowerCase();
+              return bt.includes(node.name.toLowerCase()) || bt.includes(node.ref.toLowerCase());
+            })();
+
+            const isRemainingCP = task && forecastModel?.forecast?.critical_path?.remaining_tasks?.some(tid => String(tid) === String(task.id));
+
+            // Scheduling Advisor visual overlays
+            const hasRec = task && advisorModel?.advisor?.recommendations?.some(r => r.affected_tasks?.some(tid => String(tid) === String(task.id)));
+            const cpImprove = task && advisorModel?.advisor?.critical_path_scheduling?.find(cp => String(cp.task_id) === String(task.id) && cp.estimated_gain_ms > 0);
+            
+            const isQueueBottleneck = (() => {
+              if (!task || !task.queue || !advisorModel?.advisor?.queue_analysis?.queues) return false;
+              const qStat = advisorModel.advisor.queue_analysis.queues.find(q => q.queue === task.queue);
+              return qStat && (qStat.severity === 'high' || qStat.severity === 'medium');
+            })();
+
+            const handleNodeClick = () => {
+              if (task) {
+                const alreadySelected = selectedTaskId === task.id;
+                if (alreadySelected) {
+                  setSelectedTaskId(null);
+                  setSelectedTraceId(null);
+                  setSelectedWorkerId(null);
+                } else {
+                  setSelectedTaskId(task.id);
+                  let cid = null;
+                  if (task.payload && typeof task.payload === 'object') {
+                    cid = task.payload.correlation_id;
+                  }
+                  if (!cid && task.data) {
+                    try {
+                      const parsed = JSON.parse(task.data);
+                      cid = parsed.correlation_id;
+                    } catch (_) {}
+                  }
+                  setSelectedTraceId(cid || null);
+                  setSelectedWorkerId(task.worker_id || null);
+                }
+              }
+              onSelectNode?.(task || node);
+            };
+
+            const diffInfo = getTaskDiffForRef(node.ref);
+            const hasDiff = !!diffInfo;
+
+            return (
+              <g 
+                key={node.id} 
+                transform={`translate(${node.x}, ${node.y})`}
+                onClick={handleNodeClick}
+                style={{ cursor: 'pointer' }}
               >
-                {node.name}
-              </text>
-              {/* Status & Worker */}
-              <text
-                x="0"
-                y="12"
-                textAnchor="middle"
-                fill={color}
-                fontSize="8"
-                fontWeight="700"
-                fontFamily="'JetBrains Mono', monospace"
-              >
-                {isFailed ? 'VAL FAILED' : (status?.toUpperCase() || 'QUEUED')}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+                <title>{buildTooltipText(node, diffInfo, task)}</title>
+                <rect
+                  x="-50"
+                  y="-22"
+                  width="100"
+                  height="44"
+                  rx="7"
+                  fill={bg}
+                  stroke={isBottleneckNode ? '#ef4444' : (isRemainingCP ? '#f59e0b' : (isSelected ? '#a78bfa' : color))}
+                  strokeWidth={isBottleneckNode ? '4' : (status === 'running' || isSelected || hasDiff || isRemainingCP ? '3' : '1.5')}
+                  strokeDasharray={isFuture ? "5 3" : (hasDiff ? "4 2" : "none")}
+                  style={{ 
+                    transition: 'all 0.2s ease',
+                    animation: isBottleneckNode ? 'pulse-bottleneck 1.5s infinite' : 'none'
+                  }}
+                />
+                
+                {/* Advisor overlays inside node */}
+                {hasRec && (
+                  <circle cx="42" cy="-14" r="5" fill="#f59e0b" title="Scheduling Recommendation Available" />
+                )}
+                {cpImprove && (
+                  <circle cx="-42" cy="-14" r="4" fill="#10b981" title={`Critical Path Gain: -${cpImprove.estimated_gain_ms}ms`} />
+                )}
+                {isQueueBottleneck && (
+                  <rect x="-48" y="16" width="96" height="4" fill="#f43f5e" rx="1" title="Congested Queue Bottleneck" />
+                )}
+
+                <text
+                  x="0"
+                  y="-2"
+                  textAnchor="middle"
+                  fill="#f8fafc"
+                  fontSize="9"
+                  fontWeight="600"
+                  fontFamily="'JetBrains Mono', monospace"
+                >
+                  {node.name}
+                </text>
+                {/* Status & Worker */}
+                <text
+                  x="0"
+                  y="12"
+                  textAnchor="middle"
+                  fill={color}
+                  fontSize="8"
+                  fontWeight="700"
+                  fontFamily="'JetBrains Mono', monospace"
+                >
+                  {isFailed ? 'VAL FAILED' : (status?.toUpperCase() || 'QUEUED')}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
 
       <style>{`
         @keyframes pulse-dash {
           to { stroke-dashoffset: -10; }
+        }
+        @keyframes pulse-bottleneck {
+          0% { stroke: #ef4444; filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.4)); }
+          50% { stroke: #f87171; filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.8)); }
+          100% { stroke: #ef4444; filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.4)); }
         }
         .custom-scrollbar::-webkit-scrollbar { height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.02); }

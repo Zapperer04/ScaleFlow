@@ -5112,6 +5112,218 @@ def get_pipeline_optimization(pipeline_id):
         db.close()
 
 
+FORECAST_CACHE = {}
+
+@app.route('/pipelines/<int:pipeline_id>/forecast', methods=['GET'])
+def get_pipeline_forecast(pipeline_id):
+    db = SessionLocal()
+    try:
+        from replay import build_replay
+        replay_data = build_replay(db, pipeline_id)
+        if not replay_data:
+            return jsonify({"error": "Pipeline not found"}), 404
+            
+        events = replay_data.get("events") or []
+        if not events:
+            return jsonify({"error": "Replay unavailable. No events recorded."}), 409
+            
+        event_count = len(events)
+        last_timestamp = events[-1]["timestamp"] if events else None
+        
+        # Check forecast cache
+        cached_forecast = FORECAST_CACHE.get(pipeline_id)
+        if cached_forecast and cached_forecast.get("event_count") == event_count and cached_forecast.get("last_timestamp") == last_timestamp:
+            return jsonify(cached_forecast["response"]), 200
+            
+        # Get Performance Model (use cache or build)
+        from performance_analysis import build_performance_model
+        perf_model = None
+        cached_perf = PERFORMANCE_CACHE.get(pipeline_id)
+        if cached_perf and cached_perf.get("event_count") == event_count and cached_perf.get("last_timestamp") == last_timestamp:
+            perf_model = cached_perf["response"]["performance"]
+        else:
+            perf_model = build_performance_model(replay_data)
+            # update performance cache
+            PERFORMANCE_CACHE[pipeline_id] = {
+                "event_count": event_count,
+                "last_timestamp": last_timestamp,
+                "response": {
+                    "version": 1,
+                    "schema": "performance-model-v1",
+                    "generated_at": datetime.utcnow().isoformat() + "Z",
+                    "pipeline_id": pipeline_id,
+                    "correlation_id": replay_data.get("correlation_id"),
+                    "performance": perf_model
+                }
+            }
+            
+        # Get Optimization Model (use cache or build)
+        from performance_optimizer import analyze_performance
+        opt_model = None
+        cached_opt = OPTIMIZATION_CACHE.get(pipeline_id)
+        if cached_opt and cached_opt.get("event_count") == event_count and cached_opt.get("last_timestamp") == last_timestamp:
+            opt_model = cached_opt["response"]["optimization"]
+        else:
+            opt_model = analyze_performance(perf_model)
+            # update optimization cache
+            OPTIMIZATION_CACHE[pipeline_id] = {
+                "event_count": event_count,
+                "last_timestamp": last_timestamp,
+                "response": {
+                    "version": 1,
+                    "schema": "optimization-model-v1",
+                    "generated_at": datetime.utcnow().isoformat() + "Z",
+                    "pipeline_id": pipeline_id,
+                    "correlation_id": replay_data.get("correlation_id"),
+                    "optimization": opt_model
+                }
+            }
+            
+        # Optional SLA query parameter (in milliseconds)
+        sla_ms = request.args.get('sla_ms', type=float)
+        
+        # Build execution forecast
+        from execution_forecaster import build_execution_forecast
+        forecast_result = build_execution_forecast(perf_model, opt_model, sla_ms=sla_ms)
+        
+        response_body = {
+            "version": 1,
+            "schema": "forecast-model-v1",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "pipeline_id": pipeline_id,
+            "correlation_id": replay_data.get("correlation_id"),
+            "forecast": forecast_result
+        }
+        
+        # Save to forecast cache
+        FORECAST_CACHE[pipeline_id] = {
+            "event_count": event_count,
+            "last_timestamp": last_timestamp,
+            "response": response_body
+        }
+        
+        return jsonify(response_body), 200
+    except Exception as e:
+        return jsonify({"error": f"Forecast analysis failed: {str(e)}"}), 500
+    finally:
+        db.close()
+
+
+ADVISOR_CACHE = {}
+
+@app.route('/pipelines/<int:pipeline_id>/advisor', methods=['GET'])
+def get_pipeline_advisor(pipeline_id):
+    db = SessionLocal()
+    try:
+        from replay import build_replay
+        replay_data = build_replay(db, pipeline_id)
+        if not replay_data:
+            return jsonify({"error": "Pipeline not found"}), 404
+            
+        events = replay_data.get("events") or []
+        if not events:
+            return jsonify({"error": "Replay unavailable. No events recorded."}), 409
+            
+        event_count = len(events)
+        last_timestamp = events[-1]["timestamp"] if events else None
+        
+        # Check advisor cache
+        cached_advisor = ADVISOR_CACHE.get(pipeline_id)
+        if cached_advisor and cached_advisor.get("event_count") == event_count and cached_advisor.get("last_timestamp") == last_timestamp:
+            return jsonify(cached_advisor["response"]), 200
+            
+        # Get Performance Model (use cache or build)
+        from performance_analysis import build_performance_model
+        perf_model = None
+        cached_perf = PERFORMANCE_CACHE.get(pipeline_id)
+        if cached_perf and cached_perf.get("event_count") == event_count and cached_perf.get("last_timestamp") == last_timestamp:
+            perf_model = cached_perf["response"]["performance"]
+        else:
+            perf_model = build_performance_model(replay_data)
+            PERFORMANCE_CACHE[pipeline_id] = {
+                "event_count": event_count,
+                "last_timestamp": last_timestamp,
+                "response": {
+                    "version": 1,
+                    "schema": "performance-model-v1",
+                    "generated_at": datetime.utcnow().isoformat() + "Z",
+                    "pipeline_id": pipeline_id,
+                    "correlation_id": replay_data.get("correlation_id"),
+                    "performance": perf_model
+                }
+            }
+            
+        # Get Optimization Model (use cache or build)
+        from performance_optimizer import analyze_performance
+        opt_model = None
+        cached_opt = OPTIMIZATION_CACHE.get(pipeline_id)
+        if cached_opt and cached_opt.get("event_count") == event_count and cached_opt.get("last_timestamp") == last_timestamp:
+            opt_model = cached_opt["response"]["optimization"]
+        else:
+            opt_model = analyze_performance(perf_model)
+            OPTIMIZATION_CACHE[pipeline_id] = {
+                "event_count": event_count,
+                "last_timestamp": last_timestamp,
+                "response": {
+                    "version": 1,
+                    "schema": "optimization-model-v1",
+                    "generated_at": datetime.utcnow().isoformat() + "Z",
+                    "pipeline_id": pipeline_id,
+                    "correlation_id": replay_data.get("correlation_id"),
+                    "optimization": opt_model
+                }
+            }
+            
+        # Get Forecast Model (use cache or build)
+        from execution_forecaster import build_execution_forecast
+        forecast_result = None
+        cached_forecast = FORECAST_CACHE.get(pipeline_id)
+        if cached_forecast and cached_forecast.get("event_count") == event_count and cached_forecast.get("last_timestamp") == last_timestamp:
+            forecast_result = cached_forecast["response"]["forecast"]
+        else:
+            forecast_result = build_execution_forecast(perf_model, opt_model)
+            FORECAST_CACHE[pipeline_id] = {
+                "event_count": event_count,
+                "last_timestamp": last_timestamp,
+                "response": {
+                    "version": 1,
+                    "schema": "forecast-model-v1",
+                    "generated_at": datetime.utcnow().isoformat() + "Z",
+                    "pipeline_id": pipeline_id,
+                    "correlation_id": replay_data.get("correlation_id"),
+                    "forecast": forecast_result
+                }
+            }
+            
+        # Build Scheduling Advisor
+        from adaptive_scheduler import build_scheduling_advisor
+        advisor_result = build_scheduling_advisor(replay_data, perf_model, opt_model, forecast_result)
+        
+        response_body = {
+            "version": 1,
+            "schema": "advisor-model-v1",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "pipeline_id": pipeline_id,
+            "correlation_id": replay_data.get("correlation_id"),
+            "advisor": advisor_result["advisor"]
+        }
+        
+        # Save to advisor cache
+        ADVISOR_CACHE[pipeline_id] = {
+            "event_count": event_count,
+            "last_timestamp": last_timestamp,
+            "response": response_body
+        }
+        
+        return jsonify(response_body), 200
+    except Exception as e:
+        return jsonify({"error": f"Advisor generation failed: {str(e)}"}), 500
+    finally:
+        db.close()
+
+
+
+
 @app.route('/replay/pipelines/<int:pipeline_id>', methods=['GET'])
 def get_replay_details(pipeline_id):
     db = SessionLocal()

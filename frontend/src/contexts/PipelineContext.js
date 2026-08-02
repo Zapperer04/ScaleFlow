@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect, useRef, useMemo } from 'react';
-import { fetchPipelineTimeline, retryTask, fetchPipelineReplay, fetchPipelinePerformance, fetchPipelineOptimization } from '../services/pipelines';
+import { fetchPipelineTimeline, retryTask, fetchPipelineReplay, fetchPipelinePerformance, fetchPipelineOptimization, fetchPipelineForecast, fetchPipelineAdvisor } from '../services/pipelines';
 
 const PipelineContext = createContext(null);
 
@@ -397,6 +397,18 @@ export const PipelineProvider = ({ children }) => {
   const [optimizationError, setOptimizationError] = useState(null);
   const abortOptimizationFetchRef = useRef(null);
 
+  // Forecast Hooks
+  const [forecastModel, setForecastModel] = useState(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
+  const [forecastError, setForecastError] = useState(null);
+  const abortForecastFetchRef = useRef(null);
+
+  // Advisor Hooks
+  const [advisorModel, setAdvisorModel] = useState(null);
+  const [advisorLoading, setAdvisorLoading] = useState(false);
+  const [advisorError, setAdvisorError] = useState(null);
+  const abortAdvisorFetchRef = useRef(null);
+
   // Time-Travel Comparison State Hooks
   const [selectedSnapshotAIndex, setSelectedSnapshotAIndex] = useState(null);
   const [selectedSnapshotBIndex, setSelectedSnapshotBIndex] = useState(null);
@@ -517,6 +529,12 @@ export const PipelineProvider = ({ children }) => {
     if (abortOptimizationFetchRef.current) {
       abortOptimizationFetchRef.current.abort();
     }
+    if (abortForecastFetchRef.current) {
+      abortForecastFetchRef.current.abort();
+    }
+    if (abortAdvisorFetchRef.current) {
+      abortAdvisorFetchRef.current.abort();
+    }
     setPerformanceModel(null);
     setPerformanceLoading(false);
     setPerformanceError(null);
@@ -524,6 +542,12 @@ export const PipelineProvider = ({ children }) => {
     setOptimizationModel(null);
     setOptimizationLoading(false);
     setOptimizationError(null);
+    setForecastModel(null);
+    setForecastLoading(false);
+    setForecastError(null);
+    setAdvisorModel(null);
+    setAdvisorLoading(false);
+    setAdvisorError(null);
   }, [selectedPipelineId]);
 
   // Playback Control Actions
@@ -584,18 +608,28 @@ export const PipelineProvider = ({ children }) => {
       setReplayAnalysis(data.analysis || null);
       setReplayIndex(normalized.length > 0 ? 0 : -1);
       
-      // Invalidate performance & optimization cache when replay is loaded/regenerated
+      // Invalidate performance, optimization & forecast cache when replay is loaded/regenerated
       if (abortPerformanceFetchRef.current) {
         abortPerformanceFetchRef.current.abort();
       }
       if (abortOptimizationFetchRef.current) {
         abortOptimizationFetchRef.current.abort();
       }
+      if (abortForecastFetchRef.current) {
+        abortForecastFetchRef.current.abort();
+      }
+      if (abortAdvisorFetchRef.current) {
+        abortAdvisorFetchRef.current.abort();
+      }
       setPerformanceModel(null);
       setPerformanceError(null);
       setSelectedPerformanceSpanId(null);
       setOptimizationModel(null);
       setOptimizationError(null);
+      setForecastModel(null);
+      setForecastError(null);
+      setAdvisorModel(null);
+      setAdvisorError(null);
       
       setReplayMode(true);
     } catch (err) {
@@ -634,6 +668,12 @@ export const PipelineProvider = ({ children }) => {
     if (abortOptimizationFetchRef.current) {
       abortOptimizationFetchRef.current.abort();
     }
+    if (abortForecastFetchRef.current) {
+      abortForecastFetchRef.current.abort();
+    }
+    if (abortAdvisorFetchRef.current) {
+      abortAdvisorFetchRef.current.abort();
+    }
     setPerformanceModel(null);
     setPerformanceLoading(false);
     setPerformanceError(null);
@@ -641,6 +681,12 @@ export const PipelineProvider = ({ children }) => {
     setOptimizationModel(null);
     setOptimizationLoading(false);
     setOptimizationError(null);
+    setForecastModel(null);
+    setForecastLoading(false);
+    setForecastError(null);
+    setAdvisorModel(null);
+    setAdvisorLoading(false);
+    setAdvisorError(null);
   };
 
   const loadPerformance = async () => {
@@ -707,6 +753,90 @@ export const PipelineProvider = ({ children }) => {
         setOptimizationLoading(false);
       }
     }
+  };
+
+  const loadForecast = async () => {
+    if (!selectedPipelineId) return;
+    if (forecastModel && forecastModel.pipeline_id === selectedPipelineId) {
+      return; // cached
+    }
+    if (abortForecastFetchRef.current) {
+      abortForecastFetchRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortForecastFetchRef.current = controller;
+    
+    setForecastLoading(true);
+    setForecastError(null);
+    try {
+      const data = await fetchPipelineForecast(selectedPipelineId, controller.signal);
+      if (controller.signal.aborted) return;
+      setForecastModel(data);
+    } catch (err) {
+      if (err.name === 'CanceledError' || err.name === 'AbortError') return;
+      if (err.response && err.response.status === 409) {
+        setForecastError("Forecast analysis unavailable: Replay unavailable.");
+      } else if (err.response && err.response.status === 404) {
+        setForecastError("Pipeline not found.");
+      } else {
+        setForecastError(err.message || "Failed to load execution forecast.");
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setForecastLoading(false);
+      }
+    }
+  };
+
+  const clearForecast = () => {
+    if (abortForecastFetchRef.current) {
+      abortForecastFetchRef.current.abort();
+    }
+    setForecastModel(null);
+    setForecastLoading(false);
+    setForecastError(null);
+  };
+
+  const loadAdvisor = async () => {
+    if (!selectedPipelineId) return;
+    if (advisorModel && advisorModel.pipeline_id === selectedPipelineId) {
+      return; // cached
+    }
+    if (abortAdvisorFetchRef.current) {
+      abortAdvisorFetchRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortAdvisorFetchRef.current = controller;
+    
+    setAdvisorLoading(true);
+    setAdvisorError(null);
+    try {
+      const data = await fetchPipelineAdvisor(selectedPipelineId, controller.signal);
+      if (controller.signal.aborted) return;
+      setAdvisorModel(data);
+    } catch (err) {
+      if (err.name === 'CanceledError' || err.name === 'AbortError') return;
+      if (err.response && err.response.status === 409) {
+        setAdvisorError("Advisor analysis unavailable: Replay unavailable.");
+      } else if (err.response && err.response.status === 404) {
+        setAdvisorError("Pipeline not found.");
+      } else {
+        setAdvisorError(err.message || "Failed to load scheduling advisor.");
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setAdvisorLoading(false);
+      }
+    }
+  };
+
+  const clearAdvisor = () => {
+    if (abortAdvisorFetchRef.current) {
+      abortAdvisorFetchRef.current.abort();
+    }
+    setAdvisorModel(null);
+    setAdvisorLoading(false);
+    setAdvisorError(null);
   };
 
   // Synchronize selection state when span changes
@@ -877,7 +1007,21 @@ export const PipelineProvider = ({ children }) => {
       optimizationModel,
       optimizationLoading,
       optimizationError,
-      loadOptimization
+      loadOptimization,
+
+      // Forecast exports
+      forecastModel,
+      forecastLoading,
+      forecastError,
+      loadForecast,
+      clearForecast,
+
+      // Advisor exports
+      advisorModel,
+      advisorLoading,
+      advisorError,
+      loadAdvisor,
+      clearAdvisor
     }}>
       {children}
     </PipelineContext.Provider>

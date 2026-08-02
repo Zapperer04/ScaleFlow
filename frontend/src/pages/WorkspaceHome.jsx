@@ -30,6 +30,8 @@ import { FlameGraph } from '../components/workspace/timeline/FlameGraph';
 import { WorkerUtilizationChart } from '../components/workspace/timeline/WorkerUtilizationChart';
 import { StageBreakdown } from '../components/workspace/timeline/StageBreakdown';
 import { OptimizationTab } from '../components/workspace/timeline/OptimizationTab';
+import { ForecastTab } from '../components/workspace/timeline/ForecastTab';
+import { SchedulingAdvisorTab } from '../components/workspace/timeline/SchedulingAdvisorTab';
 
 export const WorkspaceHome = () => {
   const { 
@@ -43,7 +45,9 @@ export const WorkspaceHome = () => {
     comparisonMode, loadPerformance,
     performanceModel, performanceLoading, performanceError,
     optimizationModel, optimizationLoading, optimizationError,
-    loadOptimization
+    loadOptimization,
+    forecastModel, forecastLoading, forecastError, loadForecast,
+    loadAdvisor
   } = usePipeline();
   const { selectedDocumentId, setSelectedDocumentId, uploadedFiles, setUploadedFiles } = useDocument();
   const { selectDocument } = useWorkspace();
@@ -124,14 +128,18 @@ export const WorkspaceHome = () => {
     if (page) setActivePdfPage(parseInt(page));
   }, [setSelectedDocumentId]);
 
-  // Load performance & optimization model once per replay session when tab is opened
+  // Load performance, optimization & forecast model once per replay session when tab is opened
   useEffect(() => {
     if (bottomTab === 'performance' && replayMode) {
       loadPerformance();
     } else if (bottomTab === 'optimization' && replayMode) {
       loadOptimization();
+    } else if (bottomTab === 'forecast' && replayMode) {
+      loadForecast();
+    } else if (bottomTab === 'advisor' && replayMode) {
+      loadAdvisor();
     }
-  }, [bottomTab, replayMode, selectedPipelineId, loadPerformance, loadOptimization]);
+  }, [bottomTab, replayMode, selectedPipelineId, loadPerformance, loadOptimization, loadForecast, loadAdvisor]);
 
   useEffect(() => {
     if (!selectedDocumentId) {
@@ -879,6 +887,8 @@ export const WorkspaceHome = () => {
               <>
                 <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('performance'); }} style={{ background: 'none', border: 'none', color: bottomTab === 'performance' ? 'var(--color-accent)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Performance Analytics</button>
                 <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('optimization'); }} style={{ background: 'none', border: 'none', color: bottomTab === 'optimization' ? 'var(--color-accent)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Optimization</button>
+                <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('forecast'); }} style={{ background: 'none', border: 'none', color: bottomTab === 'forecast' ? 'var(--color-accent)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Forecast</button>
+                <button onClick={() => { setBottomDrawerCollapsed(false); setBottomTab('advisor'); }} style={{ background: 'none', border: 'none', color: bottomTab === 'advisor' ? 'var(--color-accent)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Scheduling Advisor</button>
               </>
             )}
           </div>
@@ -1015,7 +1025,7 @@ export const WorkspaceHome = () => {
                 </>
               )}
             </div>
-          ) : (
+          ) : bottomTab === 'optimization' ? (
             <div style={{ padding: '16px', overflow: 'auto', height: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Performance Recommendations & Simulation</span>
               <OptimizationTab 
@@ -1024,6 +1034,16 @@ export const WorkspaceHome = () => {
                 loading={optimizationLoading}
                 error={optimizationError}
               />
+            </div>
+          ) : bottomTab === 'forecast' ? (
+            <div style={{ padding: '16px', overflow: 'auto', height: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Predictive Execution Forecasting</span>
+              <ForecastTab />
+            </div>
+          ) : (
+            <div style={{ padding: '16px', overflow: 'auto', height: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Adaptive Scheduling Advisor</span>
+              <SchedulingAdvisorTab />
             </div>
           )}
         </div>

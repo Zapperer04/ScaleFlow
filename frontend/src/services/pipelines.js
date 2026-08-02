@@ -129,5 +129,16 @@ export const fetchPipelineOptimization = async (pipelineId, signal) => {
   return response.data;
 };
 
+export const fetchPipelineForecast = async (pipelineId, signal) => {
+  const response = await apiClient.get(`/pipelines/${pipelineId}/forecast`, { signal });
+  return response.data;
+};
+
+export const fetchPipelineAdvisor = async (pipelineId, signal) => {
+  const response = await apiClient.get(`/pipelines/${pipelineId}/advisor`, { signal });
+  return response.data;
+};
+
+
 
 

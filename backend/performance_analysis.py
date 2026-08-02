@@ -156,6 +156,7 @@ def build_performance_model(replay):
             timeline.append({
                 "segment_id": f"task-{tid}-attempt-{retry_idx}",
                 "task_id": int(tid) if tid.isdigit() else tid,
+                "task_type": task_types.get(tid, "unknown"),
                 "worker_id": att.get("worker_id") or "unknown",
                 "queue": att.get("queue") or "default",
                 "started_at": started_at,
