@@ -9,20 +9,28 @@ import React from 'react';
  * @param {React.ReactNode} props.children - Tag text
  */
 export const StatusBadge = ({
-  status = 'online',
+  status = 'ready',
   className = '',
   children,
   ...rest
 }) => {
-  let statusClass = 'checking';
-  if (status === 'online' || status === 'completed') statusClass = 'online';
-  if (status === 'offline' || status === 'failed') statusClass = 'offline';
-  if (status === 'checking' || status === 'running' || status === 'queued') statusClass = 'checking';
+  const normStatus = status.toLowerCase();
+  
+  // Map normalized status strings to CSS class names
+  let badgeClass = 'badge';
+  if (['running', 'queued', 'waiting', 'completed', 'paused', 'cancelled', 'failed', 'warning', 'ready'].includes(normStatus)) {
+    badgeClass = `badge ${normStatus}`;
+  } else if (normStatus === 'online') {
+    badgeClass = 'badge completed';
+  } else if (normStatus === 'offline') {
+    badgeClass = 'badge failed';
+  } else {
+    badgeClass = 'badge queued';
+  }
 
   return (
-    <span className={`status-badge-wrapper ${className}`.trim()} {...rest}>
-      <span className={`status-dot ${statusClass}`} aria-hidden="true" />
-      <span className="status-badge-text">{children}</span>
+    <span className={`${badgeClass} ${className}`.trim()} {...rest}>
+      <span className="status-badge-text">{children || status}</span>
     </span>
   );
 };

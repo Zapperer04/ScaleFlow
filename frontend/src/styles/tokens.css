@@ -54,6 +54,30 @@
   --badge-danger-bg: rgba(239, 68, 68, 0.08);
   --badge-danger-border: rgba(239, 68, 68, 0.15);
   --badge-danger-text: var(--color-failure);
+  /* Pipeline State Colors */
+  --color-pipeline-running:   #3b82f6;
+  --color-pipeline-waiting:   #f59e0b;
+  --color-pipeline-complete:  #10b981;
+  --color-pipeline-failed:    #ef4444;
+  --color-pipeline-paused:    #8b5cf6;
+  --color-pipeline-queued:    #6366f1;
+  --color-pipeline-cancelled: #64748b;
+
+  /* Layout Scale */
+  --sidebar-width:            240px;
+  --sidebar-collapsed-width:  64px;
+  --header-height:            56px;
+  --max-content-width:        1600px;
+  --drawer-handle-height:     36px;
+
+  /* Elevation Levels */
+  --bg-surface-2:             #14171d;
+  --bg-surface-3:             #1c1f27;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
 }
 
 /* Light Theme (Scaffold) */
@@ -108,6 +132,31 @@
   --badge-danger-bg: rgba(220, 38, 38, 0.1);
   --badge-danger-border: rgba(220, 38, 38, 0.2);
   --badge-danger-text: var(--color-failure);
+
+  /* Pipeline State Colors (Light) */
+  --color-pipeline-running:   #2563eb;
+  --color-pipeline-waiting:   #d97706;
+  --color-pipeline-complete:  #059669;
+  --color-pipeline-failed:    #dc2626;
+  --color-pipeline-paused:    #7c3aed;
+  --color-pipeline-queued:    #4f46e5;
+  --color-pipeline-cancelled: #475569;
+
+  /* Layout Scale */
+  --sidebar-width:            240px;
+  --sidebar-collapsed-width:  64px;
+  --header-height:            56px;
+  --max-content-width:        1600px;
+  --drawer-handle-height:     36px;
+
+  /* Elevation Levels */
+  --bg-surface-2:             #f1f5f9;
+  --bg-surface-3:             #e2e8f0;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
 /* High Contrast Theme (Scaffold) */

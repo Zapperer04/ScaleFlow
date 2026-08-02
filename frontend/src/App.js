@@ -139,13 +139,15 @@ function AppContent() {
   const queuePressure = getQueuePressure();
 
   const commandPaletteActions = [
-    { id: 'nav-workspace', label: 'Go to AI Document Workspace', category: 'Navigation', perform: () => handleNavigateToView('workspace') },
-    { id: 'nav-documents', label: 'Go to Documents Library', category: 'Navigation', perform: () => handleNavigateToView('documents') },
-    { id: 'nav-pipelines', label: 'Go to Pipeline DAG Visualizer', category: 'Navigation', perform: () => handleNavigateToView('pipelines') },
+    { id: 'nav-workspace', label: 'Go to Workspace', category: 'Navigation', perform: () => handleNavigateToView('workspace') },
+    { id: 'nav-upload', label: 'Go to Upload', category: 'Navigation', perform: () => handleNavigateToView('upload') },
+    { id: 'nav-documents', label: 'Go to Documents', category: 'Navigation', perform: () => handleNavigateToView('documents') },
+    { id: 'nav-chat', label: 'Go to AI Chat', category: 'Navigation', perform: () => handleNavigateToView('chat') },
+    { id: 'nav-pipelines', label: 'Go to Pipeline Monitor', category: 'Navigation', perform: () => handleNavigateToView('pipelines') },
     { id: 'nav-artifacts', label: 'Go to Artifacts Explorer', category: 'Navigation', perform: () => handleNavigateToView('artifacts') },
     { id: 'nav-retrieval', label: 'Go to Retrieval Inspector', category: 'Navigation', perform: () => handleNavigateToView('retrieval') },
-    { id: 'nav-benchmarks', label: 'Go to System Benchmarks', category: 'Navigation', perform: () => handleNavigateToView('benchmarks') },
-    { id: 'nav-infrastructure', label: 'Go to System Infrastructure', category: 'Navigation', perform: () => handleNavigateToView('infrastructure') },
+    { id: 'nav-benchmarks', label: 'Go to Analytics Dashboard', category: 'Navigation', perform: () => handleNavigateToView('benchmarks') },
+    { id: 'nav-infrastructure', label: 'Go to Infrastructure Health', category: 'Navigation', perform: () => handleNavigateToView('infrastructure') },
     { id: 'nav-settings', label: 'Go to Settings', category: 'Navigation', perform: () => handleNavigateToView('settings') },
     { id: 'action-tests', label: 'Execute System Integration Tests', category: 'System Operations', perform: () => handleRunTests() }
   ];
@@ -177,7 +179,11 @@ function AppContent() {
           )}
 
           <Suspense fallback={<WorkspaceSkeleton />}>
-            {activeView === 'workspace' && <WorkspaceHome />}
+            {activeView === 'workspace' && <WorkspaceHome activeTab="active" />}
+            
+            {activeView === 'upload' && <WorkspaceHome activeTab="upload" />}
+
+            {activeView === 'chat' && <WorkspaceHome activeTab="chat" />}
             
             {activeView === 'documents' && (
               <DocumentsLibrary onNavigateToView={handleNavigateToView} />

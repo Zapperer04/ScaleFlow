@@ -1,19 +1,17 @@
-/* eslint-disable no-unused-vars */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Layers, Cpu, RefreshCw, Menu, X, Bell, Search, Info, 
-  CheckCircle2, AlertTriangle, AlertOctagon, Trash2, Eye,
+  Layers, Cpu, Menu, X, Search, Eye,
   Home, UploadCloud, Files, MessageSquare, Activity, 
-  ChevronDown, ChevronRight, Database, Settings, Terminal, LineChart
+  ChevronDown, ChevronRight, Database, Settings, Terminal, LineChart,
+  ChevronLeft, Layout, Trash2, CheckCircle2, AlertOctagon, AlertTriangle, Info
 } from 'lucide-react';
-import Button from '../ui/Button';
-import Breadcrumb from '../ui/Breadcrumb';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { useNotification } from '../../contexts/NotificationContext';
 import { usePipeline } from '../../contexts/PipelineContext';
 import { useDocument } from '../../contexts/DocumentContext';
 import { fetchPipelineDetails } from '../../services/pipelines';
 import { globalSearch } from '../../services/search';
+import BottomDrawer from './BottomDrawer';
 
 /**
  * Reusable layout wrapper for the ScaleFlow application workspace.
@@ -36,6 +34,17 @@ export const AppShell = ({
   const isMobile = useMediaQuery('(max-width: 768px)');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Desktop sidebar collapsed state
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('scaleflow_sidebar_collapsed') === 'true';
+  });
+
+  const toggleSidebarCollapse = () => {
+    const nextCollapsed = !sidebarCollapsed;
+    setSidebarCollapsed(nextCollapsed);
+    localStorage.setItem('scaleflow_sidebar_collapsed', String(nextCollapsed));
+  };
+
   // Dev mode toggle (disabled by default)
   const [devMode, setDevMode] = useState(() => {
     return localStorage.getItem('scaleflow_dev_mode') === 'true';
@@ -50,9 +59,19 @@ export const AppShell = ({
     }
   };
 
-  const { notifications, unreadCount, markAsRead, clearAll } = useNotification();
+  // Bottom Developer Drawer toggle state
+  const [devPanelOpen, setDevPanelOpen] = useState(() => {
+    return localStorage.getItem('scaleflow_dev_panel_open') === 'true';
+  });
+
+  const toggleDevPanel = () => {
+    const nextOpen = !devPanelOpen;
+    setDevPanelOpen(nextOpen);
+    localStorage.setItem('scaleflow_dev_panel_open', String(nextOpen));
+  };
+
+  const { notifications, markAsRead, clearAll } = useNotification();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [infraOpen, setInfraOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
@@ -64,11 +83,9 @@ export const AppShell = ({
   const { selectedPipelineId } = usePipeline();
   const { selectedDocumentId, uploadedFiles } = useDocument();
   const [activePipelineData, setActivePipelineData] = useState(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const activeDoc = uploadedFiles.find(f => f.id === selectedDocumentId);
   const activePipelineStatus = activePipelineData?.pipeline?.status || 'Idle';
-  const activeWorkersCount = workers.filter(w => w.status !== 'offline').length;
 
   useEffect(() => {
     if (!selectedPipelineId) {
@@ -87,29 +104,6 @@ export const AppShell = ({
     const interval = setInterval(loadDetails, 3000);
     return () => clearInterval(interval);
   }, [selectedPipelineId]);
-
-  useEffect(() => {
-    if (activePipelineStatus.toLowerCase() !== 'running') return;
-    const interval = setInterval(() => {
-      setElapsedSeconds(prev => prev + 1);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [activePipelineStatus]);
-
-  const handleSearchChange = async (e) => {
-    const q = e.target.value;
-    setSearchQuery(q);
-    if (q.trim().length > 1) {
-      try {
-        const res = await globalSearch(q);
-        setSearchResults(res);
-      } catch (err) {
-        console.error("Global search error", err);
-      }
-    } else {
-      setSearchResults(null);
-    }
-  };
 
   const handlePrimaryNavigate = (viewId) => {
     if (viewId === 'upload') {
@@ -137,15 +131,38 @@ export const AppShell = ({
     }
   };
 
-  const breadcrumbItems = [
-    { label: 'ScaleFlow Workspace', onClick: () => handlePrimaryNavigate('workspace') },
-    { label: activeView.charAt(0).toUpperCase() + activeView.slice(1) }
-  ];
-
+  const handleSearchChange = async (e) => {
+    const q = e.target.value;
+    setSearchQuery(q);
+    if (q.trim().length > 1) {
+      try {
+        const res = await globalSearch(q);
+        setSearchResults(res);
+      } catch (err) {
+        console.error("Global search error", err);
+      }
+    } else {
+      setSearchResults(null);
+    }
+  };
+  
   const sidebarClass = isMobile && !sidebarOpen ? 'sidebar-collapsed' : '';
+  const appContainerClass = `app-container ${sidebarCollapsed ? 'sidebar-collapsed-layout' : ''}`.trim();
+
+  // Combine infra status for a single system status dot
+  const getSystemStatus = () => {
+    if (redisStatus === 'online' && dbStatus === 'online' && qdrantStatus === 'online') {
+      return { label: 'All systems operational', color: 'var(--color-success)' };
+    }
+    if (redisStatus === 'offline' && dbStatus === 'offline' && qdrantStatus === 'offline') {
+      return { label: 'Systems offline', color: 'var(--color-failure)' };
+    }
+    return { label: 'Degraded performance', color: 'var(--color-warning)' };
+  };
+  const systemStatus = getSystemStatus();
 
   return (
-    <div className="app-container" style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+    <div className={appContainerClass} style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
       
       {/* Mobile Top Navbar with toggles */}
       {isMobile && (
@@ -166,10 +183,9 @@ export const AppShell = ({
 
       {/* 1. LEFT SIDEBAR */}
       <aside className={`sidebar ${sidebarClass}`.trim()} role="navigation" aria-label="Sidebar Navigation" style={{
-        width: '260px',
-        background: 'rgba(11, 16, 32, 0.45)',
-        backdropFilter: 'blur(20px)',
-        borderRight: '1px solid rgba(255, 255, 255, 0.05)',
+        width: sidebarCollapsed ? 'var(--sidebar-collapsed-width)' : 'var(--sidebar-width)',
+        background: 'var(--bg-panel)',
+        borderRight: '1px solid var(--border-subtle)',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
@@ -181,161 +197,178 @@ export const AppShell = ({
       }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
           {!isMobile && (
-            <div className="sidebar-branding" style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '8px' }}>
+            <div className="sidebar-branding" style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: sidebarCollapsed ? '0' : '8px' }}>
               <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Layers size={22} style={{ color: 'var(--color-accent)' }} />
-                <span style={{ fontSize: '1.15rem', fontWeight: 800, letterSpacing: '-0.02em', background: 'linear-gradient(90deg, #fff 0%, #a5b4fc 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>ScaleFlow</span>
+                <Layers size={22} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
+                {!sidebarCollapsed && <span className="sidebar-title-text" style={{ fontSize: '1.15rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>ScaleFlow</span>}
               </div>
-              <span className="sidebar-subtitle text-caption" style={{ color: 'var(--text-muted)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Enterprise Agent Platform</span>
+              {!sidebarCollapsed && <span className="sidebar-subtitle text-caption" style={{ color: 'var(--text-muted)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Enterprise Agent Platform</span>}
             </div>
           )}
 
           <nav className="sidebar-nav" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div className="text-caption" style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontSize: '9px', marginBottom: '8px', paddingLeft: '8px' }}>
-              Primary Navigation
-            </div>
+            {!sidebarCollapsed && (
+              <div className="text-caption" style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontSize: '9px', marginBottom: '8px', paddingLeft: '8px' }}>
+                Primary Navigation
+              </div>
+            )}
             
             <button 
               className={`sidebar-nav-item ${activeView === 'workspace' ? 'active' : ''}`}
               onClick={() => handlePrimaryNavigate('workspace')}
+              data-label="Workspace"
+              aria-label="Workspace"
             >
               <Home size={16} />
               <span>Workspace</span>
             </button>
 
             <button 
-              className="sidebar-nav-item"
+              className={`sidebar-nav-item ${activeView === 'upload' ? 'active' : ''}`}
               onClick={() => handlePrimaryNavigate('upload')}
+              data-label="Upload"
+              aria-label="Upload"
             >
               <UploadCloud size={16} />
-              <span>Upload Document</span>
+              <span>Upload</span>
             </button>
 
             <button 
               className={`sidebar-nav-item ${activeView === 'documents' ? 'active' : ''}`}
               onClick={() => handlePrimaryNavigate('documents')}
+              data-label="Documents"
+              aria-label="Documents"
             >
               <Files size={16} />
               <span>Documents</span>
             </button>
 
             <button 
-              className="sidebar-nav-item"
+              className={`sidebar-nav-item ${activeView === 'chat' ? 'active' : ''}`}
               onClick={() => handlePrimaryNavigate('chat')}
+              data-label="AI Chat"
+              aria-label="AI Chat"
             >
               <MessageSquare size={16} />
-              <span>AI Chat QA</span>
+              <span>AI Chat</span>
             </button>
 
             <button 
               className={`sidebar-nav-item ${activeView === 'pipelines' ? 'active' : ''}`}
               onClick={() => handlePrimaryNavigate('pipelines')}
+              data-label="Pipeline"
+              aria-label="Pipeline"
             >
               <Activity size={16} />
-              <span>Pipeline Monitor</span>
+              <span>Pipeline</span>
             </button>
 
             <button 
               className={`sidebar-nav-item ${activeView === 'benchmarks' ? 'active' : ''}`}
               onClick={() => handlePrimaryNavigate('benchmarks')}
+              data-label="Analytics"
+              aria-label="Analytics"
             >
               <LineChart size={16} />
               <span>Analytics</span>
             </button>
 
-            {/* Collapsible Developer Tools */}
-            <div style={{ marginTop: '20px' }}>
-              <button 
-                onClick={() => setDevToolsOpen(!devToolsOpen)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  width: '100%',
-                  background: 'none',
-                  border: 'none',
-                  padding: '8px',
-                  color: 'rgba(255,255,255,0.4)',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  cursor: 'pointer',
-                  borderRadius: '6px',
-                  transition: 'color 0.2s'
-                }}
-              >
-                <span>Developer Tools</span>
-                {devToolsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              </button>
+            <button 
+              className={`sidebar-nav-item ${activeView === 'settings' ? 'active' : ''}`}
+              onClick={() => handlePrimaryNavigate('settings')}
+              data-label="Settings"
+              aria-label="Settings"
+            >
+              <Settings size={16} />
+              <span>Settings</span>
+            </button>
 
-              {devToolsOpen && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '8px', marginTop: '6px' }}>
+            {/* Collapsible Developer Tools (Only if devMode === true) */}
+            {devMode && (
+              <div style={{ marginTop: '20px' }}>
+                {!sidebarCollapsed && (
                   <button 
-                    className={`sidebar-nav-item ${activeView === 'pipelines' ? 'active' : ''}`}
-                    onClick={() => handlePrimaryNavigate('pipelines')}
-                    style={{ fontSize: '12px', padding: '8px 12px' }}
+                    onClick={() => setDevToolsOpen(!devToolsOpen)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      width: '100%',
+                      background: 'none',
+                      border: 'none',
+                      padding: '8px',
+                      color: 'rgba(255,255,255,0.4)',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      cursor: 'pointer',
+                      borderRadius: '6px',
+                      transition: 'color 0.2s'
+                    }}
                   >
-                    <Layers size={14} />
-                    <span>Pipeline DAG</span>
+                    <span>Developer Tools</span>
+                    {devToolsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   </button>
+                )}
 
-                  <button 
-                    className={`sidebar-nav-item ${activeView === 'artifacts' ? 'active' : ''}`}
-                    onClick={() => handlePrimaryNavigate('artifacts')}
-                    style={{ fontSize: '12px', padding: '8px 12px' }}
-                  >
-                    <Database size={14} />
-                    <span>Artifacts Explorer</span>
-                  </button>
+                {(devToolsOpen || sidebarCollapsed) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: sidebarCollapsed ? '0' : '8px', marginTop: '6px' }}>
+                    <button 
+                      className={`sidebar-nav-item ${activeView === 'artifacts' ? 'active' : ''}`}
+                      onClick={() => handlePrimaryNavigate('artifacts')}
+                      style={{ fontSize: '12px', padding: '8px 12px' }}
+                      data-label="Artifacts"
+                      aria-label="Artifacts Explorer"
+                    >
+                      <Database size={14} />
+                      <span>Artifacts</span>
+                    </button>
 
-                  <button 
-                    className={`sidebar-nav-item ${activeView === 'retrieval' ? 'active' : ''}`}
-                    onClick={() => handlePrimaryNavigate('retrieval')}
-                    style={{ fontSize: '12px', padding: '8px 12px' }}
-                  >
-                    <Search size={14} />
-                    <span>Retrieval Inspector</span>
-                  </button>
+                    <button 
+                      className={`sidebar-nav-item ${activeView === 'retrieval' ? 'active' : ''}`}
+                      onClick={() => handlePrimaryNavigate('retrieval')}
+                      style={{ fontSize: '12px', padding: '8px 12px' }}
+                      data-label="Retrieval"
+                      aria-label="Retrieval Inspector"
+                    >
+                      <Search size={14} />
+                      <span>Retrieval</span>
+                    </button>
 
-                  <button 
-                    className={`sidebar-nav-item ${activeView === 'infrastructure' ? 'active' : ''}`}
-                    onClick={() => handlePrimaryNavigate('infrastructure')}
-                    style={{ fontSize: '12px', padding: '8px 12px' }}
-                  >
-                    <Cpu size={14} />
-                    <span>Infrastructure</span>
-                  </button>
-
-                  <button 
-                    className={`sidebar-nav-item ${activeView === 'benchmarks' ? 'active' : ''}`}
-                    onClick={() => handlePrimaryNavigate('benchmarks')}
-                    style={{ fontSize: '12px', padding: '8px 12px' }}
-                  >
-                    <LineChart size={14} />
-                    <span>Benchmarks</span>
-                  </button>
-
-                  <button 
-                    className={`sidebar-nav-item ${activeView === 'settings' ? 'active' : ''}`}
-                    onClick={() => handlePrimaryNavigate('settings')}
-                    style={{ fontSize: '12px', padding: '8px 12px' }}
-                  >
-                    <Settings size={14} />
-                    <span>Settings</span>
-                  </button>
-                </div>
-              )}
-            </div>
+                    <button 
+                      className={`sidebar-nav-item ${activeView === 'infrastructure' ? 'active' : ''}`}
+                      onClick={() => handlePrimaryNavigate('infrastructure')}
+                      style={{ fontSize: '12px', padding: '8px 12px' }}
+                      data-label="Infrastructure"
+                      aria-label="Infrastructure Health"
+                    >
+                      <Cpu size={14} />
+                      <span>Infrastructure</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </nav>
         </div>
 
-        {/* Brand User Switch */}
+        {/* Collapsible toggle / Developer panel switches */}
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <button 
+            onClick={toggleSidebarCollapse}
+            className="sidebar-nav-item"
+            style={{ padding: '8px 10px', display: 'flex', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', background: 'transparent' }}
+            aria-label={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          >
+            {sidebarCollapsed ? <Layout size={16} /> : <ChevronLeft size={16} />}
+            {!sidebarCollapsed && <span>Collapse Menu</span>}
+          </button>
+          
           <button 
             onClick={toggleDevMode}
             style={{
-              background: devMode ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+              background: devMode ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255, 255, 255, 0.03)',
               border: devMode ? '1px solid var(--color-accent)' : '1px solid rgba(255,255,255,0.08)',
               color: devMode ? 'var(--color-accent)' : 'var(--text-muted)',
               borderRadius: '6px',
@@ -349,128 +382,56 @@ export const AppShell = ({
               transition: 'all 0.2s',
               width: '100%'
             }}
+            aria-label="Toggle Developer Mode"
           >
             <Eye size={14} />
-            {devMode ? 'Developer Mode' : 'User Mode'}
+            {!sidebarCollapsed && (devMode ? 'Dev Mode' : 'User Mode')}
           </button>
         </div>
       </aside>
 
       {/* 2. MAIN VIEWPORT */}
-      <main className="main-viewport" role="main" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', height: '100vh' }}>
+      <main className="main-viewport" role="main" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', height: '100vh', paddingBottom: devPanelOpen ? '280px' : 'var(--drawer-handle-height)' }}>
         
         {/* Top Control Bar */}
         <header className="top-bar" role="banner" style={{ 
           display: 'flex', 
           justifyContent: 'space-between', 
           alignItems: 'center', 
-          height: '70px', 
-          borderBottom: '1px solid rgba(255, 255, 255, 0.05)', 
+          height: 'var(--header-height)', 
+          borderBottom: '1px solid var(--border-subtle)', 
           padding: '0 24px', 
-          background: 'rgba(11, 16, 32, 0.6)', 
-          backdropFilter: 'blur(12px)',
+          background: 'var(--bg-panel)', 
           position: 'sticky',
           top: 0,
           zIndex: 90
         }}>
           <div className="top-bar-left" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <Breadcrumb items={breadcrumbItems} />
+            <span className="text-page-title" style={{ textTransform: 'capitalize' }}>
+              {activeView === 'pipelines' ? 'Pipeline' : activeView === 'benchmarks' ? 'Analytics' : activeView}
+            </span>
             
             {/* Active Document Status Indicator */}
             {activeDoc && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.8rem', background: 'rgba(255,255,255,0.02)', padding: '6px 14px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{activeDoc.original_filename}</span>
-                <span style={{ width: '1px', height: '12px', background: 'rgba(255,255,255,0.1)' }} />
-                <span className={`status-badge ${activePipelineStatus.toLowerCase()}`} style={{ fontSize: '0.75rem', fontWeight: 700 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.8rem', background: 'var(--bg-input)', padding: '4px 12px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+                <span className="text-caption" style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{activeDoc.original_filename}</span>
+                <span style={{ width: '1px', height: '12px', background: 'var(--border-subtle)' }} />
+                <span className={`status-badge-text text-caption`} style={{ color: activePipelineStatus.toLowerCase() === 'running' ? 'var(--color-pipeline-running)' : 'var(--text-muted)' }}>
                   {activePipelineStatus}
                 </span>
-                {activePipelineStatus.toLowerCase() === 'running' && (
-                  <>
-                    <span style={{ width: '1px', height: '12px', background: 'rgba(255,255,255,0.1)' }} />
-                    <span style={{ fontFamily: 'monospace', color: 'var(--color-accent)' }}>{elapsedSeconds}s</span>
-                  </>
-                )}
               </div>
             )}
           </div>
 
           <div className="top-bar-right" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             
-            {/* Expandable Infrastructure status trigger */}
-            <div style={{ position: 'relative' }}>
-              <button 
-                onClick={() => setInfraOpen(!infraOpen)}
-                style={{
-                  background: infraOpen ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255, 255, 255, 0.03)',
-                  border: infraOpen ? '1px solid var(--color-accent)' : '1px solid rgba(255, 255, 255, 0.06)',
-                  color: infraOpen ? 'var(--color-accent)' : 'var(--text-muted)',
-                  borderRadius: '6px',
-                  padding: '6px 12px',
-                  fontSize: '0.75rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s'
-                }}
-              >
-                <Cpu size={14} />
-                <span>Infra Health {infraOpen ? '▲' : '▼'}</span>
-              </button>
-
-              {/* Infrastructure Popover Drawer */}
-              {infraOpen && (
-                <div style={{
-                  position: 'absolute',
-                  top: '40px',
-                  right: 0,
-                  width: '280px',
-                  background: 'rgba(15, 23, 42, 0.95)',
-                  backdropFilter: 'blur(20px)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '10px',
-                  padding: '16px',
-                  boxShadow: '0 12px 32px rgba(0,0,0,0.5)',
-                  zIndex: 200,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '12px'
-                }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#fff', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '8px' }}>
-                    System Architecture Health
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.75rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Redis Broker</span>
-                      <span style={{ color: redisStatus === 'online' ? 'var(--color-success)' : 'var(--color-failure)', fontWeight: 600 }}>{redisStatus === 'online' ? 'Online' : 'Offline'}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Postgres DB</span>
-                      <span style={{ color: dbStatus === 'online' ? 'var(--color-success)' : 'var(--color-failure)', fontWeight: 600 }}>{dbStatus === 'online' ? 'Online' : 'Offline'}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Qdrant Vector</span>
-                      <span style={{ color: qdrantStatus === 'online' ? 'var(--color-success)' : 'var(--color-failure)', fontWeight: 600 }}>{qdrantStatus === 'online' ? 'Online' : 'Offline'}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>HA Role</span>
-                      <span style={{ color: '#fff', fontWeight: 600 }}>{leaderId !== 'Checking...' && leaderId !== 'None' ? 'Active Leader' : 'Replica Node'}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Orchestrators</span>
-                      <span style={{ color: '#fff', fontWeight: 600 }}>{orchestratorCount}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Active Workers</span>
-                      <span style={{ color: 'var(--color-accent)', fontWeight: 600 }}>{activeWorkersCount} Online</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Queue Length</span>
-                      <span style={{ color: '#fff', fontWeight: 600 }}>{queueStats.total || 0}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
+            {/* System Status Indicator Dot */}
+            <div 
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
+              title={`${systemStatus.label} (Redis: ${redisStatus}, DB: ${dbStatus}, Qdrant: ${qdrantStatus})`}
+            >
+              <span className="status-dot" style={{ background: systemStatus.color, width: '8px', height: '8px' }} />
+              <span className="hide-mobile" style={{ color: 'var(--text-secondary)' }}>{systemStatus.color === 'var(--color-success)' ? 'Operational' : 'Issue'}</span>
             </div>
 
             {/* Global Search Trigger */}
@@ -482,47 +443,48 @@ export const AppShell = ({
               <Search size={18} />
             </button>
 
-            {/* Notification Bell */}
-            <div style={{ position: 'relative' }}>
-              <button 
-                onClick={() => setDrawerOpen(true)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px' }}
-                aria-label="Open notifications"
-              >
-                <Bell size={18} />
-                {unreadCount > 0 && (
-                  <span style={{
-                    position: 'absolute',
-                    top: '2px',
-                    right: '2px',
-                    background: 'var(--color-accent)',
-                    color: '#fff',
-                    borderRadius: '50%',
-                    width: '15px',
-                    height: '15px',
-                    fontSize: '0.6rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 'bold'
-                  }}>
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
-            </div>
+            {/* Developer Panel Toggle Button */}
+            <button 
+              onClick={toggleDevPanel}
+              style={{
+                background: devPanelOpen ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                border: devPanelOpen ? '1px solid var(--color-accent)' : '1px solid rgba(255, 255, 255, 0.06)',
+                color: devPanelOpen ? 'var(--color-accent)' : 'var(--text-muted)',
+                borderRadius: '6px',
+                padding: '6px 12px',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s'
+              }}
+              aria-label="Toggle Developer Panel"
+            >
+              <Terminal size={14} />
+              <span className="hide-mobile">Dev Panel</span>
+            </button>
 
-            {devMode && (
-              <Button 
-                variant="primary" 
-                onClick={onRunTests}
-                disabled={testing}
-                iconLeft={testing ? <RefreshCw size={14} className="animate-spin" /> : <Cpu size={14} />}
-                style={{ borderRadius: '6px', fontSize: '0.75rem', padding: '6px 14px' }}
-              >
-                Run Tests
-              </Button>
-            )}
+            {/* Profile Avatar Trigger (Initials placeholder) */}
+            <div 
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: 'var(--radius-full)',
+                background: 'var(--color-accent)',
+                color: 'var(--text-white)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 'bold',
+                fontSize: '0.8rem',
+                cursor: 'pointer'
+              }}
+              aria-label="User Profile Menu"
+              title="User Profile"
+            >
+              JD
+            </div>
           </div>
         </header>
 
@@ -694,6 +656,8 @@ export const AppShell = ({
           </div>
         </div>
       )}
+      {/* Resizable Developer Drawer / Bottom Panel */}
+      <BottomDrawer isOpen={devPanelOpen} onClose={toggleDevPanel} />
     </div>
   );
 };

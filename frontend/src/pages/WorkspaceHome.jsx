@@ -39,7 +39,7 @@ import { CitationViewer } from '../components/workspace/documents/CitationViewer
 import { DocumentViewer } from '../components/workspace/documents/DocumentViewer';
 
 
-export const WorkspaceHome = () => {
+export const WorkspaceHome = ({ activeTab }) => {
   const { 
     selectedPipelineId, setSelectedPipelineId, pipelines,
     timelineEvents, timelineLoading, timelineError,
@@ -146,6 +146,17 @@ export const WorkspaceHome = () => {
       loadAdvisor();
     }
   }, [bottomTab, replayMode, selectedPipelineId, loadPerformance, loadOptimization, loadForecast, loadAdvisor]);
+
+  useEffect(() => {
+    if (activeTab === 'upload') {
+      setWorkspaceState('blank');
+      return;
+    }
+    if (activeTab === 'chat' && selectedDocumentId) {
+      setWorkspaceState('chatting');
+      setActiveCenterTab('query');
+    }
+  }, [activeTab, selectedDocumentId]);
 
   useEffect(() => {
     if (!selectedDocumentId) {
