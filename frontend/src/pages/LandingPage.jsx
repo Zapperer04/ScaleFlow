@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Search,
   CheckCircle,
@@ -16,13 +17,46 @@ import {
 } from 'lucide-react';
 
 export const LandingPage = () => {
+  const { token, login } = useAuth();
   // Parallax Hero Effect State
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+  const handleLaunchWorkspace = async () => {
+    if (token) {
+      window.location.href = '/workspace';
+    } else {
+      try {
+        await login('admin', 'password', true);
+        window.location.href = '/workspace';
+      } catch (e) {
+        window.location.href = '/login';
+      }
+    }
+  };
 
   // Hero Product Simulation Stateful Cycle
   // 0: Upload, 1: Parse, 2: Graph, 3: Query, 4: Grounded Answer
   const [simStep, setSimStep] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  // Fast 1-second 0-100% upload progress animation when entering Step 0
+  useEffect(() => {
+    if (simStep === 0) {
+      setUploadProgress(0);
+      const start = Date.now();
+      const duration = 1000; // 1 second duration
+      const interval = setInterval(() => {
+        const elapsed = Date.now() - start;
+        const p = Math.min(100, Math.floor((elapsed / duration) * 100));
+        setUploadProgress(p);
+        if (p >= 100) {
+          clearInterval(interval);
+        }
+      }, 20);
+      return () => clearInterval(interval);
+    }
+  }, [simStep]);
 
   // Stateful Walkthrough (Section 2)
   const [walkthroughStep, setWalkthroughStep] = useState(0);
@@ -137,8 +171,8 @@ export const LandingPage = () => {
           </p>
 
           <div style={{ display: 'flex', gap: 'var(--spacing-12)', flexWrap: 'wrap', marginTop: 'var(--spacing-8)' }}>
-            <Button className="btn-primary" variant="primary" style={{ padding: '0 var(--spacing-24)', height: '42px' }} onClick={() => (window.location.href = '/register')}>
-              Get Started
+            <Button className="btn-primary" variant="primary" style={{ padding: '0 var(--spacing-24)', height: '42px' }} onClick={handleLaunchWorkspace}>
+              Launch Workspace
             </Button>
             <Button className="btn-secondary" variant="secondary" style={{ padding: '0 var(--spacing-24)', height: '42px' }} onClick={() => {
               const element = document.getElementById('how-it-works');
@@ -193,21 +227,29 @@ export const LandingPage = () => {
             </div>
 
             {/* Miniature App Layout */}
-            <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', height: '280px', backgroundColor: 'var(--bg-primary)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '105px 1fr', height: '290px', backgroundColor: 'var(--bg-primary)' }}>
               
               {/* Mini Left Sidebar */}
-              <div style={{ borderRight: '1px solid var(--border-subtle)', padding: 'var(--spacing-12) 8px', display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: 'var(--bg-panel)' }}>
-                <div style={{ width: '100%', height: '14px', backgroundColor: 'var(--color-accent-glow)', border: '1px solid var(--color-accent)', borderRadius: '3px' }} />
-                <div style={{ width: '80%', height: '10px', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '2px' }} />
-                <div style={{ width: '70%', height: '10px', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '2px' }} />
-                <div style={{ width: '90%', height: '10px', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '2px' }} />
+              <div style={{ borderRight: '1px solid var(--border-subtle)', padding: '8px 6px', display: 'flex', flexDirection: 'column', gap: '8px', backgroundColor: 'var(--bg-panel)' }}>
+                <div style={{ fontSize: '8px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontWeight: 'bold', padding: '0 4px', letterSpacing: '0.05em' }}>
+                  DOCUMENTS
+                </div>
+                <div style={{ width: '100%', padding: '4px 6px', backgroundColor: 'rgba(79, 70, 229, 0.12)', border: '1px solid var(--color-accent)', borderRadius: '4px', fontSize: '8px', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  📄 credit_v2.pdf
+                </div>
+                <div style={{ width: '100%', padding: '4px 6px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '4px', fontSize: '8px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  📊 q4_report.pdf
+                </div>
+                <div style={{ width: '100%', padding: '4px 6px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '4px', fontSize: '8px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  📜 deal_terms.pdf
+                </div>
               </div>
 
               {/* Main Workspace Frame */}
-              <div style={{ padding: 'var(--spacing-16)', display: 'flex', flexDirection: 'column', gap: 'var(--spacing-12)', overflow: 'hidden' }}>
+              <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', overflow: 'hidden' }}>
                 
                 {/* Interactive Mockup Tabs */}
-                <div style={{ display: 'flex', gap: '4px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '6px' }}>
+                <div style={{ display: 'flex', gap: '4px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '6px', alignItems: 'center' }}>
                   {[
                     { label: 'Upload', step: 0 },
                     { label: 'Parse', step: 1 },
@@ -228,7 +270,7 @@ export const LandingPage = () => {
                         cursor: 'pointer',
                         padding: '2px 6px',
                         borderRadius: 'var(--radius-6)',
-                        backgroundColor: simStep === tab.step ? 'rgba(79, 70, 229, 0.08)' : 'transparent',
+                        backgroundColor: simStep === tab.step ? 'rgba(79, 70, 229, 0.12)' : 'transparent',
                         transition: 'all 0.15s ease',
                       }}
                     >
@@ -255,66 +297,227 @@ export const LandingPage = () => {
                 </div>
 
                 {/* Main simulation content split */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 'var(--spacing-12)', height: '100%' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px', height: '100%', minHeight: 0 }}>
                   
                   {/* Left: Document Vision Parse Pane */}
-                  <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-6)', padding: 'var(--spacing-8)', display: 'flex', flexDirection: 'column', gap: '6px', backgroundColor: 'var(--bg-panel)', position: 'relative' }}>
-                    <div style={{ width: '85%', height: '6px', backgroundColor: 'var(--text-disabled)', borderRadius: '1px' }} />
-                    <div style={{ width: '95%', height: '6px', backgroundColor: 'var(--text-disabled)', borderRadius: '1px' }} />
-                    <div style={{ width: '60%', height: '6px', backgroundColor: 'var(--text-disabled)', borderRadius: '1px' }} />
+                  <div style={{ border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px', backgroundColor: 'var(--bg-panel)', position: 'relative', overflow: 'hidden' }}>
+                    <div style={{ fontSize: '8px', fontFamily: 'var(--font-mono)', color: 'var(--color-accent)', fontWeight: 'bold', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '3px' }}>
+                      CREDIT_AGREEMENT.PDF &bull; P.4
+                    </div>
                     
-                    {/* Bounding box scanning/highlighting based on state */}
+                    {/* Clause Block wrapped inside dynamic Bounding Box container */}
+                    <div style={{
+                      position: 'relative',
+                      padding: '6px',
+                      marginTop: '4px',
+                      borderRadius: '4px',
+                      border: simStep >= 2
+                        ? '1.5px solid var(--color-accent)'
+                        : simStep === 1
+                        ? '1.5px solid var(--color-success)'
+                        : '1px solid transparent',
+                      backgroundColor: simStep >= 2
+                        ? 'rgba(79, 70, 229, 0.08)'
+                        : simStep === 1
+                        ? 'rgba(16, 185, 129, 0.06)'
+                        : 'transparent',
+                      transition: 'all 0.2s ease',
+                    }}>
+                      {/* Bounding Box Label Badge */}
+                      {simStep >= 2 && (
+                        <span style={{
+                          position: 'absolute',
+                          top: '-7px',
+                          right: '6px',
+                          fontSize: '6px',
+                          fontFamily: 'var(--font-mono)',
+                          color: 'var(--color-accent)',
+                          fontWeight: 'bold',
+                          backgroundColor: 'var(--bg-panel)',
+                          border: '1px solid var(--color-accent)',
+                          padding: '0 4px',
+                          borderRadius: '2px',
+                          lineHeight: '1.2',
+                        }}>
+                          BOUNDING BOX #12.4
+                        </span>
+                      )}
+                      {simStep === 1 && (
+                        <span style={{
+                          position: 'absolute',
+                          top: '-7px',
+                          right: '6px',
+                          fontSize: '6px',
+                          fontFamily: 'var(--font-mono)',
+                          color: 'var(--color-success)',
+                          fontWeight: 'bold',
+                          backgroundColor: 'var(--bg-panel)',
+                          border: '1px solid var(--color-success)',
+                          padding: '0 4px',
+                          borderRadius: '2px',
+                          lineHeight: '1.2',
+                        }}>
+                          VLM SCANNING
+                        </span>
+                      )}
+
+                      <div style={{ fontSize: '8px', fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '3px' }}>
+                        Sec 4.2 Interest Rate Fallback
+                      </div>
+                      <div style={{ fontSize: '7.5px', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+                        If SOFR Benchmark is unavailable, rate is <strong style={{ color: 'var(--color-accent)' }}>Daily SOFR + 0.125%</strong>.
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: '6.5px', color: 'var(--text-muted)', paddingLeft: '4px' }}>
+                      Clause 12.4 &bull; Annex B Schedule
+                    </div>
+
+                    {/* Upload progress overlay (1-second 0-100% animation) */}
                     {simStep === 0 && (
-                      <div style={{ position: 'absolute', top: '24px', left: '8px', right: '8px', bottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px' }}>
-                        <span style={{ fontSize: '8px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>Uploading 82%</span>
+                      <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        backgroundColor: 'rgba(11, 15, 25, 0.88)',
+                        backdropFilter: 'blur(3px)',
+                        padding: '0 16px',
+                        zIndex: 10
+                      }}>
+                        <div style={{
+                          fontSize: '8.5px',
+                          fontFamily: 'var(--font-mono)',
+                          color: uploadProgress < 100 ? 'var(--color-accent)' : 'var(--color-success)',
+                          fontWeight: 'bold',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}>
+                          {uploadProgress < 100 ? (
+                            <>Uploading credit_v2.pdf... {uploadProgress}%</>
+                          ) : (
+                            <>✓ Upload Complete (100%)</>
+                          )}
+                        </div>
+                        <div style={{
+                          width: '100%',
+                          maxWidth: '140px',
+                          height: '4px',
+                          backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                          borderRadius: '2px',
+                          overflow: 'hidden'
+                        }}>
+                          <div style={{
+                            height: '100%',
+                            width: `${uploadProgress}%`,
+                            backgroundColor: uploadProgress < 100 ? 'var(--color-accent)' : 'var(--color-success)',
+                            borderRadius: '2px',
+                            transition: 'width 0.05s linear'
+                          }} />
+                        </div>
                       </div>
                     )}
 
-                    {simStep === 1 && (
-                      <div style={{ position: 'absolute', top: '16px', left: '4px', right: '4px', height: '24px', border: '1.5px solid var(--color-success)', backgroundColor: 'rgba(16, 185, 129, 0.08)', borderRadius: '3px' }}>
-                        <div style={{ width: '100%', height: '1.5px', backgroundColor: 'var(--color-success)', position: 'absolute', top: '0', animation: 'scan 1s infinite alternate' }} />
-                      </div>
-                    )}
-
-                    {simStep >= 2 && (
-                      <div style={{ position: 'absolute', top: '16px', left: '4px', right: '4px', height: '24px', border: '1.5px solid var(--color-accent)', backgroundColor: 'rgba(79, 70, 229, 0.06)', borderRadius: '3px' }}>
-                        <span style={{ position: 'absolute', top: '-10px', left: '2px', fontSize: '7px', fontFamily: 'var(--font-mono)', color: 'var(--color-accent)', fontWeight: 'bold' }}>ANNEX_B</span>
-                      </div>
-                    )}
-
-                    <div style={{ marginTop: 'auto', fontSize: '7px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                      spatial_ref: [248, 14, 520, 18]
+                    <div style={{ marginTop: 'auto', fontSize: '6.5px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                      spatial_ref: [p.4, 248, 14, 520, 18]
                     </div>
                   </div>
 
-                  {/* Right: Knowledge Graph Canvas or Chat Answer generation */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {/* Right: Context-aware step view */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', height: '100%' }}>
                     
-                    {simStep < 3 ? (
-                      /* Graph Canvas simulator */
-                      <div style={{ flex: 1, border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-6)', position: 'relative', overflow: 'hidden', backgroundColor: 'rgba(0,0,0,0.1)' }}>
-                        <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
-                          <path d="M 30 30 L 110 80 L 50 130" stroke="var(--color-accent)" strokeWidth="1.2" fill="none" opacity={simStep >= 2 ? 0.6 : 0.1} />
-                        </svg>
-                        <circle cx="30" cy="30" r={simStep >= 2 ? '4' : '2'} fill={simStep >= 2 ? 'var(--color-accent)' : 'var(--text-disabled)'} />
-                        <circle cx="110" cy="80" r={simStep >= 2 ? '4' : '2'} fill={simStep >= 2 ? 'var(--color-success)' : 'var(--text-disabled)'} />
-                        <circle cx="50" cy="130" r={simStep >= 2 ? '4' : '2'} fill={simStep >= 2 ? 'var(--color-accent)' : 'var(--text-disabled)'} />
-                        <span style={{ position: 'absolute', bottom: '4px', left: '4px', fontSize: '7px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                          {simStep >= 2 ? 'Nodes synced' : 'Empty Graph'}
-                        </span>
-                      </div>
-                    ) : (
-                      /* Chat Answers simulator */
-                      <div style={{ flex: 1, border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-6)', padding: 'var(--spacing-8)', display: 'flex', flexDirection: 'column', gap: '6px', backgroundColor: 'var(--bg-panel)', fontFamily: 'var(--font-mono)', fontSize: '8px' }}>
-                        <div style={{ color: 'var(--color-accent)', fontWeight: 'bold' }}>Q: interest fallback?</div>
-                        <div style={{ color: 'var(--text-primary)', display: 'flex', flexWrap: 'wrap', gap: '2px' }}>
-                          <span>Fallback rate is SOFR + 0.125%</span>
-                          {simStep === 4 && (
-                            <span style={{ display: 'inline-block', padding: '1px 3px', backgroundColor: 'rgba(16,185,129,0.15)', border: '1px solid var(--color-success)', borderRadius: '2px', color: 'var(--color-success)', fontSize: '7px' }}>
-                              [Annex B]
-                            </span>
-                          )}
+                    {/* Step 0: Upload Ingestion Queue */}
+                    {simStep === 0 && (
+                      <div style={{ flex: 1, border: '1px solid var(--border-subtle)', borderRadius: '6px', backgroundColor: 'var(--bg-panel)', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px', fontFamily: 'var(--font-mono)' }}>
+                        <div style={{ fontSize: '7.5px', color: 'var(--color-accent)', fontWeight: 'bold', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '3px' }}>
+                          INGESTION QUEUE
                         </div>
+                        <div style={{ fontSize: '7.5px', color: 'var(--text-primary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div>File: <strong>credit_v2.pdf</strong> (1.4 MB)</div>
+                          <div>Engine: <strong>ScaleFlow MR-RAG</strong></div>
+                          <div>Target: <strong>Qdrant + SQLite Graph</strong></div>
+                        </div>
+                        <div style={{ marginTop: 'auto', fontSize: '7px', color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          🟢 Worker Node #1 Allocated
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step 1: VLM Layout Parser */}
+                    {simStep === 1 && (
+                      <div style={{ flex: 1, border: '1px solid var(--border-subtle)', borderRadius: '6px', backgroundColor: 'var(--bg-panel)', padding: '8px', display: 'flex', flexDirection: 'column', gap: '5px', fontFamily: 'var(--font-mono)' }}>
+                        <div style={{ fontSize: '7.5px', color: 'var(--color-success)', fontWeight: 'bold', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '3px' }}>
+                          VLM LAYOUT PARSER
+                        </div>
+                        <div style={{ fontSize: '7px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <div>✓ 4 Layout Blocks Detected</div>
+                          <div>✓ Table Grid Recognized</div>
+                          <div>✓ OCR Confidence: 99.1%</div>
+                        </div>
+                        <div style={{ marginTop: 'auto', fontSize: '7px', color: 'var(--color-success)' }}>
+                          ⚡ Building Canonical Normalizer
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step 2: Knowledge Graph Construction */}
+                    {simStep === 2 && (
+                      <div style={{ flex: 1, border: '1px solid var(--border-subtle)', borderRadius: '6px', position: 'relative', overflow: 'hidden', backgroundColor: 'rgba(0,0,0,0.25)', padding: '6px', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ fontSize: '7.5px', fontFamily: 'var(--font-mono)', color: 'var(--color-accent)', fontWeight: 'bold', marginBottom: '4px' }}>
+                          KNOWLEDGE GRAPH
+                        </div>
+                        <svg style={{ width: '100%', height: '75px' }}>
+                          <line x1="20" y1="20" x2="90" y2="20" stroke="var(--color-accent)" strokeWidth="1.5" />
+                          <line x1="90" y1="20" x2="55" y2="60" stroke="var(--color-success)" strokeWidth="1.5" />
+                          
+                          <circle cx="20" cy="20" r="5" fill="var(--color-accent)" />
+                          <circle cx="90" cy="20" r="5" fill="var(--color-accent)" />
+                          <circle cx="55" cy="60" r="5" fill="var(--color-success)" />
+                          
+                          <text x="5" y="32" fill="var(--text-secondary)" fontSize="6.5" fontFamily="sans-serif">Credit Doc</text>
+                          <text x="75" y="32" fill="var(--text-secondary)" fontSize="6.5" fontFamily="sans-serif">Sec 4.2</text>
+                          <text x="35" y="72" fill="var(--color-success)" fontSize="6.5" fontWeight="bold" fontFamily="sans-serif">SOFR+0.125%</text>
+                        </svg>
+                        <div style={{ marginTop: 'auto', fontSize: '7px', fontFamily: 'var(--font-mono)', color: 'var(--color-success)' }}>
+                          🟢 3 Nodes & 2 Edges Synced
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step 3 & 4: Retrieval and Grounded Citation Answer */}
+                    {simStep >= 3 && (
+                      <div style={{ flex: 1, border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '6px', display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: 'var(--bg-panel)', fontFamily: 'var(--font-mono)', fontSize: '7.5px' }}>
+                        <div style={{ color: 'var(--color-accent)', fontWeight: 'bold', borderBottom: '1px dashed var(--border-subtle)', paddingBottom: '3px' }}>
+                          {simStep === 3 ? 'HYBRID RETRIEVAL' : 'GROUNDED ANSWER'}
+                        </div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '7px' }}>
+                          Q: What is interest fallback?
+                        </div>
+                        <div style={{ color: 'var(--text-primary)', fontSize: '7.5px', lineHeight: 1.3 }}>
+                          Per Sec 4.2, rate is <strong>SOFR + 0.125%</strong> per annum.
+                        </div>
+                        {simStep === 4 && (
+                          <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                            <span style={{ padding: '1px 4px', backgroundColor: 'rgba(16,185,129,0.15)', border: '1px solid var(--color-success)', borderRadius: '3px', color: 'var(--color-success)', fontSize: '6.5px', fontWeight: 'bold' }}>
+                              📍 Annex B, Clause 12.4
+                            </span>
+                            <span style={{ color: 'var(--color-success)', fontSize: '6.5px' }}>
+                              ✓ 99.4% Grounded
+                            </span>
+                          </div>
+                        )}
+                        {simStep === 3 && (
+                          <div style={{ marginTop: 'auto', color: 'var(--text-muted)', fontSize: '6.5px' }}>
+                            ⚡ P95 Latency: 18.2ms
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -486,14 +689,8 @@ export const LandingPage = () => {
           </p>
         </div>
 
-        {/* Feature Grid: 3 columns desktop, 2 columns tablet, 1 column mobile */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-            gap: 'var(--spacing-24)',
-          }}
-        >
+        {/* Feature Grid: 3 columns desktop (3x2 grid), 2 columns tablet, 1 column mobile */}
+        <div className="core-capabilities-grid">
           {/* Card 1 */}
           <Card className="feature-hover-card" style={{ transition: 'all var(--transition-normal)' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-12)' }}>
@@ -970,6 +1167,22 @@ export const LandingPage = () => {
         .bp-arrow-path {
           stroke-dasharray: 5;
           animation: pulse-dash 2.5s linear infinite;
+        }
+
+        .core-capabilities-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: var(--spacing-24);
+        }
+        @media (max-width: 992px) {
+          .core-capabilities-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+        @media (max-width: 600px) {
+          .core-capabilities-grid {
+            grid-template-columns: 1fr;
+          }
         }
 
         /* Reduced Motion Media Query */

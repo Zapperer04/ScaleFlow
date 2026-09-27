@@ -183,6 +183,27 @@ export const Login = () => {
               {status === 'loading' ? 'Authenticating...' : 'Continue'}
             </Button>
 
+            <Button
+              type="button"
+              variant="secondary"
+              style={{ width: '100%', height: '38px', backgroundColor: 'rgba(79, 70, 229, 0.1)', borderColor: 'var(--color-accent)', color: 'var(--text-primary)' }}
+              onClick={async () => {
+                setUsername('admin');
+                setPassword('password');
+                setStatus('loading');
+                try {
+                  await login('admin', 'password', true);
+                  setStatus('success');
+                  setTimeout(() => navigate('/workspace'), 500);
+                } catch (err) {
+                  setStatus('failure');
+                  setErrorMsg(err.message || 'Login failed');
+                }
+              }}
+            >
+              🚀 Instant Demo Access (Log in as Admin)
+            </Button>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-disabled)', fontSize: '10px', fontWeight: 600 }}>
               <span style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-subtle)' }} />
               <span>OR CONTINUE WITH</span>

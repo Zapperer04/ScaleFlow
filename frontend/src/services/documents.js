@@ -62,3 +62,8 @@ export const fetchPdfContent = async (fileId) => {
   });
   return response.data;
 };
+
+export const deleteDocument = async (fileId) => {
+  const response = await apiClient.delete(`/files/${fileId}`);
+  return response.data;
+};

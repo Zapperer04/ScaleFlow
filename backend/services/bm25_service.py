@@ -11,12 +11,18 @@ import logging
 import threading
 from typing import Any, Dict, List, Optional
 
-from whoosh import index as whoosh_index
+from whoosh import index as whoosh_index, scoring
 from whoosh.analysis import StandardAnalyzer, StemmingAnalyzer
 from whoosh.fields import Schema, ID, TEXT, NUMERIC, STORED
 from whoosh.qparser import QueryParser
-from whoosh import scoring
-from whoosh.qparser import escape as whoosh_escape
+try:
+    from whoosh.qparser import escape as whoosh_escape
+except ImportError:
+    try:
+        from whoosh.qparser.syntax import escape as whoosh_escape
+    except ImportError:
+        import re
+        whoosh_escape = re.escape
 
 logger = logging.getLogger(__name__)
 

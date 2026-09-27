@@ -9,8 +9,9 @@ def load_env():
                     if line.strip() and not line.startswith('#'):
                         key, val = line.strip().split('=', 1)
                         key_strip = key.strip()
-                        if key_strip not in os.environ:
-                            os.environ[key_strip] = val.strip()
+                        val_strip = val.strip()
+                        if val_strip and (key_strip not in os.environ or not os.environ[key_strip]):
+                            os.environ[key_strip] = val_strip
                 break
         except FileNotFoundError:
             pass

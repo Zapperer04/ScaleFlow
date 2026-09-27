@@ -39,7 +39,7 @@ export const ScaleFlowLogo = ({ size = 26 }) => (
 );
 
 export const PublicLayout = ({ children }) => {
-  const { token, logout } = useAuth();
+  const { token, logout, login } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [theme, setTheme] = useState(() => {
@@ -69,6 +69,19 @@ export const PublicLayout = ({ children }) => {
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'theme-light' ? 'theme-dark' : 'theme-light'));
+  };
+
+  const handleLaunchWorkspace = async () => {
+    if (token) {
+      window.location.href = '/workspace';
+    } else {
+      try {
+        await login('admin', 'password', true);
+        window.location.href = '/workspace';
+      } catch (e) {
+        window.location.href = '/login';
+      }
+    }
   };
 
   const handleDocsClick = (e) => {
@@ -193,7 +206,7 @@ export const PublicLayout = ({ children }) => {
             </a>
           </nav>
 
-          {/* Right Actions - Beautiful, clean alignment */}
+          {/* Right Actions */}
           <div
             style={{
               display: 'none',
@@ -202,7 +215,7 @@ export const PublicLayout = ({ children }) => {
             }}
             className="desktop-nav"
           >
-            {/* Theme Toggle in visual layout */}
+            {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
               style={{
@@ -224,8 +237,8 @@ export const PublicLayout = ({ children }) => {
             
             {token ? (
               <>
-                <Button variant="secondary" onClick={() => (window.location.href = '/workspace')}>
-                  Workspace
+                <Button variant="primary" style={{ height: '36px', fontSize: 'var(--font-size-sm)', padding: '0 var(--spacing-16)' }} onClick={() => (window.location.href = '/workspace')}>
+                  Go to Workspace
                 </Button>
                 <Button variant="ghost" onClick={logout}>
                   Logout
@@ -236,8 +249,8 @@ export const PublicLayout = ({ children }) => {
                 <Button variant="ghost" style={{ fontSize: 'var(--font-size-sm)' }} onClick={() => (window.location.href = '/login')}>
                   Login
                 </Button>
-                <Button variant="primary" style={{ height: '36px', fontSize: 'var(--font-size-sm)', padding: '0 var(--spacing-16)' }} onClick={() => (window.location.href = '/register')}>
-                  Get Started
+                <Button variant="primary" style={{ height: '36px', fontSize: 'var(--font-size-sm)', padding: '0 var(--spacing-16)' }} onClick={handleLaunchWorkspace}>
+                  Launch Workspace
                 </Button>
               </>
             )}

@@ -180,7 +180,7 @@ def chunk_text(text: str, page_number: int = 0, default_section: str = 'unknown'
             if current_section['lines'] or current_section['name'] != default_sec_name:
                 sections.append(current_section)
             hdr = line.strip()
-            current_section = {'name': hdr, 'lines': []}
+            current_section = {'name': hdr, 'lines': [hdr]}
         else:
             current_section['lines'].append(line)
 
@@ -1084,8 +1084,14 @@ def chunk_document_graph(document_graph: dict) -> dict:
     if len(all_chunks) > MAX_GRAPH_CHUNKS:
         all_chunks = _progressive_degrade(all_chunks, MAX_GRAPH_CHUNKS, all_nodes, doc_id)
 
-    # Final filter: keep chunks that have text OR are structural metadata (embed=False)
-    all_chunks = [c for c in all_chunks if c.get("text", "").strip() or c.get("metadata", {}).get("embed") is False]
+    # Final filter: keep only chunks that have non-empty text
+    valid_chunks = []
+    for c in all_chunks:
+        txt = c.get("text", "")
+        if not txt or not txt.strip():
+            continue
+        valid_chunks.append(c)
+    all_chunks = valid_chunks
 
     # Ensure that for embedding chunks, we set the text properly and avoid empty texts
     for c in all_chunks:

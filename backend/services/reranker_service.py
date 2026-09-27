@@ -12,14 +12,21 @@ import threading
 import time
 from typing import List, Dict, Any, Optional
 
-import torch
-from sentence_transformers import CrossEncoder
-
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import config
+try:
+    import config
+except ImportError:
+    config = None
 
 logger = logging.getLogger(__name__)
+
+import torch
+try:
+    from sentence_transformers import CrossEncoder
+except Exception as e:
+    CrossEncoder = None
+    logger.warning(f"[RERANKER] Failed to import CrossEncoder: {e}")
 
 # ------------------------------------------------------------------------------
 # Configuration with fallbacks
@@ -46,33 +53,28 @@ def _select_device() -> str:
         return "mps"
     return "cpu"
 
-def _load_model() -> CrossEncoder:
+def _load_model() -> Optional[CrossEncoder]:
     """Load the cross‑encoder model with appropriate device and options."""
+    if CrossEncoder is None:
+        return None
     global _device
     _device = _select_device()
     logger.info(f"[RERANKER] Selected device: {_device}")
 
     # Load model
-    model = CrossEncoder(
-        RERANK_MODEL,
-        device=_device,
-        max_length=RERANK_MAX_LENGTH,
-        default_activation_function=None,  # we apply sigmoid manually
-        num_labels=1,
-    )
+    try:
+        model = CrossEncoder(
+            RERANK_MODEL,
+            device=_device,
+            max_length=RERANK_MAX_LENGTH,
+            default_activation_function=None,  # we apply sigmoid manually
+            num_labels=1,
+        )
+    except Exception as e:
+        logger.warning(f"[RERANKER] Failed to load model {RERANK_MODEL}: {e}")
+        return None
 
-    # Optional CPU quantization (experimental)
-    if _device == "cpu" and RERANK_USE_QUANTIZATION:
-        try:
-            import torch.quantization
-            model.model = torch.quantization.quantize_dynamic(
-                model.model, {torch.nn.Linear}, dtype=torch.qint8
-            )
-            logger.info("[RERANKER] Applied dynamic quantization")
-        except Exception as e:
-            logger.warning(f"[RERANKER] Quantization failed: {e}")
-
-    # Warm‑up inference (initialize kernels, eliminate first‑request latency)
+    # Warm‑up inference
     try:
         dummy_query = "warmup"
         dummy_text = "warmup text"
@@ -84,18 +86,17 @@ def _load_model() -> CrossEncoder:
 
     return model
 
-def get_reranker() -> CrossEncoder:
+def get_reranker() -> Optional[CrossEncoder]:
     """Thread‑safe singleton getter."""
     global _model, _model_loaded
-    if _model_loaded and _model is not None:
+    if _model_loaded:
         return _model
 
     with _model_lock:
-        if _model_loaded and _model is not None:
+        if _model_loaded:
             return _model
         _model = _load_model()
         _model_loaded = True
-        logger.info(f"[RERANKER] Model loaded: {RERANK_MODEL}")
         return _model
 
 # ------------------------------------------------------------------------------
@@ -163,6 +164,10 @@ def rerank(
     # 3. Load model and predict
     # ------------------------------------------------------------------------
     model = get_reranker()
+    if model is None:
+        logger.warning("[RERANKER] Reranker model is not available — using input chunk ordering")
+        return _copy_and_preserve_order(chunks)[:top_k]
+
     batch_size = max(1, min(RERANK_BATCH_SIZE, len(pairs)))
 
     start_time = time.perf_counter()

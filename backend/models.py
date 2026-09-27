@@ -217,6 +217,7 @@ class ArtifactType(PyEnum):
     bm25_index = "bm25_index"
     document_summary = "document_summary"
     retrieval_query = "retrieval_query"
+    query_vector = "query_vector"
     retrieved_context = "retrieved_context"
     expanded_context = "expanded_context"
     reranked_context = "reranked_context"

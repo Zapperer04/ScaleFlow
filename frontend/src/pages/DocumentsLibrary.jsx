@@ -99,8 +99,9 @@ export const DocumentsLibrary = ({ onNavigateToView }) => {
     
     // Associate active pipeline
     const assoc = pipelines.find(p => p.file_id === file.id || p.id === file.pipeline_id);
-    if (assoc) {
-      setSelectedPipelineId(assoc.id);
+    const targetPipelineId = assoc ? assoc.id : file.pipeline_id;
+    if (targetPipelineId) {
+      setSelectedPipelineId(targetPipelineId);
     }
     onNavigateToView('workspace');
   };
@@ -210,7 +211,7 @@ export const DocumentsLibrary = ({ onNavigateToView }) => {
                       {file.original_filename}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <Badge variant={file.status === 'completed' ? 'success' : file.status === 'failed' ? 'failure' : 'warning'}>
+                      <Badge variant={(file.status === 'completed' || file.status === 'processed') ? 'success' : (file.status === 'failed' || file.status === 'blocked') ? 'failure' : 'warning'}>
                         {file.status}
                       </Badge>
                     </td>
@@ -249,7 +250,7 @@ export const DocumentsLibrary = ({ onNavigateToView }) => {
             <div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-disabled)' }}>DOCUMENT STATUS</div>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
-                <Badge variant={selectedFileDetail.status === 'completed' ? 'success' : 'warning'}>{selectedFileDetail.status}</Badge>
+                <Badge variant={(selectedFileDetail.status === 'completed' || selectedFileDetail.status === 'processed') ? 'success' : (selectedFileDetail.status === 'failed' || selectedFileDetail.status === 'blocked') ? 'failure' : 'warning'}>{selectedFileDetail.status}</Badge>
               </div>
             </div>
             <div>

@@ -6,13 +6,14 @@ import {
   createQueryPipelineV1,
   fetchQueryPipelineAnswerV1,
 } from '../services/search';
-import { fetchUploadedFiles, fetchPdfContent } from '../services/documents';
+import { fetchUploadedFiles, fetchPdfContent, deleteDocument } from '../services/documents';
 import {
   fetchPipelineDetails,
 } from '../services/pipelines';
 import { apiClient } from '../services/apiClient';
 
-// ── Workspace State Components ────────────────────────────────
+import { useNotification } from '../contexts/NotificationContext';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { UploadWorkspace } from '../components/workspace/upload/UploadWorkspace';
 import { ProcessingWorkspace } from '../components/workspace/pipeline/ProcessingWorkspace';
 import { ReadyWorkspace } from '../components/workspace/chat/ReadyWorkspace';
@@ -43,10 +44,8 @@ const WS = {
 const pipelineStatusToWsState = (status) => {
   if (!status) return WS.EMPTY;
   const s = status.toLowerCase();
-  if (s === 'completed') return WS.READY;
-  if (['queued', 'running', 'waiting', 'paused', 'pending', 'failed', 'cancelled'].includes(s))
-    return WS.PROCESSING;
-  return WS.EMPTY;
+  if (s === 'completed' || s === 'processed') return WS.READY;
+  return WS.PROCESSING;
 };
 
 export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => {
@@ -140,12 +139,6 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
   // Automatic transitions — no manual navigation required
   // ─────────────────────────────────────────────────────────
   useEffect(() => {
-    // Override: parent navigation tab forces Upload
-    if (activeTab === 'upload') {
-      setWorkspaceState(WS.EMPTY);
-      return;
-    }
-
     if (!selectedDocumentId) {
       setWorkspaceState(WS.EMPTY);
       return;
@@ -158,21 +151,31 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
       (p) => p.file_id === selectedDocumentId || (doc && (p.file_id === doc.id || p.id === doc.pipeline_id))
     );
 
-    if (assoc) {
-      setSelectedPipelineId(assoc.id);
-      const nextState = pipelineStatusToWsState(assoc.status);
+    const targetPipelineId = assoc ? assoc.id : (doc ? doc.pipeline_id : null);
+    if (targetPipelineId) {
+      setSelectedPipelineId(targetPipelineId);
+    }
+
+    const effectiveStatus = assoc ? assoc.status : (doc ? doc.status : null);
+    if (effectiveStatus) {
+      const nextState = pipelineStatusToWsState(effectiveStatus);
       setWorkspaceState(nextState);
     } else {
-      // No pipeline yet — show processing (polling will pick it up shortly)
+      // Default to processing state if status is pending/unknown
       setWorkspaceState(WS.PROCESSING);
     }
-  }, [selectedDocumentId, uploadedFiles, pipelines, setSelectedPipelineId, activeTab]);
+  }, [selectedDocumentId, uploadedFiles, pipelines, setSelectedPipelineId]);
 
   // ─────────────────────────────────────────────────────────
   // Poll pipeline details (DAG + metadata) every 3s
   // ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedPipelineId || replayMode) return;
+    
+    // Check current status before starting polling
+    const currentStatus = activeDag?.pipeline?.status?.toLowerCase();
+    const isTerminal = currentStatus && ['completed', 'cancelled', 'failed'].includes(currentStatus);
+    
     const load = async () => {
       try {
         const details = await fetchPipelineDetails(selectedPipelineId);
@@ -190,10 +193,37 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
         setPipelineMetadata(metaRes.data);
       } catch (_) { /* 404 is expected when metadata not ready */ }
     };
+    
     load();
-    const interval = setInterval(load, 3000);
+    
+    if (isTerminal) {
+      return; // Do not schedule interval if status is already completed, cancelled, or failed
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const details = await fetchPipelineDetails(selectedPipelineId);
+        setActiveDag(details);
+        const backendStatus = details?.pipeline?.status;
+        if (backendStatus) {
+          setWorkspaceState(pipelineStatusToWsState(backendStatus));
+          // If status becomes completed/failed/cancelled, clear interval
+          const s = backendStatus.toLowerCase();
+          if (['completed', 'failed', 'cancelled'].includes(s)) {
+            clearInterval(interval);
+          }
+        }
+      } catch (e) {
+        console.error('fetchPipelineDetails failed during poll', e);
+      }
+      try {
+        const metaRes = await apiClient.get(`/pipelines/${selectedPipelineId}/metadata`);
+        setPipelineMetadata(metaRes.data);
+      } catch (_) {}
+    }, 3000);
+
     return () => clearInterval(interval);
-  }, [selectedPipelineId, refreshTrigger, replayMode]);
+  }, [selectedPipelineId, refreshTrigger, replayMode, activeDag?.pipeline?.status]);
 
   // ─────────────────────────────────────────────────────────
   // Replay-aware DAG snapshot (for Developer Panel → Replay tab)
@@ -234,8 +264,9 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
         const blob        = await fetchPdfContent(selectedDocumentId);
         const arrayBuffer = await blob.arrayBuffer();
         const pdfjs       = await import('pdfjs-dist/build/pdf');
-        pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-        const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+        pdfjs.GlobalWorkerOptions.workerSrc = window.location.origin + '/pdf.worker.min.mjs';
+        const loadingTask = pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) });
+        const pdf         = await loadingTask.promise;
         setPdfDoc(pdf);
         setActivePdfPage(1);
       } catch (err) {
@@ -396,14 +427,49 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
   // ─────────────────────────────────────────────────────────
   const activeDoc = uploadedFiles.find((f) => f.id === selectedDocumentId);
 
+  const { addNotification } = useNotification();
+  const [deleteConfirmDocId, setDeleteConfirmDocId] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   const handleSelectDocument = (doc) => {
     setSelectedDocumentId(doc.id);
     selectDocument(doc.id);
   };
 
+  const onRequestDeleteDocument = (docId) => {
+    setDeleteConfirmDocId(docId || selectedDocumentId);
+  };
+
+  const handleConfirmWorkspaceDelete = async () => {
+    if (!deleteConfirmDocId) return;
+    const docId = deleteConfirmDocId;
+    const docToDelete = uploadedFiles.find(f => f.id === docId) || activeDoc;
+    const filename = docToDelete?.original_filename || `Document #${docId}`;
+    setDeleteLoading(true);
+    try {
+      await deleteDocument(docId);
+      addNotification(`Document "${filename}" was permanently deleted.`, 'danger', 'system');
+      localStorage.removeItem('scaleflow_active_doc');
+      setSelectedDocumentId(null);
+      setSelectedPipelineId(null);
+      setPdfDoc(null);
+      setActiveDag(null);
+      setWorkspaceState(WS.EMPTY);
+      setDeleteConfirmDocId(null);
+      const files = await fetchUploadedFiles();
+      setUploadedFiles(files || []);
+    } catch (err) {
+      console.error('Delete failed:', err);
+      addNotification(`Delete failed: ${err.message}`, 'error', 'system');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   const handleReupload = () => {
     setWorkspaceState(WS.EMPTY);
     setSelectedDocumentId(null);
+    setSelectedPipelineId(null);
     setPdfDoc(null);
     setActiveDag(null);
     setChatThread([
@@ -457,6 +523,7 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
             timelineError={timelineError}
             onRetryTask={onRetryTask}
             onReupload={handleReupload}
+            onDelete={onRequestDeleteDocument}
           />
         )}
 
@@ -482,15 +549,29 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
             canvasRef={canvasRef}
             highlights={highlights}
             onReupload={handleReupload}
+            onDelete={onRequestDeleteDocument}
           />
         )}
       </div>
 
+      <ConfirmDialog
+        isOpen={!!deleteConfirmDocId}
+        title="Delete Document & Pipeline Data"
+        message="Are you sure you want to permanently delete this document and all associated pipeline data? This action cannot be undone."
+        confirmText="Delete Document"
+        cancelText="Cancel"
+        variant="danger"
+        loading={deleteLoading}
+        onConfirm={handleConfirmWorkspaceDelete}
+        onCancel={() => setDeleteConfirmDocId(null)}
+      />
+
       {/* ── Developer Panel (bottom drawer) ───────────────── */}
-      <BottomDrawer isOpen={devPanelOpen} onClose={onToggleDevPanel}>
+      <BottomDrawer isOpen={devPanelOpen} onClose={onToggleDevPanel} selectedPipelineId={selectedPipelineId}>
         <DeveloperPanelTabs
           activeDag={currentActiveDag}
           onRetryTask={onRetryTask}
+          selectedPipelineId={selectedPipelineId}
         />
       </BottomDrawer>
     </div>

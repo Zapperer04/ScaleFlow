@@ -57,6 +57,7 @@ export const ProcessingWorkspace = ({
   onRetryTask,
   /** Callback: user clicked "Re-upload" */
   onReupload,
+  onDelete,
 }) => {
   const logEndRef = useRef(null);
 
@@ -291,7 +292,7 @@ export const ProcessingWorkspace = ({
               try { await retryPipeline(selectedPipelineId); } catch (e) { console.error('retry failed', e); }
             }}
             onReupload={onReupload}
-            onDelete={null}
+            onDelete={() => onDelete?.(activeDoc?.id)}
           />
         </div>
       </div>

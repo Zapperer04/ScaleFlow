@@ -30,14 +30,12 @@ LLM_RETRY_MAX = getattr(config, "LLM_RETRY_MAX", 2)
 LLM_RETRY_DELAY_BASE = getattr(config, "LLM_RETRY_DELAY_BASE", 1.0)
 LLM_RESERVED_PROMPT_TOKENS = getattr(config, "LLM_RESERVED_PROMPT_TOKENS", 1024)
 
-# Provider order
-LLM_PROVIDER_ORDER = getattr(config, "LLM_PROVIDER_ORDER", ["groq", "openai", "ollama"])
+# Provider order (Groq is sole primary LLM provider)
+LLM_PROVIDER_ORDER = getattr(config, "LLM_PROVIDER_ORDER", ["groq"])
 
 # Model names per provider
 LLM_MODELS = getattr(config, "LLM_MODELS", {
-    "groq": "llama-3.1-8b-instant",
-    "openai": "gpt-4o-mini",
-    "ollama": "llama3",
+    "groq": "qwen/qwen3.8-27b",
 })
 
 # Retry‑eligible status codes and exceptions
@@ -164,10 +162,12 @@ class GroqProvider(LLMProvider):
 
     def __init__(self):
         super().__init__()
+        from config import load_env
+        load_env()
         self._api_key = os.environ.get("GROQ_API_KEY")
         if not self._api_key:
             raise ValueError("GROQ_API_KEY not set")
-        self.model = LLM_MODELS.get("groq", "llama-3.1-8b-instant")
+        self.model = os.environ.get("GROQ_MODEL") or LLM_MODELS.get("groq", "qwen/qwen3.8-27b")
 
     def _endpoint(self) -> str:
         return "https://api.groq.com/openai/v1/chat/completions"
@@ -193,8 +193,8 @@ class GroqProvider(LLMProvider):
             raise ValueError("No choices in response")
         choice = data["choices"][0]
         finish = choice.get("finish_reason")
-        if finish != "stop":
-            raise ValueError(f"finish_reason='{finish}' (expected 'stop')")
+        if finish not in ("stop", "length", None):
+            raise ValueError(f"finish_reason='{finish}'")
         message = choice.get("message", {})
         content = message.get("content", "").strip()
         usage = data.get("usage", {})
@@ -258,6 +258,12 @@ class OllamaProvider(LLMProvider):
         super().__init__()
         self.host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
         self.model = LLM_MODELS.get("ollama", "llama3")
+        try:
+            r = requests.get(f"{self.host}/api/tags", timeout=0.3)
+            if r.status_code != 200:
+                raise ValueError(f"Ollama server returned {r.status_code}")
+        except Exception as e:
+            raise ValueError(f"Ollama server unreachable at {self.host}: {e}")
 
     def _endpoint(self) -> str:
         return f"{self.host}/api/generate"
@@ -381,6 +387,13 @@ def _build_context(chunks: List[Dict[str, Any]], query: str) -> str:
 # ------------------------------------------------------------------------------
 def _heuristic_answer(query: str, chunks: List[Dict]) -> Tuple[str, str, str]:
     query_lower = query.lower()
+    clean_query = query_lower.strip("!.? ")
+
+    # Conversational greetings check
+    greetings = ["hello", "hi", "hey", "greetings", "good morning", "good evening", "good afternoon", "howdy", "who are you", "what can you do", "help", "thanks", "thank you"]
+    if clean_query in greetings or any(clean_query.startswith(g + " ") for g in ["hello", "hi", "hey"]):
+        return "Hello! I am your AI document assistant. Ask me any question about the indexed document or ask for a summary!", "Conversational Assistant", "200 OK"
+
     general_phrases = [
         "what is it about", "what is this document about", "what is this about",
         "summarize", "summary", "give me a summary", "what does it talk about",
@@ -395,8 +408,7 @@ def _heuristic_answer(query: str, chunks: List[Dict]) -> Tuple[str, str, str]:
     }
     query_tokens = re.findall(r"\b\w{3,}\b", query_lower)
     keywords = [kw for kw in query_tokens if kw not in stopwords]
-    if not keywords:
-        keywords = query_tokens
+
     sentences_pool = []
     seen = set()
     for idx, chunk in enumerate(chunks):
@@ -410,16 +422,19 @@ def _heuristic_answer(query: str, chunks: List[Dict]) -> Tuple[str, str, str]:
                 s_lower = s_clean.lower()
                 if s_lower not in seen:
                     seen.add(s_lower)
-                    unique_matches = sum(1 for kw in keywords if kw in s_lower)
-                    total_occurrences = sum(s_lower.count(kw) for kw in keywords)
+                    unique_matches = sum(1 for kw in keywords if kw in s_lower) if keywords else 0
+                    total_occurrences = sum(s_lower.count(kw) for kw in keywords) if keywords else 0
+                    if not is_general and keywords and unique_matches == 0:
+                        continue
                     chunk_weight = 10.0 / (idx + 1)
-                    score = (unique_matches * 5.0 + total_occurrences * 0.5 + 1.0) * chunk_weight
+                    score = (unique_matches * 5.0 + total_occurrences * 0.5 + (1.0 if is_general else 0.0)) * chunk_weight
                     sentences_pool.append((score, s_clean))
+
     sentences_pool.sort(key=lambda x: x[0], reverse=True)
     top_n = 6 if is_general else 4
     selected = [s for _, s in sentences_pool[:top_n]]
     if not selected:
-        return "No sufficiently relevant context was found for this query.", "Local Heuristic Synthesizer", "404 Empty"
+        return "No relevant information was found in the document for this question.", "Local Heuristic Synthesizer", "404 Empty"
     return " ".join(selected), "Local Heuristic Synthesizer", "200 OK (Heuristic)"
 
 # ------------------------------------------------------------------------------

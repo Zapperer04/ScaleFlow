@@ -47,17 +47,20 @@ def _make_qdrant_client():
     finally:
         sys.path = original_sys_path
 
+    qdrant_storage_path = os.path.join(parent_dir, "storage", "qdrant_db")
+    os.makedirs(qdrant_storage_path, exist_ok=True)
+
     if os.environ.get("DB_MODE") == "sqlite":
-        logger.info("SQLite mode: Using in-memory QdrantClient fallback")
-        return QdrantClient(location=":memory:")
+        logger.info(f"SQLite mode: Using persistent local QdrantClient at {qdrant_storage_path}")
+        return QdrantClient(path=qdrant_storage_path)
     else:
         try:
             client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=QDRANT_TIMEOUT)
             client.get_collections()
             return client
         except Exception as e:
-            logger.warning(f"Could not connect to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}: {e}. Falling back to in-memory.")
-            return QdrantClient(location=":memory:")
+            logger.warning(f"Could not connect to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}: {e}. Falling back to persistent local storage at {qdrant_storage_path}.")
+            return QdrantClient(path=qdrant_storage_path)
 
 def get_client():
     global _client
@@ -160,14 +163,6 @@ def ensure_collections_exist():
                         distance=qmodels.Distance.COSINE
                     )
                 )
-            else:
-                info = _get_collection_info(client, name)
-                if info and info.vectors_config.params.size != config.EMBEDDING_DIMENSION:
-                    logger.error(
-                        f"Collection '{name}' has dimension {info.vectors_config.params.size}, "
-                        f"but config expects {config.EMBEDDING_DIMENSION}. "
-                        f"Please recreate the collection or adjust config."
-                    )
             _create_payload_indexes(client, name)
     except Exception as e:
         logger.error(f"Failed to ensure collections exist: {e}")
@@ -193,13 +188,6 @@ def ensure_collection(collection_name="scaleflow_chunks", vector_size=None):
                     distance=qmodels.Distance.COSINE
                 )
             )
-        else:
-            info = _get_collection_info(client, collection_name)
-            if info and info.vectors_config.params.size != vector_size:
-                logger.error(
-                    f"Collection '{collection_name}' has dimension {info.vectors_config.params.size}, "
-                    f"but expected {vector_size}. Please recreate the collection."
-                )
         _create_payload_indexes(client, collection_name)
         _ensured_collections.add(collection_name)
         return True
@@ -265,10 +253,13 @@ def upsert_document_chunks(
         chunk_id = chunk_data.get("chunk_id") if isinstance(chunk_data, dict) else None
         if not chunk_id:
             chunk_id = meta.get("chunk_id")
-        if not chunk_id:
-            chunk_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{pipeline_id}_{file_id}_{pt_index}"))
-
-        point_id = chunk_id
+        if chunk_id:
+            try:
+                point_id = str(uuid.UUID(str(chunk_id)))
+            except (ValueError, TypeError):
+                point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(chunk_id)))
+        else:
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{pipeline_id}_{file_id}_{pt_index}"))
 
         if isinstance(chunk_data, dict):
             chunk_text = chunk_data.get("text", "")
@@ -505,7 +496,9 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
         ensure_collection(collection_name, config.EMBEDDING_DIMENSION)
         client = get_client()
         q_filter = None
-        if filters:
+        if isinstance(filters, qmodels.Filter):
+            q_filter = filters
+        elif isinstance(filters, dict):
             conditions = []
             for key, val in filters.items():
                 if val is not None:
@@ -523,18 +516,6 @@ def search_similar(collection_name, query_vector, top_k=5, filters=None):
                     )
             if conditions:
                 q_filter = qmodels.Filter(must=conditions)
-
-        # NOTE (Deferred DI): services/vector_store.py is a flat functional module.
-        # Full class-based VectorStore injection deferred — see deferred_di_notes.md.
-        from backend.infrastructure.storage.vector_store import VectorQueryFilter
-        client = get_client()
-        ensure_collection(collection_name, config.EMBEDDING_DIMENSION)
-
-        # Build matching filter
-        raw_filters = {}
-        if filters:
-            raw_filters = dict(filters)
-        v_filter = VectorQueryFilter(conditions=raw_filters) if raw_filters else None
 
         # Use qdrant client search directly (consistent with rest of this module)
         q_filter_obj = q_filter  # already built above via qmodels

@@ -7,6 +7,7 @@ export const NotificationProvider = ({ children }) => {
   const [showStuckWarning, setShowStuckWarning] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [activeToasts, setActiveToasts] = useState([]);
 
   const fetchNotifications = useCallback(async () => {
     if (document.visibilityState === 'hidden') return;
@@ -26,9 +27,9 @@ export const NotificationProvider = ({ children }) => {
   }, [fetchNotifications]);
 
   const addNotification = useCallback(async (message, type = 'info', category = 'system') => {
-    // Add locally and post to mock backend insert if needed, or rely on backend events
+    const id = Date.now() + Math.random().toString(36).substr(2, 9);
     const newNotif = {
-      id: Date.now() + Math.random().toString(36).substr(2, 9),
+      id,
       message,
       type,
       category,
@@ -36,6 +37,15 @@ export const NotificationProvider = ({ children }) => {
       read: false
     };
     setNotifications(prev => [newNotif, ...prev]);
+    setUnreadCount(prev => prev + 1);
+
+    // Add side incoming toast
+    setActiveToasts(prev => [...prev, { id, message, type }]);
+
+    // Auto dismiss toast after 4s
+    setTimeout(() => {
+      setActiveToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
   }, []);
 
   const markAsRead = useCallback(async (id) => {
@@ -69,6 +79,78 @@ export const NotificationProvider = ({ children }) => {
       refresh: fetchNotifications
     }}>
       {children}
+      {/* Side incoming toast notifications container */}
+      <div
+        style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          zIndex: 10000,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px',
+          maxWidth: '380px',
+          pointerEvents: 'none',
+        }}
+      >
+        {activeToasts.map(toast => (
+          <div
+            key={toast.id}
+            style={{
+              pointerEvents: 'auto',
+              background: toast.type === 'danger' || toast.type === 'error'
+                ? '#1e1b1b'
+                : toast.type === 'success'
+                ? '#11221b'
+                : '#0f172a',
+              border: `1px solid ${
+                toast.type === 'danger' || toast.type === 'error'
+                  ? 'rgba(239, 68, 68, 0.4)'
+                  : toast.type === 'success'
+                  ? 'rgba(16, 185, 129, 0.4)'
+                  : 'rgba(59, 130, 246, 0.4)'
+              }`,
+              borderLeft: `4px solid ${
+                toast.type === 'danger' || toast.type === 'error'
+                  ? '#ef4444'
+                  : toast.type === 'success'
+                  ? '#10b981'
+                  : '#3b82f6'
+              }`,
+              borderRadius: '8px',
+              padding: '12px 16px',
+              color: '#fff',
+              fontSize: '0.85rem',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              animation: 'slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', lineHeight: 1.4 }}>
+              <span>
+                {toast.type === 'danger' || toast.type === 'error' ? '🗑️' : toast.type === 'success' ? '✅' : 'ℹ️'}
+              </span>
+              <span>{toast.message}</span>
+            </div>
+            <button
+              onClick={() => setActiveToasts(prev => prev.filter(t => t.id !== toast.id))}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'rgba(255,255,255,0.4)',
+                cursor: 'pointer',
+                fontSize: '12px',
+                padding: '2px',
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
     </NotificationContext.Provider>
   );
 };

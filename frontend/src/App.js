@@ -9,6 +9,7 @@ import {
 } from './services/api';
 import WorkspaceHome from './pages/WorkspaceHome';
 import DocumentsLibrary from './pages/DocumentsLibrary';
+import IngestionHistory from './pages/IngestionHistory';
 import ArtifactsExplorer from './pages/ArtifactsExplorer';
 import RetrievalInspector from './pages/RetrievalInspector';
 import SystemBenchmarks from './pages/SystemBenchmarks';
@@ -192,11 +193,11 @@ function AppContent() {
           )}
 
           <Suspense fallback={<WorkspaceSkeleton />}>
-            {activeView === 'workspace' && <WorkspaceHome activeTab="active" devPanelOpen={devPanelOpen} onToggleDevPanel={toggleDevPanel} />}
-            
-            {activeView === 'upload' && <WorkspaceHome activeTab="upload" devPanelOpen={devPanelOpen} onToggleDevPanel={toggleDevPanel} />}
+            {activeView === 'workspace' && <WorkspaceHome devPanelOpen={devPanelOpen} onToggleDevPanel={toggleDevPanel} />}
 
-            {activeView === 'chat' && <WorkspaceHome activeTab="chat" devPanelOpen={devPanelOpen} onToggleDevPanel={toggleDevPanel} />}
+            {activeView === 'chat' && <WorkspaceHome devPanelOpen={devPanelOpen} onToggleDevPanel={toggleDevPanel} />}
+
+            {activeView === 'history' && <IngestionHistory onNavigateToView={handleNavigateToView} />}
             
             {activeView === 'documents' && (
               <DocumentsLibrary onNavigateToView={handleNavigateToView} />

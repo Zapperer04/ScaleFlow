@@ -5,18 +5,22 @@ import { DocumentProvider } from '../contexts/DocumentContext';
 import { PipelineProvider } from '../contexts/PipelineContext';
 import { WorkspaceProvider } from '../contexts/WorkspaceContext';
 
+import { NotificationProvider } from '../contexts/NotificationContext';
+
 describe('Workspace State Machine Integration', () => {
-  test('renders interactive chat tabs and checks sidebar options', () => {
+  test('renders upload document workspace when no document is selected', () => {
     render(
-      <DocumentProvider>
-        <PipelineProvider>
-          <WorkspaceProvider>
-            <WorkspaceHome />
-          </WorkspaceProvider>
-        </PipelineProvider>
-      </DocumentProvider>
+      <NotificationProvider>
+        <DocumentProvider>
+          <PipelineProvider>
+            <WorkspaceProvider>
+              <WorkspaceHome />
+            </WorkspaceProvider>
+          </PipelineProvider>
+        </DocumentProvider>
+      </NotificationProvider>
     );
-    const chatTab = screen.getByText('Interactive Chat');
-    expect(chatTab).toBeInTheDocument();
+    const uploadTitle = screen.getByText('Upload a Document');
+    expect(uploadTitle).toBeInTheDocument();
   });
 });

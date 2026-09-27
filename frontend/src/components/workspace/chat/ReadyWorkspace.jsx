@@ -3,7 +3,7 @@ import {
   Send, Sparkles, Copy,
   StopCircle,
   ZoomIn, ZoomOut, ChevronLeft, ChevronRight,
-  BookOpen, Search, FileText, UploadCloud
+  BookOpen, Search, FileText, UploadCloud, Trash2
 } from 'lucide-react';
 import Button from '../../ui/Button';
 
@@ -51,6 +51,7 @@ export const ReadyWorkspace = ({
   highlights = [],
   /** Callback: user wants to reupload a new document */
   onReupload,
+  onDelete,
 }) => {
   const messagesEndRef = useRef(null);
   const [pdfSearchQuery, setPdfSearchQuery] = useState('');
@@ -171,6 +172,33 @@ export const ReadyWorkspace = ({
           ))}
 
         <div style={{ flex: 1 }} />
+
+        <button
+          onClick={() => {
+            if (window.confirm("Are you sure you want to permanently delete this document and all associated pipeline data?")) {
+              onDelete?.(activeDoc?.id);
+            }
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'none',
+            border: '1px solid rgba(239,68,68,0.15)',
+            borderRadius: 6,
+            color: '#ef4444',
+            padding: '4px 12px',
+            fontSize: '11px',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+          }}
+          title="Delete current document"
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.05)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+        >
+          <Trash2 size={12} />
+          Delete
+        </button>
 
         <button
           onClick={onReupload}

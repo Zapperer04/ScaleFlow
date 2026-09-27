@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 export const BottomDrawer = ({ 
   isOpen, 
   onClose,
+  selectedPipelineId,
   children 
 }) => {
   const [height, setHeight] = useState(() => {
@@ -67,7 +68,7 @@ export const BottomDrawer = ({
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClose(); } }}
         >
           <span className="text-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>▲</span> Developer Panel (No active pipeline context)
+            <span>▲</span> Developer Panel {selectedPipelineId ? `(Active Pipeline Context: #${selectedPipelineId})` : '(No active pipeline context)'}
           </span>
         </div>
       </div>

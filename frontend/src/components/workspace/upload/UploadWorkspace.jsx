@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Clock, Upload } from 'lucide-react';
+import { FileText, Upload } from 'lucide-react';
 import { UploadDropzone } from './UploadDropzone';
 import { apiClient } from '../../../services/apiClient';
 
@@ -39,13 +39,27 @@ export const UploadWorkspace = ({
       formData.append('file', file);
       setUploadPhase('uploading');
 
-      const res = await apiClient.post('/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const res = await apiClient.post('/files/upload', formData);
 
-      const newDoc = res.data;
+      const { file_id, pipeline_id } = res.data;
+      const detailResponse = await apiClient.get(`/files/${file_id}`);
+      const fileRecord = detailResponse.data?.file || detailResponse.data;
+
+      const normalizedDoc = {
+        id:                file_id,
+        pipeline_id:       pipeline_id,
+        original_filename: fileRecord.original_filename,
+        size_bytes:        fileRecord.size_bytes,
+        file_size:         fileRecord.size_bytes,
+        page_count:        fileRecord.page_count || null,
+        status:            fileRecord.status,
+        file_type:         fileRecord.file_type,
+        created_at:        fileRecord.created_at,
+        storage_uri:       fileRecord.storage_uri,
+      };
+
       // Signal parent to transition to WORKSPACE_PROCESSING
-      if (onUploadComplete) onUploadComplete(newDoc);
+      if (onUploadComplete) onUploadComplete(normalizedDoc);
     } catch (err) {
       const msg =
         err?.response?.data?.detail ||
@@ -219,16 +233,37 @@ export const UploadWorkspace = ({
               fontSize: '13px',
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'space-between',
               gap: 8,
             }}
           >
-            <Upload size={14} />
-            {uploadError}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+              <Upload size={14} />
+              <span>{uploadError}</span>
+            </div>
+            <button
+              onClick={() => {
+                setUploadError('');
+                setUploadPhase('idle');
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#ef4444',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 700,
+                padding: '0 4px',
+              }}
+              title="Dismiss error"
+            >
+              ✕
+            </button>
           </div>
         )}
       </div>
 
-      {/* Recent documents */}
+      {/* Recent Ingestion History */}
       {recentDocs.length > 0 && (
         <div style={{ width: '100%', maxWidth: '560px' }}>
           <div
@@ -241,76 +276,110 @@ export const UploadWorkspace = ({
               marginBottom: '12px',
             }}
           >
-            Recent Documents
+            Recent Ingestion History
           </div>
           <div
             style={{
               display: 'flex',
               flexDirection: 'column',
-              gap: '6px',
+              gap: '8px',
             }}
           >
-            {recentDocs.map((doc) => (
-              <button
-                key={doc.id}
-                onClick={() => onSelectDocument && onSelectDocument(doc)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '10px 14px',
-                  background: 'rgba(255,255,255,0.02)',
-                  border: '1px solid rgba(255,255,255,0.06)',
-                  borderRadius: '10px',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'all 0.2s ease',
-                  color: 'var(--text-primary)',
-                  width: '100%',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(59,130,246,0.05)';
-                  e.currentTarget.style.borderColor = 'rgba(59,130,246,0.2)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
-                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
-                }}
-              >
-                <FileText
-                  size={16}
-                  style={{ color: 'var(--color-accent)', flexShrink: 0 }}
-                />
-                <span
+            {recentDocs.map((doc) => {
+              const s = (doc.status || '').toLowerCase();
+              const statusColor = (s === 'completed' || s === 'processed') 
+                ? 'var(--color-success)' 
+                : (s === 'failed' || s === 'blocked' || s === 'cancelled') 
+                ? 'var(--color-failure)' 
+                : 'var(--color-warning)';
+              
+              return (
+                <div
+                  key={doc.id}
                   style={{
-                    flex: 1,
-                    fontSize: '0.85rem',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    fontWeight: 500,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: '10px',
+                    gap: '12px'
                   }}
                 >
-                  {doc.original_filename}
-                </span>
-                {doc.uploaded_at && (
-                  <span
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      fontSize: '11px',
-                      color: 'var(--text-disabled)',
-                      flexShrink: 0,
-                      fontFamily: 'monospace',
-                    }}
-                  >
-                    <Clock size={10} />
-                    {new Date(doc.uploaded_at).toLocaleDateString()}
-                  </span>
-                )}
-              </button>
-            ))}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+                    <FileText
+                      size={18}
+                      style={{ color: 'var(--color-accent)', flexShrink: 0 }}
+                    />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div
+                        style={{
+                          fontSize: '0.85rem',
+                          fontWeight: 600,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          color: '#fff',
+                          marginBottom: '2px'
+                        }}
+                      >
+                        {doc.original_filename}
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: 'var(--text-disabled)' }}>
+                        <span>{doc.size_bytes ? `${Math.round(doc.size_bytes / 1024)} KB` : '—'}</span>
+                        <span>•</span>
+                        <span>{doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleDateString() : '—'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {/* Status Badge */}
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        color: statusColor,
+                        background: `${statusColor}15`,
+                        border: `1px solid ${statusColor}30`,
+                        borderRadius: '20px',
+                        padding: '3px 8px',
+                      }}
+                    >
+                      {doc.status}
+                    </span>
+
+                    {/* Open Action Button */}
+                    <button
+                      onClick={() => onSelectDocument && onSelectDocument(doc)}
+                      style={{
+                        background: 'none',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '6px',
+                        color: 'var(--text-primary)',
+                        padding: '5px 12px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.background = 'none';
+                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+                      }}
+                    >
+                      Open
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

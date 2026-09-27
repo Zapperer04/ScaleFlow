@@ -229,22 +229,14 @@ class HACoordinator:
         new_expiry = now + timedelta(seconds=PIPELINE_LEASE_SECONDS)
 
         try:
-            stmt = text(
-                "UPDATE pipelines "
-                "SET owner_lease_expires_at = :expiry "
-                "WHERE id = ANY(:pids) "
-                "  AND owner_instance_id = :my_id "
-                "  AND owner_lease_expires_at > :now"
-            )
-            res = db.execute(stmt, {
-                "expiry": new_expiry,
-                "pids": pids,
-                "my_id": self.instance_id,
-                "now": now
-            })
+            res = db.query(Pipeline).filter(
+                Pipeline.id.in_(pids),
+                Pipeline.owner_instance_id == self.instance_id,
+                Pipeline.owner_lease_expires_at > now
+            ).update({"owner_lease_expires_at": new_expiry}, synchronize_session=False)
             db.commit()
-            logger.debug(f"[{self.instance_id}] Renewed leases for {res.rowcount} pipelines.")
-            if res.rowcount < len(pids):
+            logger.debug(f"[{self.instance_id}] Renewed leases for {res} pipelines.")
+            if res < len(pids):
                 still_owned = db.query(Pipeline.id).filter(
                     Pipeline.id.in_(pids),
                     Pipeline.owner_instance_id == self.instance_id,

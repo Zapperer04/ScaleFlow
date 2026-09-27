@@ -30,7 +30,10 @@ out/
 
 # Environment Files
 .env
+.env.*
 .env.local
+.env.development
+.env.production
 .env.development.local
 .env.test.local
 .env.production.local
@@ -50,8 +53,11 @@ out/
 Thumbs.db
 Desktop.ini
 
-# Local pipeline storage
+# Local pipeline storage & logs
 backend/storage/
+storage/
+backend/logs/
+*.log
 
 # Qdrant persistent vector storage (runtime data)
 qdrant_storage/
@@ -69,3 +75,6 @@ run_*.py.log
 task_schedular.db
 backend/task_schedular.db
 *.db
+*.db-shm
+*.db-wal
+*.db.bak

@@ -19,25 +19,25 @@ class HybridRetriever:
             nonlocal semantic_results
             try:
                 query_vec = embed_text(query)
-                # filters format for Qdrant
                 from qdrant_client.http import models as qmodels
-                q_filters = qmodels.Filter(
-                    must=[
+                must_conditions = []
+                if pipeline_id:
+                    must_conditions.append(
                         qmodels.FieldCondition(
                             key="pipeline_id",
                             match=qmodels.MatchValue(value=pipeline_id)
                         )
-                    ]
-                )
+                    )
                 if filters:
                     for k, v in filters.items():
                         if k != "pipeline_id":
-                            q_filters.must.append(
+                            must_conditions.append(
                                 qmodels.FieldCondition(
                                     key=k,
                                     match=qmodels.MatchValue(value=v)
                                 )
                             )
+                q_filters = qmodels.Filter(must=must_conditions) if must_conditions else None
                 points = search_similar(
                     collection_name="scaleflow_chunks",
                     query_vector=query_vec,
@@ -45,11 +45,22 @@ class HybridRetriever:
                     filters=q_filters
                 )
                 for pt in points:
+                    if isinstance(pt, dict):
+                        chunk_id = pt.get("chunk_id")
+                        text = pt.get("chunk_text") or pt.get("text")
+                        score = pt.get("score") or pt.get("retrieval_score", 0.0)
+                        payload = pt.get("payload") or pt
+                    else:
+                        chunk_id = pt.payload.get("chunk_id")
+                        text = pt.payload.get("chunk_text") or pt.payload.get("text")
+                        score = getattr(pt, "score", 0.0)
+                        payload = pt.payload
+
                     semantic_results.append({
-                        "chunk_id": pt.payload.get("chunk_id"),
-                        "text": pt.payload.get("chunk_text") or pt.payload.get("text"),
-                        "score": pt.score,
-                        "payload": pt.payload
+                        "chunk_id": chunk_id,
+                        "text": text,
+                        "score": score,
+                        "payload": payload
                     })
             except Exception as e:
                 print(f"[HYBRID RETRIEVER] Semantic search failed: {e}", flush=True)

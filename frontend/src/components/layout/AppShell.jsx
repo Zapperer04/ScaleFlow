@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Layers, Cpu, Menu, X, Search, Eye,
-  Home, UploadCloud, Files, MessageSquare, Activity, 
-  ChevronDown, ChevronRight, Database, Settings, Terminal, LineChart,
+  Layers, Cpu, Menu, X, Search, Eye, Bell,
+  Home, Files, MessageSquare, Activity, 
+  ChevronDown, ChevronRight, Database, Settings, Terminal, LineChart, History,
   ChevronLeft, Layout, Trash2, CheckCircle2, AlertOctagon, AlertTriangle, Info
 } from 'lucide-react';
 import useMediaQuery from '../../hooks/useMediaQuery';
@@ -74,8 +74,8 @@ export const AppShell = ({
   const [devToolsOpen, setDevToolsOpen] = useState(false);
 
   // Pipeline telemetry synchronization
-  const { selectedPipelineId } = usePipeline();
-  const { selectedDocumentId, uploadedFiles } = useDocument();
+  const { selectedPipelineId, setSelectedPipelineId } = usePipeline();
+  const { selectedDocumentId, setSelectedDocumentId, uploadedFiles } = useDocument();
   const [activePipelineData, setActivePipelineData] = useState(null);
 
   const activeDoc = uploadedFiles.find(f => f.id === selectedDocumentId);
@@ -101,22 +101,11 @@ export const AppShell = ({
 
   const handlePrimaryNavigate = (viewId) => {
     if (viewId === 'upload') {
+      setSelectedDocumentId(null);
+      setSelectedPipelineId(null);
       onNavigateToView('workspace');
-      setTimeout(() => {
-        const el = document.getElementById('upload-section');
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 100);
     } else if (viewId === 'chat') {
       onNavigateToView('workspace');
-      setTimeout(() => {
-        const el = document.getElementById('chat-section');
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 100);
-    } else if (viewId === 'workspace') {
-      onNavigateToView('workspace');
-      setTimeout(() => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }, 100);
     } else {
       onNavigateToView(viewId);
     }
@@ -218,13 +207,13 @@ export const AppShell = ({
             </button>
 
             <button 
-              className={`sidebar-nav-item ${activeView === 'upload' ? 'active' : ''}`}
-              onClick={() => handlePrimaryNavigate('upload')}
-              data-label="Upload"
-              aria-label="Upload"
+              className={`sidebar-nav-item ${activeView === 'history' ? 'active' : ''}`}
+              onClick={() => handlePrimaryNavigate('history')}
+              data-label="History"
+              aria-label="History"
             >
-              <UploadCloud size={16} />
-              <span>Upload</span>
+              <History size={16} />
+              <span>History</span>
             </button>
 
             <button 
@@ -427,6 +416,18 @@ export const AppShell = ({
               <span className="status-dot" style={{ background: systemStatus.color, width: '8px', height: '8px' }} />
               <span className="hide-mobile" style={{ color: 'var(--text-secondary)' }}>{systemStatus.color === 'var(--color-success)' ? 'Operational' : 'Issue'}</span>
             </div>
+
+            {/* Notifications Trigger */}
+            <button 
+              onClick={() => setDrawerOpen(true)}
+              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px', transition: 'color 0.2s', position: 'relative' }}
+              aria-label="Open notifications"
+            >
+              <Bell size={18} />
+              {notifications.some(n => !n.read) && (
+                <span style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: '50%', background: '#ef4444' }} />
+              )}
+            </button>
 
             {/* Global Search Trigger */}
             <button 
