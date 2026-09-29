@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Send, Sparkles, Copy,
   StopCircle,
   ZoomIn, ZoomOut, ChevronLeft, ChevronRight,
-  BookOpen, Search, FileText, UploadCloud, Trash2
+  BookOpen, Search, FileText, UploadCloud, Trash2,
+  Loader2, AlertCircle, RotateCw, Maximize2
 } from 'lucide-react';
 import Button from '../../ui/Button';
+import FormattedMessage from '../../ui/FormattedMessage';
 
 /**
  * WORKSPACE_READY — AI Chat Workspace
@@ -26,6 +28,9 @@ import Button from '../../ui/Button';
 export const ReadyWorkspace = ({
   /** Active document object */
   activeDoc,
+  uploadedFiles = [],
+  selectedDocumentId,
+  onSelectDocument,
   /** Pipeline artifacts (for stats) */
   activeDag,
   pipelineMetadata,
@@ -43,6 +48,11 @@ export const ReadyWorkspace = ({
   onCitationClick,
   /** pdfjs document object */
   pdfDoc,
+  pdfLoading = false,
+  pdfError = null,
+  pdfTextContent = null,
+  pdfNumPages = 1,
+  onRetryLoadPdf,
   activePdfPage,
   setActivePdfPage,
   zoomLevel,
@@ -54,15 +64,95 @@ export const ReadyWorkspace = ({
   onDelete,
 }) => {
   const messagesEndRef = useRef(null);
+  const pdfContainerRef = useRef(null);
+  const containerGridRef = useRef(null);
   const [pdfSearchQuery, setPdfSearchQuery] = useState('');
+
+  // ── LeetCode-style panel resizer state ────────────────────
+  const [splitWidth, setSplitWidth] = useState(45);
+  const [isResizing, setIsResizing] = useState(false);
+
+  const startResizing = useCallback((e) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e) => {
+      if (!containerGridRef.current) return;
+      const rect = containerGridRef.current.getBoundingClientRect();
+      const relativeX = e.clientX - rect.left;
+      const newWidthPercent = Math.min(80, Math.max(20, (relativeX / rect.width) * 100));
+      setSplitWidth(newWidthPercent);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
+  // Auto-fit PDF page to container width
+  const handleFitToWidth = useCallback(() => {
+    if (!pdfContainerRef.current || !pdfDoc) return;
+    pdfDoc.getPage(activePdfPage).then((page) => {
+      const containerWidth = pdfContainerRef.current.clientWidth - 40;
+      if (containerWidth <= 0) return;
+      const unscaledViewport = page.getViewport({ scale: 1.0 });
+      const fitZoom = Math.min(250, Math.max(50, Math.round((containerWidth / unscaledViewport.width) * 100)));
+      setZoomLevel(fitZoom);
+    }).catch(() => {});
+  }, [pdfDoc, activePdfPage, setZoomLevel]);
+
+  // Auto-fit document width when pdfDoc loads or splitWidth resizes
+  useEffect(() => {
+    if (pdfDoc) {
+      handleFitToWidth();
+    }
+  }, [pdfDoc, splitWidth, handleFitToWidth]);
+
+  // Trackpad pinch-to-zoom (palm gesture) and Cmd/Ctrl wheel zoom handler
+  useEffect(() => {
+    const container = pdfContainerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const delta = e.deltaY;
+        setZoomLevel((prev) => {
+          const change = delta > 0 ? -8 : 8;
+          return Math.min(250, Math.max(40, prev + change));
+        });
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, [setZoomLevel]);
 
   // Auto-scroll chat to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatThread]);
 
-  // ── Derived stats from pipeline data ──────────────────────
-  const pageCount = activeDoc?.page_count || pipelineMetadata?.summary?.pages;
+  // Filter only PROCESSED / COMPLETED documents for AI Chat selector
+  const processedDocs = (uploadedFiles || []).filter((f) => {
+    const s = (f.status || '').toLowerCase();
+    return s === 'completed' || s === 'processed';
+  });
+
+  const pageCount = activeDoc?.page_count || pipelineMetadata?.summary?.pages || pdfNumPages || pdfDoc?.numPages || 1;
   const chunkCount =
     pipelineMetadata?.chunk_count ||
     (activeDag?.artifacts || []).find((a) => a.artifact_type === 'graph_chunks')
@@ -107,64 +197,113 @@ export const ReadyWorkspace = ({
         overflow: 'hidden',
       }}
     >
-      {/* ── Document Summary Strip ──────────────────────────── */}
+      {/* ── Compact Single-Line Header Strip ──────────────────── */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '24px',
-          padding: '12px 28px',
+          gap: '12px',
+          padding: '0 16px',
+          height: '42px',
           borderBottom: '1px solid var(--border-subtle)',
           background: 'var(--bg-panel)',
           flexShrink: 0,
-          flexWrap: 'wrap',
-          minHeight: '48px',
+          flexWrap: 'nowrap',
+          overflowX: 'auto',
+          scrollbarWidth: 'none',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: 'var(--color-success)',
-              flexShrink: 0,
-            }}
-          />
-          <span
-            style={{
-              fontSize: '0.8rem',
-              fontWeight: 700,
-              color: 'var(--color-success)',
-            }}
-          >
-            Document Ready
-          </span>
+        {/* Back to Home Button */}
+        <button
+          onClick={onReupload}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: 6,
+            color: 'var(--text-primary)',
+            padding: '4px 10px',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            flexShrink: 0,
+            transition: 'all 0.15s',
+          }}
+          title="Back to Home"
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+        >
+          <ChevronLeft size={14} />
+          <span>Home</span>
+        </button>
+
+        <div style={{ width: 1, height: 14, background: 'var(--border-subtle)', flexShrink: 0 }} />
+
+        {/* Status dot */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-success)' }} />
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-success)' }}>Ready</span>
         </div>
 
-        <div
-          style={{
-            width: 1,
-            height: 14,
-            background: 'var(--border-subtle)',
-          }}
-        />
+        <div style={{ width: 1, height: 14, background: 'var(--border-subtle)', flexShrink: 0 }} />
+
+        {/* Document Selector Dropdown */}
+        {processedDocs && processedDocs.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            <FileText size={14} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
+            <select
+              value={activeDoc?.id || ''}
+              onChange={(e) => {
+                const docId = parseInt(e.target.value);
+                const target = uploadedFiles.find((f) => f.id === docId);
+                if (target && onSelectDocument) {
+                  onSelectDocument(target);
+                }
+              }}
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: '5px',
+                color: '#fff',
+                padding: '3px 8px',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                outline: 'none',
+                maxWidth: '220px',
+                height: '28px',
+              }}
+              aria-label="Select document for AI chat"
+            >
+              {processedDocs.map((doc) => (
+                <option key={doc.id} value={doc.id} style={{ background: '#181b28', color: '#fff' }}>
+                  {doc.original_filename} ({doc.page_count ? `${doc.page_count} pg` : 'Ready'})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Stats pills */}
         {[
-          pageCount && `${pageCount} pages`,
+          pageCount && `${pageCount} pg`,
           chunkCount && `${chunkCount} chunks`,
-          processingTime && `Processed in ${processingTime}`,
-          activeDoc?.original_filename,
+          processingTime && `${processingTime}`,
         ]
           .filter(Boolean)
           .map((label) => (
             <span
               key={label}
               style={{
-                fontSize: '11px',
+                fontSize: '10px',
                 color: 'var(--text-muted)',
                 fontFamily: 'var(--font-mono)',
+                background: 'rgba(255,255,255,0.03)',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                flexShrink: 0,
               }}
             >
               {label}
@@ -173,82 +312,80 @@ export const ReadyWorkspace = ({
 
         <div style={{ flex: 1 }} />
 
-        <button
-          onClick={() => {
-            if (window.confirm("Are you sure you want to permanently delete this document and all associated pipeline data?")) {
-              onDelete?.(activeDoc?.id);
-            }
-          }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            background: 'none',
-            border: '1px solid rgba(239,68,68,0.15)',
-            borderRadius: 6,
-            color: '#ef4444',
-            padding: '4px 12px',
-            fontSize: '11px',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-          }}
-          title="Delete current document"
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.05)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
-        >
-          <Trash2 size={12} />
-          Delete
-        </button>
+        {/* Actions on right */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+          <button
+            onClick={() => {
+              if (window.confirm("Delete this document and all associated data?")) {
+                onDelete?.(activeDoc?.id);
+              }
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              background: 'none',
+              border: '1px solid rgba(239,68,68,0.18)',
+              borderRadius: 5,
+              color: '#ef4444',
+              padding: '3px 8px',
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              height: '28px',
+            }}
+            title="Delete current document"
+          >
+            <Trash2 size={12} />
+            <span>Delete</span>
+          </button>
 
-        <button
-          onClick={onReupload}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            background: 'none',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 6,
-            color: 'var(--text-muted)',
-            padding: '4px 12px',
-            fontSize: '11px',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-          }}
-          title="Upload another document"
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = 'rgba(59,130,246,0.3)';
-            e.currentTarget.style.color = '#3b82f6';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
-            e.currentTarget.style.color = 'var(--text-muted)';
-          }}
-        >
-          <UploadCloud size={12} />
-          Re-upload
-        </button>
+          <button
+            onClick={onReupload}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              background: 'rgba(59,130,246,0.1)',
+              border: '1px solid rgba(59,130,246,0.25)',
+              borderRadius: 5,
+              color: '#3b82f6',
+              padding: '3px 10px',
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              height: '28px',
+            }}
+            title="Upload new document"
+          >
+            <UploadCloud size={13} />
+            <span>Upload</span>
+          </button>
+        </div>
       </div>
 
-      {/* ── Main Split Layout: PDF (40%) | Chat (60%) ────────── */}
+      {/* ── Main Split Layout: PDF (splitWidth%) | Resizer | Chat (100-splitWidth%) ────────── */}
       <div
+        ref={containerGridRef}
         style={{
-          display: 'grid',
-          gridTemplateColumns: '40% 60%',
+          display: 'flex',
+          flexDirection: 'row',
           flex: 1,
           overflow: 'hidden',
           minHeight: 0,
+          userSelect: isResizing ? 'none' : 'auto',
         }}
         className="ready-workspace-grid"
       >
         {/* ── LEFT: PDF Viewer ───────────────────────────────── */}
         <div
           style={{
-            borderRight: '1px solid var(--border-subtle)',
+            width: `${splitWidth}%`,
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
             background: 'var(--bg-primary)',
+            flexShrink: 0,
           }}
         >
           {/* PDF Toolbar */}
@@ -300,7 +437,7 @@ export const ReadyWorkspace = ({
 
             {/* Zoom controls */}
             <button
-              onClick={() => setZoomLevel((p) => Math.max(50, p - 25))}
+              onClick={() => setZoomLevel((p) => Math.max(40, p - 25))}
               style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
               aria-label="Zoom out"
             >
@@ -310,16 +447,36 @@ export const ReadyWorkspace = ({
               {zoomLevel}%
             </span>
             <button
-              onClick={() => setZoomLevel((p) => Math.min(200, p + 25))}
+              onClick={() => setZoomLevel((p) => Math.min(250, p + 25))}
               style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
               aria-label="Zoom in"
             >
               <ZoomIn size={13} />
             </button>
+            <button
+              onClick={handleFitToWidth}
+              title="Auto-fit page to layout width"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '4px',
+                color: 'var(--text-secondary)',
+                padding: '3px 7px',
+                fontSize: '10px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                marginLeft: '4px'
+              }}
+            >
+              <Maximize2 size={11} /> Fit Width
+            </button>
           </div>
 
           {/* Canvas area */}
           <div
+            ref={pdfContainerRef}
             style={{
               flex: 1,
               overflowY: 'auto',
@@ -353,6 +510,79 @@ export const ReadyWorkspace = ({
                   />
                 ))}
               </div>
+            ) : pdfTextContent ? (
+              <div
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  overflowY: 'auto',
+                  padding: '20px',
+                  background: 'var(--bg-panel)',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'monospace',
+                  fontSize: '12px',
+                  lineHeight: '1.6',
+                  whiteSpace: 'pre-wrap',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                {pdfTextContent}
+              </div>
+            ) : pdfLoading ? (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 16,
+                  height: '100%',
+                  color: 'var(--text-disabled)',
+                }}
+              >
+                <Loader2 size={32} style={{ color: 'var(--color-accent)', animation: 'spin 1s linear infinite' }} />
+                <span style={{ fontSize: '12px', textAlign: 'center' }}>
+                  Loading document preview...
+                </span>
+              </div>
+            ) : pdfError ? (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 12,
+                  height: '100%',
+                  color: 'var(--text-secondary)',
+                  padding: '20px',
+                }}
+              >
+                <AlertCircle size={32} style={{ color: 'var(--color-failure)' }} />
+                <span style={{ fontSize: '12px', textAlign: 'center', maxWidth: '80%' }}>
+                  {pdfError}
+                </span>
+                {onRetryLoadPdf && (
+                  <button
+                    onClick={onRetryLoadPdf}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '6px',
+                      color: 'var(--text-primary)',
+                      padding: '6px 14px',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <RotateCw size={12} /> Retry Preview
+                  </button>
+                )}
+              </div>
             ) : (
               <div
                 style={{
@@ -367,7 +597,7 @@ export const ReadyWorkspace = ({
               >
                 <FileText size={36} style={{ opacity: 0.3 }} />
                 <span style={{ fontSize: '12px', textAlign: 'center' }}>
-                  Loading document preview...
+                  No document preview available.
                 </span>
               </div>
             )}
@@ -405,13 +635,44 @@ export const ReadyWorkspace = ({
           </div>
         </div>
 
+        {/* ── Resizable Splitter Handle (LeetCode style) ──────── */}
+        <div
+          onMouseDown={startResizing}
+          title="Drag to resize PDF and AI Chat panels"
+          style={{
+            width: '6px',
+            cursor: 'col-resize',
+            background: isResizing ? 'rgba(59,130,246,0.6)' : 'var(--border-subtle)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
+            zIndex: 10,
+            transition: 'background 0.15s ease',
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => { if (!isResizing) e.currentTarget.style.background = 'rgba(59,130,246,0.4)'; }}
+          onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'var(--border-subtle)'; }}
+        >
+          <div
+            style={{
+              width: '2px',
+              height: '32px',
+              borderRadius: '1px',
+              background: isResizing ? '#fff' : 'rgba(255,255,255,0.25)',
+            }}
+          />
+        </div>
+
         {/* ── RIGHT: AI Chat Workbench ────────────────────────── */}
         <div
           style={{
+            flex: 1,
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
             background: 'var(--bg-primary)',
+            minWidth: 0,
           }}
         >
           {/* Chat header */}
@@ -520,7 +781,7 @@ export const ReadyWorkspace = ({
                         position: 'relative',
                       }}
                     >
-                      {msg.content}
+                      <FormattedMessage content={msg.content} onCitationClick={onCitationClick} />
 
                       {/* Copy / Regenerate actions for assistant messages */}
                       {!isUser && !msg.isStreaming && (

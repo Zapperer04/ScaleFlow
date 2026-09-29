@@ -28,10 +28,16 @@ export const DocumentsLibrary = ({ onNavigateToView }) => {
     const updateLists = async () => {
       try {
         const filesList = await fetchUploadedFiles();
-        setUploadedFiles(filesList || []);
+        setUploadedFiles(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(filesList)) return prev;
+          return filesList || [];
+        });
         
         const pipelineList = await fetchPipelines();
-        setPipelines(pipelineList || []);
+        setPipelines(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(pipelineList)) return prev;
+          return pipelineList || [];
+        });
       } catch (err) {
         console.error("Error refreshing files", err);
       }
@@ -103,7 +109,12 @@ export const DocumentsLibrary = ({ onNavigateToView }) => {
     if (targetPipelineId) {
       setSelectedPipelineId(targetPipelineId);
     }
-    onNavigateToView('workspace');
+    const s = (file.status || '').toLowerCase();
+    if (s === 'failed' || s === 'blocked' || s === 'cancelled') {
+      onNavigateToView('pipelines');
+    } else {
+      onNavigateToView('chat');
+    }
   };
 
   // Filtered files

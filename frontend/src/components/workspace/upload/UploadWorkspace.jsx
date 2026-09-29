@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Upload } from 'lucide-react';
+import { FileText, Upload, MessageSquare, Activity } from 'lucide-react';
 import { UploadDropzone } from './UploadDropzone';
 import { apiClient } from '../../../services/apiClient';
 
@@ -17,6 +17,8 @@ export const UploadWorkspace = ({
   uploadedFiles = [],
   onSelectDocument,
   onUploadComplete,
+  onOpenChat,
+  onInspectPipeline,
 }) => {
   // Upload lifecycle states
   const [uploadPhase, setUploadPhase] = useState('idle'); // 'idle' | 'validating' | 'queued' | 'uploading' | 'error'
@@ -351,31 +353,86 @@ export const UploadWorkspace = ({
                       {doc.status}
                     </span>
 
-                    {/* Open Action Button */}
-                    <button
-                      onClick={() => onSelectDocument && onSelectDocument(doc)}
-                      style={{
-                        background: 'none',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '6px',
-                        color: 'var(--text-primary)',
-                        padding: '5px 12px',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        transition: 'all 0.15s'
-                      }}
-                      onMouseEnter={e => {
-                        e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.background = 'none';
-                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
-                      }}
-                    >
-                      Open
-                    </button>
+                    {/* Action Buttons: 1) Open Chat, 2) Inspect Pipeline */}
+                    {(() => {
+                      const s = (doc.status || '').toLowerCase();
+                      const isProcessed = s === 'completed' || s === 'processed';
+                      const isProcessing = s === 'processing' || s === 'queued' || s === 'running';
+
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {/* Button 1: Open Chat (Enabled ONLY if processed) */}
+                          <button
+                            disabled={!isProcessed}
+                            onClick={() => {
+                              if (isProcessed) {
+                                if (onOpenChat) onOpenChat(doc);
+                                else if (onSelectDocument) onSelectDocument(doc);
+                              }
+                            }}
+                            style={{
+                              background: isProcessed ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.02)',
+                              border: `1px solid ${isProcessed ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                              borderRadius: '6px',
+                              color: isProcessed ? '#3b82f6' : 'var(--text-disabled)',
+                              padding: '5px 10px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: isProcessed ? 'pointer' : 'not-allowed',
+                              opacity: isProcessed ? 1 : 0.45,
+                              transition: 'all 0.15s',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                            title={
+                              isProcessed
+                                ? 'Open AI Chat for this document'
+                                : isProcessing
+                                ? 'Processing in progress... Chat will unlock once parsing completes'
+                                : 'Chat unavailable for this document'
+                            }
+                          >
+                            <MessageSquare size={12} />
+                            <span>Open Chat</span>
+                          </button>
+
+                          {/* Button 2: Inspect Pipeline (ALWAYS active for all documents) */}
+                          <button
+                            onClick={() => {
+                              if (onInspectPipeline) onInspectPipeline(doc);
+                              else if (onSelectDocument) onSelectDocument(doc);
+                            }}
+                            style={{
+                              background: 'rgba(255,255,255,0.04)',
+                              border: '1px solid rgba(255,255,255,0.12)',
+                              borderRadius: '6px',
+                              color: 'var(--text-primary)',
+                              padding: '5px 10px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              transition: 'all 0.15s',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)';
+                            }}
+                            title="View real-time pipeline execution & RAG progress for this pipeline ID"
+                          >
+                            <Activity size={12} style={{ color: 'var(--color-accent)' }} />
+                            <span>Inspect Pipeline</span>
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               );

@@ -20,7 +20,10 @@ const IngestionHistory = ({ onNavigateToView }) => {
     setLoading(true);
     try {
       const files = await fetchUploadedFiles();
-      setUploadedFiles(files || []);
+      setUploadedFiles(prev => {
+        if (JSON.stringify(prev) === JSON.stringify(files)) return prev;
+        return files || [];
+      });
     } catch (err) {
       console.error('Failed to reload history:', err);
     } finally {
@@ -61,7 +64,13 @@ const IngestionHistory = ({ onNavigateToView }) => {
     if (targetPipelineId) {
       setSelectedPipelineId(targetPipelineId);
     }
-    onNavigateToView('workspace');
+    const s = (doc.status || '').toLowerCase();
+    if (s === 'failed' || s === 'blocked' || s === 'cancelled') {
+      addNotification(`Document "${doc.original_filename}" failed processing. Opening Pipeline Monitor.`, 'warning', 'system');
+      onNavigateToView('pipelines');
+    } else {
+      onNavigateToView('chat');
+    }
   };
 
   const filteredDocs = useMemo(() => {

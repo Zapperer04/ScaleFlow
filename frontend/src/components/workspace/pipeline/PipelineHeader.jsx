@@ -21,8 +21,12 @@ export const PipelineHeader = ({ pipelineId, documentName, workerId, status, ela
 
   const formatDuration = (sec) => {
     if (sec === undefined || sec === null || isNaN(sec)) return '00:00';
-    const m = Math.floor(sec / 60).toString().padStart(2, '0');
-    const s = (sec % 60).toString().padStart(2, '0');
+    const hrs = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60).toString().padStart(2, '0');
+    const s = Math.floor(sec % 60).toString().padStart(2, '0');
+    if (hrs > 0) {
+      return `${hrs.toString().padStart(2, '0')}:${m}:${s}`;
+    }
     return `${m}:${s}`;
   };
 

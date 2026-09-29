@@ -1,10 +1,10 @@
 import React, { useEffect, useRef } from 'react';
-import { UploadCloud, AlertTriangle } from 'lucide-react';
+import { UploadCloud, AlertTriangle, Clock, ChevronLeft } from 'lucide-react';
 import { PipelineHeader } from './PipelineHeader';
 import { PipelineControls } from './PipelineControls';
 import { ExecutionConsole } from '../logs/ExecutionConsole';
 import { ErrorPanel } from '../logs/ErrorPanel';
-import PipelineStepper from '../../layout/PipelineStepper';
+import PipelineVisualizer from './PipelineVisualizer';
 import { cancelPipeline, retryPipeline } from '../../../services/pipelines';
 
 /* ─────────────────────────────────────────────────────────────
@@ -174,6 +174,51 @@ export const ProcessingWorkspace = ({
         overflowY: 'auto',
       }}
     >
+      {/* ── Processing Chat Status Alert Banner ──────────────── */}
+      <div
+        style={{
+          background: 'rgba(234,179,8,0.08)',
+          borderBottom: '1px solid rgba(234,179,8,0.2)',
+          padding: '12px 32px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          color: '#eab308',
+          fontSize: '0.85rem',
+          fontWeight: 600,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <Clock size={18} style={{ flexShrink: 0 }} />
+          <span>Can't chat yet — still waiting to parse document "{activeDoc?.original_filename || 'Processing'}". AI Chat will open automatically once parsing completes.</span>
+        </div>
+        <button
+          onClick={onReupload}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.15)',
+            borderRadius: 6,
+            color: '#fff',
+            padding: '5px 12px',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            flexShrink: 0,
+            transition: 'all 0.15s',
+          }}
+          title="Go back to Home / Upload page"
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.15)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+        >
+          <ChevronLeft size={16} />
+          Back to Home
+        </button>
+      </div>
+
       {/* ── Section: Pipeline Header ─────────────────────────── */}
       <div
         style={{
@@ -196,30 +241,17 @@ export const ProcessingWorkspace = ({
         />
       </div>
 
-      {/* ── Section: Pipeline Stepper ────────────────────────── */}
+      {/* ── Section: Pipeline Visualizer ─────────────────────── */}
       <div
         style={{
-          padding: '24px 32px',
+          padding: '0 32px',
           borderBottom: '1px solid var(--border-subtle)',
           background: 'var(--bg-primary)',
+          display: 'flex',
+          justifyContent: 'center'
         }}
       >
-        <div
-          style={{
-            fontSize: '11px',
-            fontWeight: 700,
-            color: 'rgba(255,255,255,0.3)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            marginBottom: '16px',
-          }}
-        >
-          Pipeline Progress
-        </div>
-        <PipelineStepper
-          steps={STAGE_LABELS.map((s) => s.label)}
-          activeStep={activeStepIdx}
-        />
+        <PipelineVisualizer tasks={tasks} pipelineStatus={pipeline.status} />
       </div>
 
       {/* ── Section: Runtime Summary + Controls ─────────────── */}
@@ -297,119 +329,7 @@ export const ProcessingWorkspace = ({
         </div>
       </div>
 
-      {/* ── Section: Stage Progress Table ───────────────────── */}
-      <div
-        style={{
-          padding: '20px 32px',
-          borderBottom: '1px solid var(--border-subtle)',
-        }}
-      >
-        <div
-          style={{
-            fontSize: '11px',
-            fontWeight: 700,
-            color: 'rgba(255,255,255,0.3)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            marginBottom: '12px',
-          }}
-        >
-          Stage Progress
-        </div>
-        <div
-          style={{
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '8px',
-            overflow: 'hidden',
-          }}
-        >
-          {/* Table header */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '2fr 1fr 1.2fr 1.2fr 1fr 1.2fr 0.7fr',
-              gap: '0',
-              background: 'rgba(255,255,255,0.02)',
-              borderBottom: '1px solid var(--border-subtle)',
-              padding: '8px 16px',
-              fontSize: '10px',
-              color: 'rgba(255,255,255,0.35)',
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              fontFamily: 'var(--font-mono)',
-            }}
-          >
-            {['Stage', 'Status', 'Started', 'Finished', 'Duration', 'Worker', 'Retries'].map(
-              (col) => <span key={col}>{col}</span>
-            )}
-          </div>
 
-          {/* Table rows */}
-          {tasks.length > 0 ? (
-            tasks.map((task) => {
-              const statusColor =
-                task.status === 'completed'
-                  ? 'var(--color-success)'
-                  : task.status === 'failed'
-                  ? 'var(--color-failure)'
-                  : task.status === 'running'
-                  ? 'var(--color-pipeline-running, #6366f1)'
-                  : 'var(--text-muted)';
-              return (
-                <div
-                  key={task.id}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '2fr 1fr 1.2fr 1.2fr 1fr 1.2fr 0.7fr',
-                    gap: '0',
-                    padding: '10px 16px',
-                    borderBottom: '1px solid rgba(255,255,255,0.03)',
-                    fontSize: '12px',
-                    fontFamily: 'var(--font-mono)',
-                    alignItems: 'center',
-                    minHeight: '40px',
-                  }}
-                >
-                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-                    {task.type || task.task_type || '—'}
-                  </span>
-                  <span style={{ color: statusColor, fontWeight: 700, textTransform: 'uppercase', fontSize: '10px' }}>
-                    {task.status}
-                  </span>
-                  <span style={{ color: 'var(--text-secondary)' }}>
-                    {task.started_at ? new Date(task.started_at).toLocaleTimeString() : '—'}
-                  </span>
-                  <span style={{ color: 'var(--text-secondary)' }}>
-                    {task.completed_at ? new Date(task.completed_at).toLocaleTimeString() : '—'}
-                  </span>
-                  <span style={{ color: 'var(--text-secondary)' }}>
-                    {task.execution_duration != null ? `${task.execution_duration}s` : '—'}
-                  </span>
-                  <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {task.assigned_worker_id || '—'}
-                  </span>
-                  <span style={{ color: task.retry_count > 0 ? 'var(--color-warning)' : 'var(--text-muted)' }}>
-                    {task.retry_count ?? 0}
-                  </span>
-                </div>
-              );
-            })
-          ) : (
-            <div
-              style={{
-                padding: '24px',
-                textAlign: 'center',
-                fontSize: '12px',
-                color: 'var(--text-disabled)',
-                fontFamily: 'var(--font-mono)',
-              }}
-            >
-              Awaiting task data from backend...
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* ── Section: Execution Log ───────────────────────────── */}
       <div

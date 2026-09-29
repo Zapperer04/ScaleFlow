@@ -238,7 +238,7 @@ export const Login = () => {
           alignItems: 'center',
         }}
       >
-        <svg viewBox="0 0 400 400" width="100%" maxWidth="460px" height="auto" style={{ opacity: 0.95 }}>
+        <svg viewBox="0 0 400 400" width="100%" style={{ opacity: 0.95, maxWidth: '460px', height: 'auto' }}>
           {/* Grid backing */}
           <path d="M 50 0 L 50 400 M 150 0 L 150 400 M 250 0 L 250 400 M 350 0 L 350 400" stroke="rgba(255,255,255,0.015)" strokeWidth="1" />
           <path d="M 0 50 L 400 50 M 0 150 L 400 150 M 0 250 L 400 250 M 0 350 L 400 350" stroke="rgba(255,255,255,0.015)" strokeWidth="1" />

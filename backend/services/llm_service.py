@@ -390,9 +390,9 @@ def _heuristic_answer(query: str, chunks: List[Dict]) -> Tuple[str, str, str]:
     clean_query = query_lower.strip("!.? ")
 
     # Conversational greetings check
-    greetings = ["hello", "hi", "hey", "greetings", "good morning", "good evening", "good afternoon", "howdy", "who are you", "what can you do", "help", "thanks", "thank you"]
-    if clean_query in greetings or any(clean_query.startswith(g + " ") for g in ["hello", "hi", "hey"]):
-        return "Hello! I am your AI document assistant. Ask me any question about the indexed document or ask for a summary!", "Conversational Assistant", "200 OK"
+    from query_router import is_conversational_query
+    if is_conversational_query(query):
+        return "Hello! I am your ScaleFlow AI Assistant. I am ready to help you analyze, summarize, or extract facts from your indexed document!", "Conversational Assistant", "200 OK"
 
     general_phrases = [
         "what is it about", "what is this document about", "what is this about",

@@ -1,4 +1,28 @@
+import re
 from typing import List, Dict, Any
+
+CONVERSATIONAL_EXACT = {
+    "hi", "hello", "hey", "howdy", "greetings", "good morning", "good afternoon", "good evening",
+    "how are you", "how are you today", "how are u", "hows it going", "how is it going", "whats up",
+    "what is your name", "whats your name", "who are you", "what can you do", "what do you do",
+    "who made you", "who created you", "help", "help me", "thanks", "thank you", "thanks a lot",
+    "bye", "goodbye", "see ya", "ok", "okay", "cool", "awesome", "great", "got it"
+}
+
+CONVERSATIONAL_PREFIXES = (
+    "hi ", "hello ", "hey ", "good morning ", "good afternoon ", "good evening ",
+    "how are you", "who are you", "what can you do", "what is your name", "thanks ", "thank you "
+)
+
+def is_conversational_query(query: str) -> bool:
+    clean = re.sub(r'[^\w\s]', '', query.lower()).strip()
+    if clean in CONVERSATIONAL_EXACT:
+        return True
+    if any(clean.startswith(p) for p in CONVERSATIONAL_PREFIXES):
+        if clean.startswith("hi ") and len(clean.split()) > 3:
+            return False
+        return True
+    return False
 
 class QueryRouter:
     def __init__(self):
@@ -11,6 +35,15 @@ class QueryRouter:
         intent = "hybrid"
         confidence = 0.8
         
+        # 0. Conversational / Greeting Intent
+        if is_conversational_query(query):
+            return {
+                "intent": "conversational",
+                "confidence": 0.99,
+                "reasoning": ["detected conversational greeting, pleasantry, or identity query"],
+                "retrieval_plan": []
+            }
+
         # 1. Table Lookup Intent
         if "table" in query_lower or "rows" in query_lower or "columns" in query_lower or "tabular" in query_lower:
             intent = "table_lookup"

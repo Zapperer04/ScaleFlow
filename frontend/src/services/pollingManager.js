@@ -28,7 +28,10 @@ const loadFastData = async () => {
   try {
     const pipelinesData = await fetchPipelines();
     if (callbacksRef.setPipelines) {
-      callbacksRef.setPipelines(pipelinesData);
+      callbacksRef.setPipelines(prev => {
+        if (JSON.stringify(prev) === JSON.stringify(pipelinesData)) return prev;
+        return pipelinesData;
+      });
     }
   } catch (error) {
     console.warn('loadFastData: fetchPipelines failed', error);

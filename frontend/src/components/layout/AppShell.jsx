@@ -89,7 +89,10 @@ export const AppShell = ({
     const loadDetails = async () => {
       try {
         const details = await fetchPipelineDetails(selectedPipelineId);
-        setActivePipelineData(details);
+        setActivePipelineData(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(details)) return prev;
+          return details;
+        });
       } catch (err) {
         console.error('Error fetching pipeline details', err);
       }
@@ -103,8 +106,6 @@ export const AppShell = ({
     if (viewId === 'upload') {
       setSelectedDocumentId(null);
       setSelectedPipelineId(null);
-      onNavigateToView('workspace');
-    } else if (viewId === 'chat') {
       onNavigateToView('workspace');
     } else {
       onNavigateToView(viewId);
@@ -199,11 +200,11 @@ export const AppShell = ({
             <button 
               className={`sidebar-nav-item ${activeView === 'workspace' ? 'active' : ''}`}
               onClick={() => handlePrimaryNavigate('workspace')}
-              data-label="Workspace"
-              aria-label="Workspace"
+              data-label="Home"
+              aria-label="Home"
             >
               <Home size={16} />
-              <span>Workspace</span>
+              <span>Home</span>
             </button>
 
             <button 
@@ -374,7 +375,7 @@ export const AppShell = ({
       </aside>
 
       {/* 2. MAIN VIEWPORT */}
-      <main className="main-viewport" role="main" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', height: '100vh', paddingBottom: devPanelOpen ? '280px' : 'var(--drawer-handle-height)' }}>
+      <main className="main-viewport" role="main" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100vh', minHeight: 0, paddingBottom: devPanelOpen ? '280px' : 'var(--drawer-handle-height)' }}>
         
         {/* Top Control Bar */}
         <header className="top-bar" role="banner" style={{ 
@@ -484,7 +485,7 @@ export const AppShell = ({
         </header>
 
         {/* Dynamic Inner Children Workspace Pages */}
-        <div className="workspace-content" style={{ flex: 1, overflowY: 'visible' }}>
+        <div className="workspace-content" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {children}
         </div>
       </main>

@@ -48,7 +48,7 @@ const pipelineStatusToWsState = (status) => {
   return WS.PROCESSING;
 };
 
-export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => {
+export const WorkspaceHome = ({ activeView = 'workspace', devPanelOpen, onToggleDevPanel, onNavigateToView }) => {
   const {
     selectedPipelineId,
     setSelectedPipelineId,
@@ -74,6 +74,10 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
   // ── PDF rendering ─────────────────────────────────────────
   const canvasRef = useRef(null);
   const [pdfDoc, setPdfDoc] = useState(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState(null);
+  const [pdfTextContent, setPdfTextContent] = useState(null);
+  const [pageCount, setPageCount] = useState(1);
   const [activePdfPage, setActivePdfPage] = useState(1);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [highlights, setHighlights] = useState([]);
@@ -101,7 +105,10 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
     const load = async () => {
       try {
         const files = await fetchUploadedFiles();
-        setUploadedFiles(files || []);
+        setUploadedFiles(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(files)) return prev;
+          return files || [];
+        });
       } catch (err) {
         console.error('Error loading files', err);
       }
@@ -133,6 +140,37 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
   useEffect(() => {
     localStorage.setItem('scaleflow_pdf_page', activePdfPage);
   }, [activePdfPage]);
+
+  // Auto-select latest PROCESSED document when entering AI Chat if no active selection or if selected doc is failed
+  useEffect(() => {
+    if (activeView === 'chat' && uploadedFiles && uploadedFiles.length > 0) {
+      const activeFile = uploadedFiles.find(f => f.id === selectedDocumentId);
+      const activeStatus = (activeFile?.status || '').toLowerCase();
+      
+      // If no document selected, or selected document failed/deleted, auto-select first PROCESSED document
+      if (!selectedDocumentId || activeStatus === 'failed' || activeStatus === 'blocked' || activeStatus === 'cancelled') {
+        const processedDoc = uploadedFiles.find(f => {
+          const s = (f.status || '').toLowerCase();
+          return s === 'completed' || s === 'processed';
+        });
+        
+        if (processedDoc) {
+          setSelectedDocumentId(processedDoc.id);
+          selectDocument(processedDoc.id);
+        } else {
+          // If no processed document exists yet, select a processing one to display the parsing status
+          const processingDoc = uploadedFiles.find(f => {
+            const s = (f.status || '').toLowerCase();
+            return s !== 'failed' && s !== 'blocked' && s !== 'cancelled';
+          });
+          if (processingDoc && processingDoc.id !== selectedDocumentId) {
+            setSelectedDocumentId(processingDoc.id);
+            selectDocument(processingDoc.id);
+          }
+        }
+      }
+    }
+  }, [activeView, selectedDocumentId, uploadedFiles, setSelectedDocumentId, selectDocument]);
 
   // ─────────────────────────────────────────────────────────
   // Derive workspace state from selected document + pipeline
@@ -203,7 +241,10 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
     const interval = setInterval(async () => {
       try {
         const details = await fetchPipelineDetails(selectedPipelineId);
-        setActiveDag(details);
+        setActiveDag(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(details)) return prev;
+          return details;
+        });
         const backendStatus = details?.pipeline?.status;
         if (backendStatus) {
           setWorkspaceState(pipelineStatusToWsState(backendStatus));
@@ -254,33 +295,97 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
   // ─────────────────────────────────────────────────────────
   // Load PDF via pdfjs
   // ─────────────────────────────────────────────────────────
-  useEffect(() => {
+  const handleLoadPdf = useCallback(async () => {
     if (!selectedDocumentId || workspaceState !== WS.READY) {
-      setPdfDoc(null);
+      setPdfDoc(prev => {
+        if (prev) { try { prev.destroy(); } catch(e) {} }
+        return null;
+      });
+      setPdfError(null);
+      setPdfTextContent(null);
       return;
     }
-    const loadPdf = async () => {
+    setPdfLoading(true);
+    setPdfError(null);
+    setPdfTextContent(null);
+    try {
+      const blob        = await fetchPdfContent(selectedDocumentId);
+      const arrayBuffer = await blob.arrayBuffer();
+      
+      let pdfjsModule;
       try {
-        const blob        = await fetchPdfContent(selectedDocumentId);
-        const arrayBuffer = await blob.arrayBuffer();
-        const pdfjs       = await import('pdfjs-dist/build/pdf');
-        pdfjs.GlobalWorkerOptions.workerSrc = window.location.origin + '/pdf.worker.min.mjs';
-        const loadingTask = pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) });
-        const pdf         = await loadingTask.promise;
-        setPdfDoc(pdf);
-        setActivePdfPage(1);
-      } catch (err) {
-        console.error('Error loading PDF via pdfjs-dist', err);
+        pdfjsModule = await import('pdfjs-dist');
+      } catch (e1) {
+        pdfjsModule = await import('pdfjs-dist/build/pdf');
       }
-    };
-    loadPdf();
+      const pdfjs = pdfjsModule.default || pdfjsModule;
+
+      if (pdfjs.GlobalWorkerOptions) {
+        pdfjs.GlobalWorkerOptions.workerSrc = window.location.origin + '/pdf.worker.min.mjs';
+      }
+
+      let loadingTask;
+      try {
+        loadingTask = pdfjs.getDocument({
+          data: new Uint8Array(arrayBuffer),
+          isEvalSupported: false,
+        });
+        const pdf = await loadingTask.promise;
+        setPdfDoc(prev => {
+          if (prev && prev !== pdf) { try { prev.destroy(); } catch(e) {} }
+          return pdf;
+        });
+        setPageCount(pdf.numPages || 1);
+        setActivePdfPage(1);
+      } catch (workerErr) {
+        if (workerErr?.message?.includes('Worker version') || workerErr?.message?.includes('API version')) {
+          console.warn('[PDFJS] Version mismatch on local worker, switching to CDN worker matching pdfjs.version', workerErr);
+          const version = pdfjs.version || '6.1.200';
+          pdfjs.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/build/pdf.worker.min.mjs`;
+          loadingTask = pdfjs.getDocument({
+            data: new Uint8Array(arrayBuffer),
+            isEvalSupported: false,
+          });
+          const pdf = await loadingTask.promise;
+          setPdfDoc(prev => {
+          if (prev && prev !== pdf) { try { prev.destroy(); } catch(e) {} }
+          return pdf;
+        });
+          setPageCount(pdf.numPages || 1);
+          setActivePdfPage(1);
+        } else {
+          throw workerErr;
+        }
+      }
+    } catch (err) {
+      console.error('Error loading PDF via pdfjs-dist', err);
+      // Fallback: check if content can be displayed as text preview
+      try {
+        const blob = await fetchPdfContent(selectedDocumentId);
+        const text = await blob.text();
+        if (text && text.trim() && !text.includes('%PDF')) {
+          setPdfTextContent(text);
+        } else {
+          setPdfError(err.message || 'Could not load PDF document preview.');
+        }
+      } catch (e2) {
+        setPdfError(err.message || 'Could not load document preview.');
+      }
+    } finally {
+      setPdfLoading(false);
+    }
   }, [selectedDocumentId, workspaceState]);
+
+  useEffect(() => {
+    handleLoadPdf();
+  }, [handleLoadPdf]);
 
   // ─────────────────────────────────────────────────────────
   // Render canvas page
   // ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current) return;
+    let renderTask = null;
     const renderPage = async () => {
       try {
         const page     = await pdfDoc.getPage(activePdfPage);
@@ -289,12 +394,22 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
         const ctx      = canvas.getContext('2d');
         canvas.height  = viewport.height;
         canvas.width   = viewport.width;
-        await page.render({ canvasContext: ctx, viewport }).promise;
+        renderTask     = page.render({ canvasContext: ctx, viewport });
+        await renderTask.promise;
       } catch (err) {
-        console.error('Error rendering PDF page', err);
+        if (err?.name !== 'RenderingCancelledException') {
+          console.error('Error rendering PDF page', err);
+        }
       }
     };
     renderPage();
+    return () => {
+      if (renderTask) {
+        try {
+          renderTask.cancel();
+        } catch (_) {}
+      }
+    };
   }, [pdfDoc, activePdfPage, zoomLevel]);
 
   // ─────────────────────────────────────────────────────────
@@ -357,18 +472,28 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
       let accumulator = '';
 
       es.addEventListener('stage', (event) => {
-        const data = JSON.parse(event.data);
-        if (data.stage === 'retrieving') setCurrentQueryStage('vector');
-        else if (data.stage === 'reranking') setCurrentQueryStage('fusion');
-        else if (data.stage === 'generating') setCurrentQueryStage('llm');
+        try {
+          const data = JSON.parse(event.data);
+          if (data.stage === 'retrieving') setCurrentQueryStage('vector');
+          else if (data.stage === 'reranking') setCurrentQueryStage('fusion');
+          else if (data.stage === 'generating') setCurrentQueryStage('llm');
+        } catch (e) {
+          console.warn('[SSE] Stage event parse error:', e, event.data);
+        }
       });
 
       es.addEventListener('token', (event) => {
-        const data = JSON.parse(event.data);
-        accumulator += data.token;
-        setChatThread((prev) =>
-          prev.map((m) => (m.id === tempMsgId ? { ...m, content: accumulator, isStreaming: true } : m))
-        );
+        try {
+          const data = JSON.parse(event.data);
+          if (data && data.token !== undefined) {
+            accumulator += data.token;
+            setChatThread((prev) =>
+              prev.map((m) => (m.id === tempMsgId ? { ...m, content: accumulator, isStreaming: true } : m))
+            );
+          }
+        } catch (e) {
+          console.warn('[SSE] Token event parse error:', e, event.data);
+        }
       });
 
       es.addEventListener('completed', () => {
@@ -414,13 +539,40 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
   }, []);
 
   const handleCitationClick = useCallback((citation) => {
-    if (citation.page !== undefined) setActivePdfPage(citation.page);
-    if (citation.bounding_box) {
-      setHighlights([citation.bounding_box]);
-    } else {
-      setHighlights([{ x: 50, y: 80, width: 250, height: 30, page: citation.page || 1 }]);
+    if (!citation) return;
+
+    let targetPage = 1;
+    let box = null;
+
+    if (typeof citation === 'string') {
+      const cleanId = citation.replace('chunk_', '');
+      const foundCit = activeAnswerDetails?.citations?.find(
+        (c) => (c.chunk_id && c.chunk_id.includes(cleanId)) || (c.id && String(c.id).includes(cleanId))
+      );
+      if (foundCit && foundCit.page) {
+        targetPage = foundCit.page;
+        box = foundCit.bounding_box || foundCit.bbox;
+      } else {
+        const cand = activeAnswerDetails?.retrieval?.candidates?.find(
+          (c) => c.chunk_id && c.chunk_id.includes(cleanId)
+        );
+        if (cand && cand.page) {
+          targetPage = cand.page;
+        }
+      }
+    } else if (typeof citation === 'object') {
+      targetPage = citation.page || citation.page_number || 1;
+      box = citation.bounding_box || citation.bbox;
     }
-  }, []);
+
+    setActivePdfPage(targetPage);
+
+    if (box) {
+      setHighlights([box]);
+    } else {
+      setHighlights([{ x: 40, y: 80, width: 350, height: 70, page: targetPage }]);
+    }
+  }, [activeAnswerDetails]);
 
   // ─────────────────────────────────────────────────────────
   // Derived helpers
@@ -432,8 +584,60 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   const handleSelectDocument = (doc) => {
+    if (!doc) return;
     setSelectedDocumentId(doc.id);
     selectDocument(doc.id);
+
+    const s = (doc.status || '').toLowerCase();
+    if (s === 'failed' || s === 'blocked' || s === 'cancelled') {
+      addNotification(`Document "${doc.original_filename}" failed processing. Redirecting to Pipeline Monitor.`, 'warning', 'system');
+      if (onNavigateToView) {
+        onNavigateToView('pipelines');
+      }
+    } else {
+      if (onNavigateToView) {
+        onNavigateToView('chat');
+      }
+    }
+  };
+
+  const handleOpenChat = (doc) => {
+    if (!doc) return;
+    const s = (doc.status || '').toLowerCase();
+    if (s !== 'completed' && s !== 'processed') return;
+
+    setSelectedDocumentId(doc.id);
+    selectDocument(doc.id);
+
+    const assoc = pipelines.find(
+      (p) => p.file_id === doc.id || (doc && (p.file_id === doc.id || p.id === doc.pipeline_id))
+    );
+    const targetPipelineId = assoc ? assoc.id : doc.pipeline_id;
+    if (targetPipelineId) {
+      setSelectedPipelineId(targetPipelineId);
+    }
+
+    if (onNavigateToView) {
+      onNavigateToView('chat');
+    }
+  };
+
+  const handleInspectPipeline = (doc) => {
+    if (!doc) return;
+    setSelectedDocumentId(doc.id);
+    selectDocument(doc.id);
+
+    const assoc = pipelines.find(
+      (p) => p.file_id === doc.id || (doc && (p.file_id === doc.id || p.id === doc.pipeline_id))
+    );
+    const targetPipelineId = assoc ? assoc.id : doc.pipeline_id;
+    if (targetPipelineId) {
+      setSelectedPipelineId(targetPipelineId);
+    }
+
+    if (onNavigateToView) {
+      onNavigateToView('pipelines');
+    }
   };
 
   const onRequestDeleteDocument = (docId) => {
@@ -472,6 +676,7 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
     setSelectedPipelineId(null);
     setPdfDoc(null);
     setActiveDag(null);
+    localStorage.removeItem('scaleflow_active_doc');
     setChatThread([
       {
         role: 'assistant',
@@ -479,14 +684,21 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
         timestamp: new Date().toLocaleTimeString(),
       },
     ]);
+    if (onNavigateToView) {
+      onNavigateToView('workspace');
+    }
   };
 
   const handleUploadComplete = (newDoc) => {
     // Backend returned a new document; switch to PROCESSING and select it
     if (newDoc?.id) {
       setSelectedDocumentId(newDoc.id);
+      selectDocument(newDoc.id);
     }
     setWorkspaceState(WS.PROCESSING);
+    if (onNavigateToView) {
+      onNavigateToView('chat');
+    }
   };
 
   // ─────────────────────────────────────────────────────────
@@ -505,52 +717,74 @@ export const WorkspaceHome = ({ activeTab, devPanelOpen, onToggleDevPanel }) => 
       {/* ── Primary Workspace (state-driven) ──────────────── */}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
 
-        {workspaceState === WS.EMPTY && (
+        {activeView === 'workspace' ? (
           <UploadWorkspace
             uploadedFiles={uploadedFiles}
             onSelectDocument={handleSelectDocument}
             onUploadComplete={handleUploadComplete}
+            onOpenChat={handleOpenChat}
+            onInspectPipeline={handleInspectPipeline}
           />
-        )}
+        ) : (
+          <>
+            {workspaceState === WS.EMPTY && (
+              <UploadWorkspace
+                uploadedFiles={uploadedFiles}
+                onSelectDocument={handleSelectDocument}
+                onUploadComplete={handleUploadComplete}
+                onOpenChat={handleOpenChat}
+                onInspectPipeline={handleInspectPipeline}
+              />
+            )}
 
-        {workspaceState === WS.PROCESSING && (
-          <ProcessingWorkspace
-            activeDag={currentActiveDag}
-            selectedPipelineId={selectedPipelineId}
-            activeDoc={activeDoc}
-            timelineEvents={timelineEvents}
-            timelineLoading={timelineLoading}
-            timelineError={timelineError}
-            onRetryTask={onRetryTask}
-            onReupload={handleReupload}
-            onDelete={onRequestDeleteDocument}
-          />
-        )}
+            {workspaceState === WS.PROCESSING && (
+              <ProcessingWorkspace
+                activeDag={currentActiveDag}
+                selectedPipelineId={selectedPipelineId}
+                activeDoc={activeDoc}
+                timelineEvents={timelineEvents}
+                timelineLoading={timelineLoading}
+                timelineError={timelineError}
+                onRetryTask={onRetryTask}
+                onReupload={handleReupload}
+                onDelete={onRequestDeleteDocument}
+              />
+            )}
 
-        {workspaceState === WS.READY && (
-          <ReadyWorkspace
-            activeDoc={activeDoc}
-            activeDag={currentActiveDag}
-            pipelineMetadata={pipelineMetadata}
-            chatThread={chatThread}
-            chatQuery={chatQuery}
-            onQueryChange={setChatQuery}
-            onSubmit={handleSendQuery}
-            currentQueryStage={currentQueryStage}
-            queryTimer={queryTimer}
-            activeAnswerDetails={activeAnswerDetails}
-            onStopGeneration={handleStopGeneration}
-            onCitationClick={handleCitationClick}
-            pdfDoc={pdfDoc}
-            activePdfPage={activePdfPage}
-            setActivePdfPage={setActivePdfPage}
-            zoomLevel={zoomLevel}
-            setZoomLevel={setZoomLevel}
-            canvasRef={canvasRef}
-            highlights={highlights}
-            onReupload={handleReupload}
-            onDelete={onRequestDeleteDocument}
-          />
+            {workspaceState === WS.READY && (
+              <ReadyWorkspace
+                activeDoc={activeDoc}
+                uploadedFiles={uploadedFiles}
+                selectedDocumentId={selectedDocumentId}
+                onSelectDocument={handleSelectDocument}
+                activeDag={currentActiveDag}
+                pipelineMetadata={pipelineMetadata}
+                chatThread={chatThread}
+                chatQuery={chatQuery}
+                onQueryChange={setChatQuery}
+                onSubmit={handleSendQuery}
+                currentQueryStage={currentQueryStage}
+                queryTimer={queryTimer}
+                activeAnswerDetails={activeAnswerDetails}
+                onStopGeneration={handleStopGeneration}
+                onCitationClick={handleCitationClick}
+                pdfDoc={pdfDoc}
+                pdfLoading={pdfLoading}
+                pdfError={pdfError}
+                pdfTextContent={pdfTextContent}
+                pageCount={pageCount}
+                onRetryLoadPdf={handleLoadPdf}
+                activePdfPage={activePdfPage}
+                setActivePdfPage={setActivePdfPage}
+                zoomLevel={zoomLevel}
+                setZoomLevel={setZoomLevel}
+                canvasRef={canvasRef}
+                highlights={highlights}
+                onReupload={handleReupload}
+                onDelete={onRequestDeleteDocument}
+              />
+            )}
+          </>
         )}
       </div>
 

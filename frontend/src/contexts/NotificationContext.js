@@ -13,7 +13,11 @@ export const NotificationProvider = ({ children }) => {
     if (document.visibilityState === 'hidden') return;
     try {
       const res = await apiClient.get('/api/v1/notifications');
-      setNotifications(res.data.notifications || []);
+      const notificationsData = res.data.notifications || [];
+      setNotifications(prev => {
+        if (JSON.stringify(prev) === JSON.stringify(notificationsData)) return prev;
+        return notificationsData;
+      });
       setUnreadCount(res.data.unread_count || 0);
     } catch (err) {
       console.error("Error fetching notifications from backend", err);

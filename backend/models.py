@@ -375,14 +375,29 @@ class Task(Base, TimestampMixin, VersionMixin):
 
         queue_wait = 0
         execution = 0
-        if self.started_at and self.created_at:
-            queue_wait = (self.started_at - self.created_at).total_seconds()
-        elif self.created_at:
-            queue_wait = (datetime.utcnow() - self.created_at).total_seconds()
+        status_val = self.status.value if hasattr(self.status, 'value') else (str(self.status) if self.status else "")
+        p_start = self.pipeline.started_at if (hasattr(self, 'pipeline') and self.pipeline) else None
+        base_rel = p_start if (p_start and self.created_at and p_start > self.created_at) else self.created_at
+
+        if status_val == 'blocked':
+            queue_wait = 0
+        elif self.started_at and base_rel:
+            queue_wait = max(0, (self.started_at - base_rel).total_seconds())
+        elif base_rel:
+            if status_val in ['failed', 'completed', 'cancelled']:
+                end_t = self.updated_at or datetime.utcnow()
+                queue_wait = max(0, (end_t - base_rel).total_seconds())
+            else:
+                queue_wait = max(0, (datetime.utcnow() - base_rel).total_seconds())
+
         if self.completed_at and self.started_at:
-            execution = (self.completed_at - self.started_at).total_seconds()
+            execution = max(0, (self.completed_at - self.started_at).total_seconds())
         elif self.started_at:
-            execution = (datetime.utcnow() - self.started_at).total_seconds()
+            if status_val in ['failed', 'completed', 'cancelled']:
+                end_t = self.updated_at or datetime.utcnow()
+                execution = max(0, (end_t - self.started_at).total_seconds())
+            else:
+                execution = max(0, (datetime.utcnow() - self.started_at).total_seconds())
 
         return {
             'id': self.id,

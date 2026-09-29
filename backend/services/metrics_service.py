@@ -402,9 +402,14 @@ def calculate_pipeline_critical_path(db, pipeline_id):
             rec_times[tid] = rec_times.get(tid, 0.0) + delay
             del last_expiry[tid]
             
+    task_starts = [t.started_at for t in tasks if t.started_at]
+    pipeline_start_t = pipeline.started_at or (min(task_starts) if task_starts else pipeline.created_at)
+
     for t in tasks:
-        # Dependency Wait
-        released_at = t.created_at
+        # Dependency Wait & Release Timestamp
+        p_released = pipeline_start_t
+        released_at = p_released if p_released and t.created_at and p_released > t.created_at else t.created_at
+
         parents = []
         if t.dependent_on:
             parents = t.dependent_on
@@ -420,19 +425,40 @@ def calculate_pipeline_critical_path(db, pipeline_id):
             if completed_parents:
                 released_at = max(completed_parents)
                 
-        dep_wait = (released_at - t.created_at).total_seconds() if released_at > t.created_at else 0.0
+        base_start = pipeline_start_t
+        dep_wait = (released_at - base_start).total_seconds() if released_at and base_start and released_at > base_start else 0.0
         
+        t_status = t.status.value if hasattr(t.status, 'value') else (str(t.status) if t.status else "")
+        p_status = pipeline.status.value if hasattr(pipeline.status, 'value') else (str(pipeline.status) if pipeline.status else "")
+
         # Queue Wait
         if t.started_at:
             q_wait = (t.started_at - released_at).total_seconds() if t.started_at > released_at else 0.0
         else:
-            q_wait = (now - released_at).total_seconds() if now > released_at else 0.0
+            if t_status == 'blocked':
+                q_wait = 0.0
+            elif t_status in ['failed', 'completed', 'cancelled']:
+                q_wait = (t.updated_at - released_at).total_seconds() if t.updated_at and t.updated_at > released_at else 0.0
+            elif p_status in ['failed', 'cancelled', 'completed']:
+                end_time = pipeline.completed_at or pipeline.updated_at
+                if end_time and end_time > released_at:
+                    ref_time = min(t.updated_at, end_time) if (t.updated_at and t.updated_at > released_at) else end_time
+                    q_wait = (ref_time - released_at).total_seconds()
+                else:
+                    q_wait = 0.0
+            else:
+                q_wait = (now - released_at).total_seconds() if now > released_at else 0.0
             
         # Execution Duration
         if t.completed_at and t.started_at:
             exec_dur = (t.completed_at - t.started_at).total_seconds()
         elif t.started_at:
-            exec_dur = (now - t.started_at).total_seconds()
+            if t_status in ['failed', 'completed', 'cancelled']:
+                exec_dur = (t.updated_at - t.started_at).total_seconds() if t.updated_at and t.updated_at > t.started_at else 0.0
+            elif p_status in ['failed', 'cancelled', 'completed']:
+                exec_dur = (pipeline.updated_at - t.started_at).total_seconds() if pipeline.updated_at and pipeline.updated_at > t.started_at else 0.0
+            else:
+                exec_dur = (now - t.started_at).total_seconds()
         else:
             exec_dur = 0.0
             
@@ -470,9 +496,16 @@ def calculate_pipeline_critical_path(db, pipeline_id):
             bottleneck_id = nid
             
     # Compute total orchestration latency
-    started = pipeline.started_at or pipeline.created_at
-    completed = pipeline.completed_at or now
-    total_latency = (completed - started).total_seconds()
+    started = pipeline_start_t
+    p_status = pipeline.status.value if hasattr(pipeline.status, 'value') else (str(pipeline.status) if pipeline.status else "")
+    completed = pipeline.completed_at
+    if not completed:
+        if p_status in ['failed', 'cancelled', 'completed']:
+            task_ends = [t.completed_at or t.updated_at for t in tasks if (t.completed_at or t.updated_at)]
+            completed = max(task_ends) if task_ends else (pipeline.updated_at or now)
+        else:
+            completed = now
+    total_latency = max(0.0, (completed - started).total_seconds()) if completed and started else 0.0
     
     # critical path execution duration sum
     critical_path_exec_dur = sum(weights[nid]["execution_duration"] for nid in path)

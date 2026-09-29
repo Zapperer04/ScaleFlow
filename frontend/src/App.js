@@ -193,9 +193,23 @@ function AppContent() {
           )}
 
           <Suspense fallback={<WorkspaceSkeleton />}>
-            {activeView === 'workspace' && <WorkspaceHome devPanelOpen={devPanelOpen} onToggleDevPanel={toggleDevPanel} />}
+            {activeView === 'workspace' && (
+              <WorkspaceHome 
+                activeView="workspace" 
+                devPanelOpen={devPanelOpen} 
+                onToggleDevPanel={toggleDevPanel} 
+                onNavigateToView={handleNavigateToView} 
+              />
+            )}
 
-            {activeView === 'chat' && <WorkspaceHome devPanelOpen={devPanelOpen} onToggleDevPanel={toggleDevPanel} />}
+            {activeView === 'chat' && (
+              <WorkspaceHome 
+                activeView="chat" 
+                devPanelOpen={devPanelOpen} 
+                onToggleDevPanel={toggleDevPanel} 
+                onNavigateToView={handleNavigateToView} 
+              />
+            )}
 
             {activeView === 'history' && <IngestionHistory onNavigateToView={handleNavigateToView} />}
             

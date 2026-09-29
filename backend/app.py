@@ -6222,7 +6222,8 @@ def query_pipeline_stream(pipeline_id):
             words = ans_text.split(" ")
             for i, word in enumerate(words):
                 space = " " if i < len(words) - 1 else ""
-                yield f"event: token\ndata: {{\"token\": \"{word}{space}\"}}\n\n"
+                token_payload = json.dumps({"token": f"{word}{space}"})
+                yield f"event: token\ndata: {token_payload}\n\n"
                 time.sleep(0.04)
 
             yield "event: completed\ndata: {\"completed\": true}\n\n"

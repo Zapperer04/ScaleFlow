@@ -4,6 +4,7 @@ import {
   ChevronLeft, ChevronRight, BookOpen
 } from 'lucide-react';
 import Button from '../../ui/Button';
+import FormattedMessage from '../../ui/FormattedMessage';
 
 export const ChatWorkspace = ({ 
   chatThread = [], 
@@ -116,7 +117,7 @@ export const ChatWorkspace = ({
                       position: 'relative',
                     }}
                   >
-                    {msg.content}
+                    <FormattedMessage content={msg.content} onCitationClick={onCitationClick} />
                     
                     {!isUser && (
                       <button

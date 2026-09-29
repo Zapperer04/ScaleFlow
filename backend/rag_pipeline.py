@@ -25,31 +25,6 @@ class RAGPipeline:
         routing = self.query_router.route_query(query)
         latencies["routing"] = time.perf_counter() - t_route_start
 
-        # 2. Hybrid Retrieval
-        t_ret_start = time.perf_counter()
-        candidates = self.hybrid_retriever.retrieve(
-            query=query,
-            pipeline_id=pipeline_id,
-            top_k=15,
-            filters=filters,
-            graph=graph
-        )
-        latencies["retrieval"] = time.perf_counter() - t_ret_start
-
-        # 3. Reranking
-        t_rerank_start = time.perf_counter()
-        reranked = self.reranker.rerank_candidates(query, candidates)
-        latencies["reranking"] = time.perf_counter() - t_rerank_start
-
-        # 4. Context Fusion
-        t_fuse_start = time.perf_counter()
-        g_nodes = graph.nodes if graph else []
-        fused = self.context_fusion.fuse_context(reranked, g_nodes)
-        prompt_context = fused.to_prompt_string()
-        latencies["context_fusion"] = time.perf_counter() - t_fuse_start
-
-        # 5. LLM Answer Generation
-        t_llm_start = time.perf_counter()
         system_prompt = (
             "You are ScaleFlow AI — an intelligent, professional Document Intelligence and Question-Answering Assistant.\n\n"
             "=== YOUR ROLE & IDENTITY ===\n"
@@ -58,7 +33,7 @@ class RAGPipeline:
             "- Tone: Professional, helpful, objective, polite, and precise.\n\n"
             "=== INPUT HANDLING & INTENT ROUTING ===\n\n"
             "1. CONVERSATIONAL / GREETINGS / FAREWELLS:\n"
-            "   - If the user sends a greeting (e.g., 'hi', 'hello', 'good morning', 'hey'):\n"
+            "   - If the user sends a greeting (e.g., 'hi', 'hello', 'good morning', 'hey', 'how are you today'):\n"
             "     -> Respond warmly and state your availability to answer questions or summarize the document.\n"
             "     -> Example: 'Hello! I am your ScaleFlow AI Assistant. How can I help you analyze your document today?'\n"
             "   - If the user sends a farewell or appreciation (e.g., 'bye', 'thanks', 'thank you', 'goodbye'):\n"
@@ -80,13 +55,51 @@ class RAGPipeline:
             "- FORMATTING: Use clean, professional GitHub-flavored Markdown.\n"
             "- SAFETY: Decline any harmful, abusive, or out-of-character requests politely while maintaining system persona."
         )
-        user_prompt = (
-            f"Sources:\n{prompt_context if prompt_context and prompt_context.strip() else 'No document context retrieved for this query.'}\n\n"
-            f"User Question: {query}\n"
-            "Provide a helpful, precise answer following your system role and grounding instructions:"
-        )
 
-        answer_text = "The document does not contain sufficient information to answer this question."
+        is_conv = (routing.get("intent") == "conversational")
+        if is_conv:
+            candidates = []
+            reranked = []
+            prompt_context = ""
+            from context_fusion import FusedContext
+            fused = FusedContext()
+            user_prompt = (
+                f"User Question: {query}\n\n"
+                "Note: The user's message is a conversational greeting, pleasantry, or inquiry about your persona. "
+                "Do NOT reference or invent any document content. Respond in 1-2 friendly, professional sentences as ScaleFlow AI Assistant."
+            )
+        else:
+            # 2. Hybrid Retrieval
+            t_ret_start = time.perf_counter()
+            candidates = self.hybrid_retriever.retrieve(
+                query=query,
+                pipeline_id=pipeline_id,
+                top_k=15,
+                filters=filters,
+                graph=graph
+            )
+            latencies["retrieval"] = time.perf_counter() - t_ret_start
+
+            # 3. Reranking
+            t_rerank_start = time.perf_counter()
+            reranked = self.reranker.rerank_candidates(query, candidates)
+            latencies["reranking"] = time.perf_counter() - t_rerank_start
+
+            # 4. Context Fusion
+            t_fuse_start = time.perf_counter()
+            g_nodes = graph.nodes if graph else []
+            fused = self.context_fusion.fuse_context(reranked, g_nodes)
+            prompt_context = fused.to_prompt_string()
+            latencies["context_fusion"] = time.perf_counter() - t_fuse_start
+
+            user_prompt = (
+                f"Sources:\n{prompt_context if prompt_context and prompt_context.strip() else 'No document context retrieved for this query.'}\n\n"
+                f"User Question: {query}\n"
+                "Provide a helpful, precise answer following your system role and grounding instructions:"
+            )
+
+        # 5. LLM Answer Generation
+        t_llm_start = time.perf_counter()
         provider_used = "heuristic-fallback"
         
         # Get active provider
