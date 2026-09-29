@@ -6,7 +6,7 @@ import { getPipelineMetrics } from '../services/diagnostics';
 import { Loader2 } from 'lucide-react';
 
 const PipelineDashboard = () => {
-  const { selectedPipelineId } = usePipeline();
+  const { selectedPipelineId, onRetryTask } = usePipeline();
   const [pipelineData, setPipelineData] = useState(null);
   const [metricsData, setMetricsData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -71,7 +71,7 @@ const PipelineDashboard = () => {
     );
   }
 
-  return <PipelineVisualizer tasks={pipelineData.tasks} pipelineStatus={pipelineData.pipeline?.status} metrics={metricsData} />;
+  return <PipelineVisualizer tasks={pipelineData.tasks} pipelineStatus={pipelineData.pipeline?.status} metrics={metricsData} onRetryTask={onRetryTask} />;
 };
 
 export default PipelineDashboard;
