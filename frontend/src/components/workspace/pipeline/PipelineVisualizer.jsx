@@ -908,7 +908,7 @@ const PipelineVisualizer = ({ tasks = [], pipelineStatus = 'running', metrics = 
                             </div>
                             {onRetryTask && (
                               <button
-                                onClick={() => onRetryTask(failedTask.id)}
+                                onClick={() => onRetryTask(failedTask.id, true)}
                                 style={{
                                   background: 'rgba(239, 68, 68, 0.15)',
                                   border: '1px solid rgba(239, 68, 68, 0.3)',

@@ -395,7 +395,7 @@ export const ErrorPanel = ({ errors = [], onRetryTask }) => {
                     {onRetryTask && (
                       <div style={{ display: 'flex', gap: 10 }}>
                         <button
-                          onClick={(e) => handleTaskRetryClick(e, err, false)}
+                          onClick={(e) => handleTaskRetryClick(e, err, true)}
                           disabled={loadingTaskId !== null}
                           aria-label={`Retry task ${err.stage}`}
                           style={{
