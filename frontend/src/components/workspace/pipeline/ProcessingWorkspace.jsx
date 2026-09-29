@@ -251,7 +251,7 @@ export const ProcessingWorkspace = ({
           justifyContent: 'center'
         }}
       >
-        <PipelineVisualizer tasks={tasks} pipelineStatus={pipeline.status} />
+        <PipelineVisualizer tasks={tasks} pipelineStatus={pipeline.status} onRetryTask={onRetryTask} />
       </div>
 
       {/* ── Section: Runtime Summary + Controls ─────────────── */}

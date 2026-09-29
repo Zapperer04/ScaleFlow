@@ -292,7 +292,7 @@ const visualizerStyles = `
   }
 `;
 
-const PipelineVisualizer = ({ tasks = [], pipelineStatus = 'running', metrics = null }) => {
+const PipelineVisualizer = ({ tasks = [], pipelineStatus = 'running', metrics = null, onRetryTask }) => {
   const [viewMode, setViewMode] = useState('timeline');
   const [expandedStages, setExpandedStages] = useState({});
   // Use IDs for selection to avoid stale closure references
@@ -903,9 +903,30 @@ const PipelineVisualizer = ({ tasks = [], pipelineStatus = 'running', metrics = 
                         return (
                           <div style={{ background: '#0d0d14', border: '1px solid #ef4444', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
                             <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#ef4444', margin: '0 0 12px 0' }}>Failure Reason</h4>
-                            <div style={{ fontSize: '0.8125rem', color: '#f87171', background: 'rgba(239, 68, 68, 0.1)', padding: '12px', borderRadius: '6px', fontFamily: 'monospace', whiteSpace: 'pre-wrap', userSelect: 'all' }}>
+                            <div style={{ fontSize: '0.8125rem', color: '#f87171', background: 'rgba(239, 68, 68, 0.1)', padding: '12px', borderRadius: '6px', fontFamily: 'monospace', whiteSpace: 'pre-wrap', userSelect: 'all', marginBottom: '16px' }}>
                               {errMsg}
                             </div>
+                            {onRetryTask && (
+                              <button
+                                onClick={() => onRetryTask(failedTask.id)}
+                                style={{
+                                  background: 'rgba(239, 68, 68, 0.15)',
+                                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                                  color: '#ef4444',
+                                  padding: '8px 16px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.85rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  width: '100%',
+                                  transition: 'all 0.2s',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.25)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)'; }}
+                              >
+                                Retry Task
+                              </button>
+                            )}
                           </div>
                         );
                       }
