@@ -685,6 +685,14 @@ def handle_parse_document(payload, input_artifacts):
                 "ingestion_timestamp": datetime.datetime.utcnow().isoformat() + "Z"
             }
             
+            # Clean up invalid edges before validation
+            if "edges" in document_graph and "nodes" in document_graph:
+                node_ids = {n.get("id") for n in document_graph["nodes"] if n.get("id")}
+                document_graph["edges"] = [
+                    edge for edge in document_graph["edges"]
+                    if edge.get("source") in node_ids and edge.get("target") in node_ids
+                ]
+            
             validate_document_graph(document_graph)
 
             _trace(f"[PARSER] VLM parsing complete. Nodes: {parse_stats.get('node_count', 0)}, edges: {parse_stats.get('edge_count', 0)}")
